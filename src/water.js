@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { NOISE, SKY, HEIGHT_SAMPLER } from './shaders/lib.js';
+import { NOISE, SKY, HEIGHT_SAMPLER, OUTPUT } from './shaders/lib.js';
 
 /**
  * Thunersee and Brienzersee. Each lake is a quad over its baked bounding box;
@@ -55,6 +55,7 @@ export function createLakes(heightfield, sky) {
         ${NOISE}
         ${SKY}
         ${HEIGHT_SAMPLER}
+        ${OUTPUT}
         uniform sampler2D uMask;
         uniform sampler2D uHeight;
         uniform float uHeightSize;
@@ -109,7 +110,7 @@ export function createLakes(heightfield, sky) {
           col += uSunRadiance * spec * 1.6 * fade;
 
           col = aerial(col, dist, vdir, (uLevel + cameraPosition.y) * 0.5, uSunDir);
-          fragColor = vec4(col * uExposure, shore);
+          fragColor = outputColor(col, shore);
         }
       `,
       transparent: true,

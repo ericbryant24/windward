@@ -6,6 +6,7 @@ import { createLakes } from './water.js';
 import { Hud } from './hud.js';
 import { Controls } from './controls.js';
 import { Game } from './game.js';
+import { Audio } from './audio.js';
 
 const canvas = document.getElementById('view');
 const uiRoot = document.getElementById('ui');
@@ -30,8 +31,8 @@ const renderer = new THREE.WebGLRenderer({
   stencil: false,
 });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+// The custom shaders tone-map and encode themselves; see OUTPUT in shaders/lib.js.
+renderer.toneMapping = THREE.NoToneMapping;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 4, 90000);
@@ -88,7 +89,8 @@ async function boot() {
   hud.setProgress(0.94, 'checking the wind…');
   const controls = new Controls(uiRoot);
   controls.setVisible(false);
-  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes });
+  const audio = new Audio();
+  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes, audio });
   game.setBaseFov(baseFov);
 
   const applyLighting = () => {
@@ -123,7 +125,14 @@ async function boot() {
   hud.onAction = async (action, value, btn) => {
     switch (action) {
       case 'start':
+        audio.start();
         game.startMode(value);
+        break;
+      case 'sound':
+        selectSegment(btn);
+        audio.start();
+        audio.setEnabled(value === '1');
+        localStorage.setItem('windward.sound', value);
         break;
       case 'resume':
       case 'pause':
@@ -189,6 +198,9 @@ async function boot() {
 
   selectByValue('time', timeName);
   selectByValue('quality', qualityName);
+  const soundPref = localStorage.getItem('windward.sound') ?? '1';
+  audio.setEnabled(soundPref === '1');
+  selectByValue('sound', soundPref);
 
   hud.setProgress(1, 'ready');
   hud.hideLoading();

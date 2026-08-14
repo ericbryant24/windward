@@ -201,24 +201,4 @@ export class Heightfield {
     const lim = this.halfSize - margin;
     return x > -lim && x < lim && z > -lim && z < lim;
   }
-
-  /**
-   * March a ray against the heightfield. Returns the hit distance or -1.
-   * Coarse steps with a bisection refine — good enough for gameplay probes.
-   */
-  raycast(origin, dir, maxDist = 4000, step = 12) {
-    let prev = origin.y - this.heightAt(origin.x, origin.z);
-    for (let t = step; t < maxDist; t += step) {
-      const x = origin.x + dir.x * t;
-      const y = origin.y + dir.y * t;
-      const z = origin.z + dir.z * t;
-      const d = y - this.heightAt(x, z);
-      if (d <= 0) {
-        const frac = prev / (prev - d);
-        return t - step + frac * step;
-      }
-      prev = d;
-    }
-    return -1;
-  }
 }

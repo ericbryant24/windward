@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { Air, Glider, GLIDER } from './flight.js';
+import { Air, Glider } from './flight.js';
 import { createAircraft } from './aircraft.js';
 import { World, createThermalClouds } from './world.js';
 import { formatTime } from './hud.js';
@@ -12,7 +12,8 @@ const STORE_KEY = 'windward.progress.v1';
  * flight.js; this is everything that turns flying into a game.
  */
 export class Game {
-  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes }) {
+  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio }) {
+    this.audio = audio;
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
@@ -51,7 +52,6 @@ export class Game {
     this._prevPos = new THREE.Vector3();
     this._v = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
-    this._q = new THREE.Quaternion();
     this.labels = new LabelLayer(document.getElementById('ui'), this.world.places);
 
     // Park the ship somewhere sane so nothing sits at the world origin while
@@ -149,7 +149,7 @@ export class Game {
   // -------------------------------------------------------------- loop ---
   update(dt) {
     this.air.update(dt);
-    this.world.update(dt, this.camera);
+    this.world.update(dt);
 
     if (this.state === 'flying') this.#simulate(dt);
     if (this.state !== 'menu') this.#placeCamera(false, dt);
@@ -171,6 +171,12 @@ export class Game {
         streak: this.streak,
       });
       this.controls.setBoostCharge(this.glider.boost);
+      this.audio?.update(dt, {
+        airspeed: this.glider.airspeed,
+        vario: this.glider.varioSmooth,
+        boosting: this.glider.boosting,
+        brake: this.glider.brake,
+      });
       this.labels.update(this.camera, this.glider.position, this.progress.discovered);
     }
   }
@@ -233,6 +239,7 @@ export class Game {
         saveProgress(this.progress);
         this.score += 500;
         this.hud.toast(`<b>${p.name}</b> discovered · +500`, 'discovery');
+        this.audio?.cue('discovery');
       }
     }
 
@@ -259,6 +266,7 @@ export class Game {
     const bonus = Math.round(300 + accuracy * 700);
     this.score += bonus;
     this.gateIndex++;
+    this.audio?.cue('gate');
     if (this.gateIndex >= this.world.gates.length) {
       this.#finishCircuit();
     } else {
@@ -280,6 +288,7 @@ export class Game {
 
   #land() {
     this.state = 'done';
+    this.audio?.cue('finish');
     this.controls.setVisible(false);
     const lines = [
       ['Landed at', `${Math.round(this.hf.heightAt(this.glider.position.x, this.glider.position.z))} m`],
@@ -300,6 +309,7 @@ export class Game {
     this.respawnTimer = 1.4;
     this.glider.velocity.multiplyScalar(0.1);
     this.hud.toast('Terrain! Resetting…', 'bad');
+    this.audio?.cue('crash');
     this.hud.setWarning('');
   }
 
@@ -326,6 +336,7 @@ export class Game {
 
   #finishCircuit() {
     this.state = 'done';
+    this.audio?.cue('finish');
     this.controls.setVisible(false);
     const timeBonus = Math.max(0, Math.round((420 - this.timer) * 12));
     this.score += timeBonus;
@@ -346,6 +357,7 @@ export class Game {
 
   #finishClimb() {
     this.state = 'done';
+    this.audio?.cue('finish');
     this.controls.setVisible(false);
     const best = this.progress.best.altitude;
     const isBest = !best || this.maxAltitude > best;

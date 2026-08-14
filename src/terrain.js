@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { NOISE, SKY, HEIGHT_SAMPLER } from './shaders/lib.js';
+import { NOISE, SKY, HEIGHT_SAMPLER, OUTPUT } from './shaders/lib.js';
 
 /**
  * CDLOD terrain.
@@ -376,6 +376,7 @@ export class Terrain {
         precision highp float;
         ${NOISE}
         ${SKY}
+        ${OUTPUT}
         uniform vec3 uSunRadiance;
         uniform vec3 uSkyAmbient;
         in vec3 vWorld;
@@ -388,7 +389,7 @@ export class Terrain {
           vec3 albedo = mix(vec3(0.055, 0.075, 0.040), vec3(0.10, 0.115, 0.070), n);
           vec3 col = albedo * (uSunRadiance * max(uSunDir.y, 0.0) * 0.85 + uSkyAmbient);
           col = aerial(col, dist, dir, 520.0, uSunDir);
-          fragColor = vec4(col, 1.0);
+          fragColor = outputColor(col, 1.0);
         }
       `,
     });
@@ -483,6 +484,7 @@ const TERRAIN_COMMON = /* glsl */ `
 ${NOISE}
 ${SKY}
 ${HEIGHT_SAMPLER}
+${OUTPUT}
 uniform sampler2D uHeightA; uniform float uSizeA; uniform float uStepA;
 uniform sampler2D uHeightB; uniform float uSizeB; uniform float uStepB;
 
@@ -668,6 +670,6 @@ void main(){
   col += snowCol * uSunRadiance * pow(clamp(dot(vdir, uSunDir), 0.0, 1.0), 6.0) * snow * 0.03 * shadow;
 
   col = aerial(col, dist, vdir, (vWorld.y + cameraPosition.y) * 0.5, uSunDir);
-  fragColor = vec4(col * uExposure, 1.0);
+  fragColor = outputColor(col, 1.0);
 }
 `;

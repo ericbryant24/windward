@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { NOISE, SKY } from './shaders/lib.js';
+import { NOISE, SKY, OUTPUT } from './shaders/lib.js';
 
 /**
  * Lit material for scene objects (the glider, gates, markers). Uses the same
@@ -50,6 +50,7 @@ export function makeLitMaterial(sky, options = {}) {
       precision highp float;
       ${NOISE}
       ${SKY}
+      ${OUTPUT}
       uniform vec3 uColor;
       uniform vec3 uEmissive;
       uniform float uEmissiveStrength;
@@ -90,7 +91,7 @@ export function makeLitMaterial(sky, options = {}) {
         col += uEmissive * uEmissiveStrength * (0.75 + 0.25 * sin(uPulse));
 
         col = aerial(col, dist, vdir, (vWorld.y + cameraPosition.y) * 0.5, uSunDir);
-        fragColor = vec4(col * uExposure, uOpacity);
+        fragColor = outputColor(col, uOpacity);
       }
     `,
   });
@@ -102,7 +103,7 @@ export function makeLitMaterial(sky, options = {}) {
  * `{ points: [[x, y], ...], origin: Vector3, scale: number }` in a local frame
  * where the section lies in the XY plane and sections advance along Z.
  */
-export function loft(sections, closed = true) {
+export function loft(sections) {
   const positions = [];
   const indices = [];
   const n = sections[0].points.length;
@@ -114,7 +115,6 @@ export function loft(sections, closed = true) {
   for (let i = 0; i < sections.length - 1; i++) {
     for (let j = 0; j < n; j++) {
       const j2 = (j + 1) % n;
-      if (!closed && j === n - 1) continue;
       const a = i * n + j;
       const b = i * n + j2;
       const c = (i + 1) * n + j;

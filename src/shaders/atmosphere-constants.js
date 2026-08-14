@@ -6,7 +6,7 @@
  */
 export const ATMO = {
   /** Vertical optical depth at sea level, one air mass, R/G/B. */
-  betaR: [0.053, 0.104, 0.235],
+  betaR: [0.042, 0.104, 0.268],
   /** Aerosol optical depth at sea level, one air mass (grey). */
   betaM: 0.021,
   /** Mie asymmetry: how tight the solar aureole is. */
@@ -20,17 +20,17 @@ export const ATMO = {
   /** Converts single-scatter fractions into the renderer's radiance units. */
   gain: 13.0,
   /** Multiple-scattering fill, which lifts the dome and the anti-solar sky. */
-  msFill: 0.34,
-  msTint: [0.44, 0.58, 0.86],
+  msFill: 0.16,
+  msTint: [0.32, 0.50, 0.92],
   /**
    * Single scattering along a flat-earth ray would brighten without limit
    * toward the horizon; curvature and the sun's own longer path cap it.
    */
   scatterAirMassCap: 5.5,
   /** Where the horizon starts washing out to grey, and how far it goes. */
-  paleFrom: 1.5,
+  paleFrom: 2.2,
   paleTo: 7.0,
-  paleAmount: 0.6,
+  paleAmount: 0.45,
 };
 
 const v3 = (a) => `vec3(${a.map((x) => x.toFixed(5)).join(', ')})`;

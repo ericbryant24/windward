@@ -1,13 +1,15 @@
 import * as THREE from '../vendor/three.module.js';
-import { NOISE, SKY } from './shaders/lib.js';
+import { NOISE, SKY, OUTPUT } from './shaders/lib.js';
 import { ATMO } from './shaders/atmosphere-constants.js';
 
 /** Times of day the player can pick, tuned for how the Alps actually read. */
 export const TIME_PRESETS = {
-  morning: { elevation: 17, azimuth: 96, haze: 0.95, name: 'Alpine Morning' },
-  midday: { elevation: 58, azimuth: 172, haze: 0.62, name: 'High Noon' },
-  afternoon: { elevation: 32, azimuth: 232, haze: 0.85, name: 'Afternoon' },
-  golden: { elevation: 8.5, azimuth: 283, haze: 1.25, name: 'Golden Hour' },
+  // `exposure` stands in for the eye adapting: without it a low sun renders a
+  // technically correct scene that is simply too dark to fly in.
+  morning: { elevation: 17, azimuth: 96, haze: 0.88, exposure: 1.0, name: 'Alpine Morning' },
+  midday: { elevation: 58, azimuth: 172, haze: 0.62, exposure: 0.85, name: 'High Noon' },
+  afternoon: { elevation: 32, azimuth: 232, haze: 0.85, exposure: 0.95, name: 'Afternoon' },
+  golden: { elevation: 8.5, azimuth: 283, haze: 1.05, exposure: 1.0, name: 'Golden Hour' },
 };
 
 export class Sky {
@@ -44,6 +46,7 @@ export class Sky {
         precision highp float;
         ${NOISE}
         ${SKY}
+        ${OUTPUT}
         uniform float uTime;
         uniform float uCloudCover;
         uniform float uCloudQuality;
@@ -83,7 +86,7 @@ export class Sky {
           vec4 cl = highClouds(d, cameraPosition);
           col = mix(col, cl.rgb, cl.a);
 
-          fragColor = vec4(col * uExposure, 1.0);
+          fragColor = outputColor(col, 1.0);
         }
       `,
     });
@@ -107,6 +110,7 @@ export class Sky {
     // Solar radiance stays constant; the atmosphere does the reddening.
     const s = 2.55;
     this.uniforms.uSunColor.value.set(1.0 * s, 0.975 * s, 0.94 * s);
+    this.uniforms.uExposure.value = p.exposure ?? 1;
     this.changed = true;
   }
 
@@ -145,7 +149,7 @@ export class Sky {
     }
     // Empirical: the analytic dome under-reports the light bouncing between
     // snowfields and haze, and shaded slopes read as black without it.
-    return out.multiplyScalar(2.45);
+    return out.multiplyScalar(2.1);
   }
 }
 

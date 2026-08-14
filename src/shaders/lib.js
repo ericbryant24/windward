@@ -169,7 +169,7 @@ vec3 aerial(vec3 color, float dist, vec3 viewDir, float hMid, vec3 sunDir){
   float aer = exp(-max(hMid - 560.0, 0.0) / 1700.0) * uHaze;
   float mol = exp(-max(hMid - 560.0, 0.0) / 8500.0);
 
-  vec3 tau = BETA_R * (dist / 8500.0) * mol + vec3(0.0000125 * dist * aer);
+  vec3 tau = BETA_R * (dist / 8500.0) * mol + vec3(0.0000090 * dist * aer);
   vec3 T = exp(-tau);
 
   vec3 hazeCol = skyRadiance(viewDir, sunDir);
@@ -178,6 +178,27 @@ vec3 aerial(vec3 color, float dist, vec3 viewDir, float hMid, vec3 sunDir){
   hazeCol += uSunColor * sunTransmittance(sunDir) * pow(c, 10.0) * 0.55 * aer;
 
   return color * T + hazeCol * (1.0 - T);
+}
+`;
+
+/**
+ * Final output transform. Custom ShaderMaterials never pick up three's
+ * tone-mapping and colour-space chunks, so every shader here ends with this:
+ * exposure, ACES, then sRGB encode.
+ */
+export const OUTPUT = /* glsl */ `
+vec3 acesFilm(vec3 x){
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+vec3 linearToSRGB(vec3 c){
+  vec3 lo = c * 12.92;
+  vec3 hi = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+  return mix(lo, hi, step(vec3(0.0031308), c));
+}
+
+vec4 outputColor(vec3 col, float alpha){
+  return vec4(linearToSRGB(acesFilm(col * uExposure)), alpha);
 }
 `;
 

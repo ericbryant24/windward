@@ -1,6 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { makeLitMaterial } from './materials.js';
-import { NOISE, SKY } from './shaders/lib.js';
+import { NOISE, SKY, OUTPUT } from './shaders/lib.js';
 import { mulberry32 } from './flight.js';
 
 /**
@@ -152,7 +152,7 @@ export class World {
     return { offset: r / gate.radius, forward: db > da };
   }
 
-  update(dt, camera) {
+  update(dt) {
     this.gateMaterial.uniforms.uPulse.value += dt * 3.4;
   }
 
@@ -203,6 +203,7 @@ export function createThermalClouds(air, sky) {
       precision highp float;
       ${NOISE}
       ${SKY}
+      ${OUTPUT}
       uniform sampler2D uMap;
       uniform vec3 uSunRadiance;
       uniform vec3 uSkyAmbient;
@@ -221,7 +222,7 @@ export function createThermalClouds(air, sky) {
         vec3 col = uSunRadiance * lit * 0.80 + uSkyAmbient * 0.55;
         col += uSunRadiance * pow(clamp(dot(vdir, uSunDir), 0.0, 1.0), 5.0) * 0.35 * a;
         col = aerial(col, dist, vdir, vWorld.y, uSunDir);
-        fragColor = vec4(col * uExposure, a * 0.92);
+        fragColor = outputColor(col, a * 0.92);
       }
     `,
   });

@@ -34,7 +34,6 @@ export class Hud {
     this.arrow = this.el('.gate-arrow');
     this.warn = this.el('.warn');
 
-    this._toasts = [];
     this._v = new THREE.Vector3();
     this.onAction = () => {};
     this.root.addEventListener('click', (e) => {
@@ -236,6 +235,13 @@ const TEMPLATE = /* html */ `
         <div class="segmented" data-group="input">
           <button class="on" data-action="input" data-value="stick">Thumb stick</button>
           <button data-action="input" data-value="tilt">Tilt</button>
+        </div>
+      </div>
+      <div class="setting">
+        <span>Sound</span>
+        <div class="segmented" data-group="sound">
+          <button class="on" data-action="sound" data-value="1">On</button>
+          <button data-action="sound" data-value="0">Off</button>
         </div>
       </div>
       <div class="setting">
