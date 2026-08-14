@@ -18,6 +18,7 @@
   },
   "homepage": "https://github.com/ericbryant24/windward#readme",
   "dependencies": {
+    "playwright": "^1.62.1",
     "pngjs": "^7.0.0",
     "three": "^0.185.1"
   }
