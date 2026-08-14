@@ -1,0 +1,42 @@
+{
+  "generator": "tools/bake-terrain.mjs",
+  "source": "AWS Terrain Tiles (terrarium) — SwissALTI3D/SRTM et al, see ATTRIBUTION.md",
+  "sourceZoom": 13,
+  "centerLat": 46.6,
+  "centerLon": 7.93,
+  "halfSize": 19000,
+  "size": 1536,
+  "step": 24.7557003257329,
+  "encoding": {
+    "bias": 512,
+    "scale": 2,
+    "waterChannel": "b"
+  },
+  "minHeight": 545.5,
+  "maxHeight": 4128.9,
+  "lakes": [
+    {
+      "name": "Thunersee",
+      "level": 558,
+      "cells": 59224,
+      "bounds": {
+        "minX": -19024.75570032573,
+        "maxX": -6176.547231270358,
+        "minZ": -13900.325732899024,
+        "maxZ": -6028.013029315961
+      }
+    },
+    {
+      "name": "Brienzersee",
+      "level": 564,
+      "cells": 54070,
+      "bounds": {
+        "minX": -4914.006514657979,
+        "maxX": 11226.71009771987,
+        "minZ": -17613.680781758958,
+        "maxZ": -9320.521172638435
+      }
+    }
+  ],
+  "sha256": "5340897cda016bf0"
+}

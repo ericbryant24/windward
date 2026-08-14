@@ -1,0 +1,24 @@
+{
+  "name": "windward",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ericbryant24/windward.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ericbryant24/windward/issues"
+  },
+  "homepage": "https://github.com/ericbryant24/windward#readme",
+  "dependencies": {
+    "pngjs": "^7.0.0",
+    "three": "^0.185.1"
+  }
+}
