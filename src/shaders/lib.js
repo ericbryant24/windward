@@ -4,6 +4,7 @@
  *
  * Everything works in linear HDR; the renderer applies ACES + sRGB at the end.
  */
+import { ATMO_GLSL } from './atmosphere-constants.js';
 
 export const NOISE = /* glsl */ `
 float hash11(float p){ p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
@@ -93,10 +94,7 @@ uniform vec3 uSunColor;      // radiance of the solar disc (pre-extinction)
 uniform float uHaze;         // 0.4 crisp .. 1.6 murky
 uniform float uExposure;
 
-// Vertical optical depths at sea level (one air mass), R/G/B.
-const vec3 BETA_R = vec3(0.053, 0.104, 0.235);
-const float BETA_M = 0.021;
-const float SKY_GAIN = 18.3;   // calibrated so a clear zenith lands near 0.55
+${ATMO_GLSL}
 
 // Kasten-Young relative air mass; 1 at the zenith, ~34 at the horizon.
 float airMass(float cosZenith){
@@ -126,28 +124,26 @@ vec3 skyRadiance(vec3 d, vec3 sunDir){
   vec3 tSun = sunTransmittance(sunDir);
   vec3 sun = uSunColor * tSun;
 
-  // Single scattering along a flat-earth ray would keep brightening all the
-  // way to the horizon; in reality curvature and the sun's own longer path cap
-  // it, so the scattering air mass saturates well before the geometric one.
-  float mScat = min(m, 7.0);
+  float mScat = min(m, SCATTER_AM_CAP);
   vec3 opticalR = BETA_R * mScat;
   float opticalM = BETA_M * mScat * uHaze;
 
-  vec3 inR = (1.0 - exp(-opticalR)) * rayleighPhase(cosT);
-  float inM = (1.0 - exp(-opticalM)) * hgPhase(cosT, 0.76);
+  // Both phase functions are normalised, so each species contributes in
+  // proportion to its share of the scattering.
+  vec3 inR = (1.0 - exp(-opticalR)) * rayleighPhase(cosT) * (1.0 - MIE_SHARE);
+  float inM = (1.0 - exp(-opticalM)) * hgPhase(cosT, MIE_G) * MIE_SHARE;
 
-  vec3 col = sun * (inR + vec3(inM * 0.55)) * SKY_GAIN;
+  vec3 col = sun * (inR + vec3(inM)) * SKY_GAIN;
 
   // cheap stand-in for multiple scattering: keeps the anti-solar sky from
   // going black and lifts the whole dome when the sun is low
-  vec3 msTint = vec3(0.42, 0.56, 0.85);
-  col += uSunColor * msTint * (1.0 - exp(-opticalR * 0.55)) * 0.22 *
+  col += uSunColor * MS_TINT * (1.0 - exp(-opticalR * 0.55)) * MS_FILL *
          (0.30 + 0.70 * smoothstep(-0.10, 0.30, sunDir.y));
 
   // the horizon pales out as scattered light is itself scattered again
-  float pale = smoothstep(1.6, 9.0, m);
+  float pale = smoothstep(PALE_FROM, PALE_TO, m);
   float lum = dot(col, vec3(0.29, 0.53, 0.18));
-  col = mix(col, vec3(lum) * vec3(1.06, 1.00, 0.94), pale * 0.62);
+  col = mix(col, vec3(lum) * vec3(1.06, 1.00, 0.94), pale * PALE_AMOUNT);
 
   // ground bounce below the horizon
   float below = smoothstep(0.03, -0.20, d.y);

@@ -283,10 +283,7 @@ export class Terrain {
       // neighbouring patch and the seam opens up.
       const last = this.hf.mipTextures.length - 1;
       const mipFor = (k) => Math.min(Math.max(k - 1, 0), last);
-      // Shading normals come from finer mips than the geometry: silhouettes
-      // stay cheap while distant faces keep their real relief.
-      const nrmFor = (k) => Math.min(Math.max(k - 3, 0), last);
-      const mat = this.#makeMaterial(l, mipFor(l), mipFor(l + 1), nrmFor(l), nrmFor(l + 1));
+      const mat = this.#makeMaterial(l, mipFor(l), mipFor(l + 1));
       const mesh = new THREE.Mesh(geom, mat);
       mesh.frustumCulled = false;
       mesh.renderOrder = 10 - l; // fine levels first: cheap early-z for the rest
@@ -295,12 +292,10 @@ export class Terrain {
     }
   }
 
-  #makeMaterial(level, mipA, mipB, nrmA, nrmB) {
+  #makeMaterial(level, mipA, mipB) {
     const hf = this.hf;
     const texA = hf.mipTextures[mipA];
     const texB = hf.mipTextures[mipB];
-    const nA = hf.mipTextures[nrmA];
-    const nB = hf.mipTextures[nrmB];
     return new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
       side: THREE.DoubleSide,
@@ -317,12 +312,8 @@ export class Terrain {
         uHeightB: { value: texB },
         uSizeB: { value: texB.image.width },
         uStepB: { value: (hf.halfSize * 2) / (texB.image.width - 1) },
-        uNormalA: { value: nA },
-        uNormalSizeA: { value: nA.image.width },
-        uNormalStepA: { value: (hf.halfSize * 2) / (nA.image.width - 1) },
-        uNormalB: { value: nB },
-        uNormalSizeB: { value: nB.image.width },
-        uNormalStepB: { value: (hf.halfSize * 2) / (nB.image.width - 1) },
+        uSurface: { value: hf.surfaceTexture },
+        uGradMax: { value: hf.gradientMax },
         uLightmap: { value: this.lightmap.texture },
         uSunRadiance: { value: new THREE.Vector3(20, 19, 18) },
         uSkyAmbient: { value: new THREE.Vector3(0.6, 0.8, 1.2) },
@@ -533,9 +524,12 @@ void main(){
 }
 `;
 
+
 const TERRAIN_FRAG = /* glsl */ `
 precision highp float;
 ${TERRAIN_COMMON}
+uniform sampler2D uSurface;     // rg = gradient, b = water, a = local relief
+uniform float uGradMax;
 uniform sampler2D uLightmap;
 uniform vec3 uSunRadiance;
 uniform vec3 uSkyAmbient;
@@ -549,108 +543,131 @@ in float vMorph;
 in float vDist;
 out vec4 fragColor;
 
-uniform sampler2D uNormalA; uniform float uNormalSizeA; uniform float uNormalStepA;
-uniform sampler2D uNormalB; uniform float uNormalSizeB; uniform float uNormalStepB;
-
-vec3 heightNormal(vec2 w){
-  vec3 ga = sampleHeightGrad(uNormalA, uNormalSizeA, uNormalStepA, w);
-  vec3 gb = sampleHeightGrad(uNormalB, uNormalSizeB, uNormalStepB, w);
-  vec2 g = mix(ga.yz, gb.yz, vMorph) * edgeFade(w);
-  return normalize(vec3(-g.x, 1.0, -g.y));
+float decodeGrad(float v){
+  float u = v * 2.0 - 1.0;
+  return sign(u) * u * u * uGradMax;
 }
 
 void main(){
   vec3 view = vWorld - cameraPosition;
   float dist = length(view);
   vec3 vdir = view / dist;
+  vec2 uv = vWorld.xz / (2.0 * uHalfSize) + 0.5;
 
-  vec3 n = heightNormal(vWorld.xz);
-  vec3 macro = n;
+  vec4 surf = texture(uSurface, uv);
+  float fade = edgeFade(vWorld.xz);
+  vec3 macro = normalize(vec3(-decodeGrad(surf.r) * fade, 1.0, -decodeGrad(surf.g) * fade));
+  float water = surf.b;
+  float relief = surf.a;
 
-  // ---- procedural relief: rock strata near the eye, gentle swell far off --
-  float near = clamp(1.0 - dist / 2600.0, 0.0, 1.0);
-  if (uDetail > 0.5 && near > 0.001) {
-    float amp = near * near;
+  vec3 n = macro;
+  float alt = vWorld.y;
+  float slope = clamp(macro.y, 0.0, 1.0);
+  float steep = 1.0 - slope;
+
+  // ---- procedural relief -------------------------------------------------
+  // Two bands: eroded gullies that read from a few kilometres out, and a fine
+  // grain that only matters when a wingtip is about to touch.
+  if (uDetail > 0.5) {
+    float mid = clamp(1.0 - dist / 7000.0, 0.0, 1.0);
+    float near = clamp(1.0 - dist / 1400.0, 0.0, 1.0);
     vec2 p = vWorld.xz;
-    float e = 1.6;
-    float n0 = ridged(p * 0.021, 4);
-    float nx = ridged((p + vec2(e, 0.0)) * 0.021, 4);
-    float nz = ridged((p + vec2(0.0, e)) * 0.021, 4);
-    vec3 dn = vec3(-(nx - n0), 0.0, -(nz - n0)) * (6.0 * amp);
-    float f0 = fbm(p * 0.13, 3);
-    dn += vec3(-(fbm((p + vec2(0.7, 0.0)) * 0.13, 3) - f0), 0.0, -(fbm((p + vec2(0.0, 0.7)) * 0.13, 3) - f0)) * (2.2 * amp);
+    vec3 dn = vec3(0.0);
+    if (mid > 0.001) {
+      float amp = mid * mid * (0.30 + 1.7 * steep) * (0.35 + 0.9 * relief);
+      float e = 3.0;
+      float r0 = ridged(p * 0.0075, 4);
+      dn += vec3(-(ridged((p + vec2(e, 0.0)) * 0.0075, 4) - r0),
+                 0.0,
+                 -(ridged((p + vec2(0.0, e)) * 0.0075, 4) - r0)) * (95.0 * amp);
+    }
+    if (near > 0.001) {
+      float amp = near * near * (0.5 + 1.2 * steep);
+      float e = 0.7;
+      float f0 = fbm(p * 0.10, 3);
+      dn += vec3(-(fbm((p + vec2(e, 0.0)) * 0.10, 3) - f0),
+                 0.0,
+                 -(fbm((p + vec2(0.0, e)) * 0.10, 3) - f0)) * (5.0 * amp);
+    }
     n = normalize(n + dn);
   }
 
-  float slope = clamp(macro.y, 0.0, 1.0);
-  float steep = 1.0 - slope;
-  float alt = vWorld.y;
-
-  vec2 lm = texture(uLightmap, vWorld.xz / (2.0 * uHalfSize) + 0.5).rg;
+  vec2 lm = texture(uLightmap, uv).rg;
   float shadow = lm.r;
-  float skyVis = clamp(lm.g, 0.05, 1.0);
+  float skyVis = clamp(lm.g, 0.04, 1.0);
 
   // ---- surface mix ---------------------------------------------------------
-  float varLarge = fbm(vWorld.xz * 0.00035, 4);
-  float varMid = fbm(vWorld.xz * 0.0042, 4);
-  float varFine = fbm(vWorld.xz * 0.045, 3);
+  float varLarge = fbm(vWorld.xz * 0.00028, 4);
+  float varMid = fbm(vWorld.xz * 0.0035, 4);
+  float varFine = fbm(vWorld.xz * 0.038, 3);
 
-  // north faces (-Z) keep their snow several hundred metres lower
+  // north faces (-Z) hold their snow a few hundred metres lower
   float aspect = clamp(-macro.z, -1.0, 1.0);
-  float snowLine = uSnowLine - aspect * 260.0 + varLarge * 190.0 + varMid * 60.0;
-  float snow = smoothstep(snowLine, snowLine + 210.0, alt);
-  snow *= smoothstep(0.30, 0.60, slope + varFine * 0.10);   // it slides off cliffs
-  float glacier = smoothstep(0.62, 0.88, slope) * smoothstep(2500.0, 2950.0, alt);
+  float snowLine = uSnowLine - aspect * 240.0 + varLarge * 210.0 + varMid * 70.0;
+  float snow = smoothstep(snowLine, snowLine + 190.0, alt);
+  snow *= smoothstep(0.28, 0.55, slope + varFine * 0.09);   // it slides off cliffs
+  float glacier = smoothstep(0.72, 0.92, slope) * smoothstep(2650.0, 3050.0, alt);
 
-  float treeLine = uTreeLine + varLarge * 180.0 + varMid * 90.0;
-  float forestMask = smoothstep(0.55, 0.78, fbm(vWorld.xz * 0.00075, 4) * 0.5 + 0.62);
-  float forest = (1.0 - smoothstep(treeLine - 160.0, treeLine + 90.0, alt)) * forestMask;
-  forest *= smoothstep(0.24, 0.52, slope);
-  forest *= smoothstep(560.0, 700.0, alt);
+  float treeLine = uTreeLine + varLarge * 200.0 + varMid * 110.0;
+  float forest = (1.0 - smoothstep(treeLine - 200.0, treeLine + 70.0, alt));
+  forest *= smoothstep(0.42, 0.72, fbm(vWorld.xz * 0.00085, 4) * 0.5 + 0.60);
+  forest *= smoothstep(0.20, 0.46, slope);
+  forest *= smoothstep(575.0, 640.0, alt) * (1.0 - water);
 
-  float rock = smoothstep(0.62, 0.30, slope + varFine * 0.12);
-  rock = max(rock, smoothstep(2650.0, 3150.0, alt) * smoothstep(0.55, 0.30, slope));
-  float scree = smoothstep(1750.0, 2250.0, alt) * (1.0 - rock) * (1.0 - snow) * smoothstep(0.75, 0.45, slope);
+  float rock = smoothstep(0.66, 0.34, slope + varFine * 0.10);
+  rock = max(rock, smoothstep(2700.0, 3200.0, alt) * smoothstep(0.58, 0.32, slope));
+  rock = max(rock, smoothstep(0.55, 0.85, relief) * 0.75);
+  float scree = smoothstep(1700.0, 2200.0, alt) * (1.0 - rock) * (1.0 - snow) * smoothstep(0.80, 0.50, slope);
 
-  vec3 meadow = mix(vec3(0.062, 0.098, 0.036), vec3(0.105, 0.135, 0.048), varMid * 0.5 + 0.5);
-  meadow = mix(meadow, vec3(0.135, 0.145, 0.062), smoothstep(0.35, 0.75, varLarge) * smoothstep(1500.0, 900.0, alt));
-  vec3 treeCol = mix(vec3(0.017, 0.031, 0.014), vec3(0.030, 0.049, 0.020), varFine * 0.5 + 0.5);
-  vec3 rockCol = mix(vec3(0.115, 0.106, 0.096), vec3(0.215, 0.200, 0.180), varFine * 0.5 + 0.5);
-  rockCol *= 0.82 + 0.30 * (fbm(vec2(vWorld.y * 0.09, vWorld.x * 0.004), 3) * 0.5 + 0.5); // strata
-  vec3 screeCol = vec3(0.175, 0.163, 0.148) * (0.85 + 0.3 * varFine);
-  vec3 snowCol = vec3(0.72, 0.76, 0.83);
-  vec3 iceCol = vec3(0.46, 0.60, 0.72);
+  // ---- albedos (linear) ---------------------------------------------------
+  vec3 meadow = mix(vec3(0.048, 0.082, 0.028), vec3(0.098, 0.128, 0.042), varMid * 0.5 + 0.5);
+  meadow = mix(meadow, vec3(0.125, 0.135, 0.055),
+               smoothstep(0.30, 0.72, varLarge) * smoothstep(1600.0, 850.0, alt));
+  meadow *= 0.85 + 0.30 * (varFine * 0.5 + 0.5);
+
+  vec3 treeCol = mix(vec3(0.014, 0.026, 0.012), vec3(0.028, 0.044, 0.019), varFine * 0.5 + 0.5);
+  // canopy grain: breaks the flat green when skimming the treetops
+  treeCol *= 0.7 + 0.6 * (fbm(vWorld.xz * 0.55, 2) * 0.5 + 0.5) * clamp(1.0 - dist / 900.0, 0.0, 1.0);
+
+  float strata = fbm(vec2(alt * 0.055, (vWorld.x + vWorld.z) * 0.0035), 3);
+  vec3 rockCol = mix(vec3(0.085, 0.078, 0.072), vec3(0.230, 0.214, 0.196), varFine * 0.5 + 0.5);
+  rockCol *= 0.80 + 0.36 * (strata * 0.5 + 0.5);
+  vec3 screeCol = vec3(0.150, 0.140, 0.128) * (0.85 + 0.32 * varFine);
+  vec3 snowCol = vec3(0.74, 0.78, 0.85);
+  vec3 iceCol = vec3(0.40, 0.55, 0.68);
+  vec3 lakeBed = vec3(0.030, 0.045, 0.038);
 
   vec3 albedo = meadow;
   albedo = mix(albedo, treeCol, forest);
   albedo = mix(albedo, screeCol, scree);
   albedo = mix(albedo, rockCol, rock);
   albedo = mix(albedo, snowCol, snow);
-  albedo = mix(albedo, iceCol, glacier * snow * 0.55);
+  albedo = mix(albedo, iceCol, glacier * snow * 0.6);
+  albedo = mix(albedo, lakeBed, water);
 
-  // ---- lighting ------------------------------------------------------------
+  // ---- lighting -----------------------------------------------------------
   float ndl = dot(n, uSunDir);
-  float wrap = mix(0.0, 0.35, snow);           // snow scatters light around
+  float wrap = mix(0.02, 0.32, snow);          // snow scatters light around
   float diff = clamp((ndl + wrap) / (1.0 + wrap), 0.0, 1.0);
   vec3 sunT = sunTransmittance(uSunDir);
 
-  // keep the macro shape shadowing even where detail normals point at the sun
-  float macroShade = clamp(dot(macro, uSunDir) * 4.0 + 0.15, 0.0, 1.0);
+  // keep the macro shape shadowing even where detail normals face the sun
+  float macroShade = clamp(dot(macro, uSunDir) * 5.0 + 0.12, 0.0, 1.0);
   float sun = diff * shadow * macroShade;
 
   vec3 col = albedo * uSunRadiance * sun;
-  col += albedo * uSkyAmbient * skyVis * (0.42 + 0.58 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0));
-  // bounce off the valley floor / surrounding snow
-  col += albedo * uSunRadiance * sunT * 0.045 * skyVis * clamp(1.0 - n.y, 0.0, 1.0) * shadow;
+  col += albedo * uSkyAmbient * skyVis * (0.40 + 0.60 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0));
+  // bounce off the valley floor and the surrounding snowfields
+  col += albedo * uSunRadiance * sunT * 0.05 * skyVis * clamp(1.0 - n.y, 0.0, 1.0) * shadow;
 
-  // specular: snow sparkle and wet rock
-  float gloss = mix(0.06, 0.55, snow) + glacier * 0.3;
+  // specular: snow sparkle, wet rock, glacier ice
+  float gloss = mix(0.05, 0.5, snow) + glacier * 0.35 + water * 0.5;
   vec3 hv = normalize(uSunDir - vdir);
-  float spec = pow(clamp(dot(n, hv), 0.0, 1.0), mix(12.0, 90.0, snow)) * gloss;
-  col += uSunRadiance * sunT * spec * shadow * 0.09;
+  float spec = pow(clamp(dot(n, hv), 0.0, 1.0), mix(16.0, 110.0, snow)) * gloss;
+  col += uSunRadiance * sunT * spec * shadow * 0.10;
 
-  // snow subsurface glow when looking toward the sun
-  col += snowCol * uSunRadiance * sunT * pow(clamp(dot(vdir, uSunDir), 0.0, 1.0), 6.0) * snow * 0.035 * shadow;
+  // forward-scattered glow through snow crystals
+  col += snowCol * uSunRadiance * sunT * pow(clamp(dot(vdir, uSunDir), 0.0, 1.0), 6.0) * snow * 0.03 * shadow;
 
   col = aerial(col, dist, vdir, (vWorld.y + cameraPosition.y) * 0.5, uSunDir);
   fragColor = vec4(col * uExposure, 1.0);

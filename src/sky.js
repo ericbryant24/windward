@@ -1,5 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { NOISE, SKY } from './shaders/lib.js';
+import { ATMO } from './shaders/atmosphere-constants.js';
 
 /** Times of day the player can pick, tuned for how the Alps actually read. */
 export const TIME_PRESETS = {
@@ -146,9 +147,7 @@ export class Sky {
   }
 }
 
-const BETA_R = [0.053, 0.104, 0.235];
-const BETA_M = 0.021;
-const SKY_GAIN = 18.3;
+const { betaR: BETA_R, betaM: BETA_M, gain: SKY_GAIN } = ATMO;
 
 function airMassJS(cosZenith) {
   const c = Math.max(0, Math.min(1, cosZenith));
@@ -170,22 +169,22 @@ function skyRadianceJS(dx, dy, dz, sky) {
   const sc = sky.uniforms.uSunColor.value;
   const sun = [sc.x * t[0], sc.y * t[1], sc.z * t[2]];
   const phaseR = 0.05968310365 * (1 + cosT * cosT);
-  const g = 0.76;
+  const g = ATMO.mieG;
   const phaseM =
     (0.07957747 * (1 - g * g)) / Math.pow(Math.max(1 + g * g - 2 * g * cosT, 1e-4), 1.5);
-  const msTint = [0.42, 0.56, 0.85];
-  const msK = 0.22 * (0.3 + 0.7 * smoothstepJS(-0.1, 0.3, s.y));
-  const mScat = Math.min(m, 7);
+  const msTint = ATMO.msTint;
+  const msK = ATMO.msFill * (0.3 + 0.7 * smoothstepJS(-0.1, 0.3, s.y));
+  const mScat = Math.min(m, ATMO.scatterAirMassCap);
   const sunColor = [sc.x, sc.y, sc.z];
   const out = [0, 0, 0];
   for (let i = 0; i < 3; i++) {
-    const inR = (1 - Math.exp(-BETA_R[i] * mScat)) * phaseR;
-    const inM = (1 - Math.exp(-BETA_M * mScat * haze)) * phaseM * 0.55;
+    const inR = (1 - Math.exp(-BETA_R[i] * mScat)) * phaseR * (1 - ATMO.mieShare);
+    const inM = (1 - Math.exp(-BETA_M * mScat * haze)) * phaseM * ATMO.mieShare;
     out[i] =
       sun[i] * (inR + inM) * SKY_GAIN +
       sunColor[i] * msTint[i] * (1 - Math.exp(-BETA_R[i] * mScat * 0.55)) * msK;
   }
-  const pale = smoothstepJS(1.6, 9.0, m) * 0.62;
+  const pale = smoothstepJS(ATMO.paleFrom, ATMO.paleTo, m) * ATMO.paleAmount;
   const lum = out[0] * 0.29 + out[1] * 0.53 + out[2] * 0.18;
   const warm = [1.06, 1.0, 0.94];
   for (let i = 0; i < 3; i++) out[i] += (lum * warm[i] - out[i]) * pale;
@@ -195,4 +194,10 @@ function skyRadianceJS(dx, dy, dz, sky) {
 function smoothstepJS(a, b, x) {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
+}
+
+/** Test hook: evaluate the JS mirror of the sky model in a given direction. */
+export function skyRadianceAt(sky, dir) {
+  const l = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+  return skyRadianceJS(dir[0] / l, dir[1] / l, dir[2] / l, sky);
 }

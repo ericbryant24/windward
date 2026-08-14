@@ -20,6 +20,63 @@ export class Heightfield {
     this.mips = [];
     this.mipTextures = [];
     this.#buildMips();
+    this.#buildSurfaceTexture();
+  }
+
+  /**
+   * Surface map for shading, mipmapped so distant slopes filter instead of
+   * shimmering. Deriving normals from the height texture per fragment gave
+   * blocky bands (the bilinear derivative is piecewise constant); one filtered
+   * lookup is both smoother and cheaper.
+   *
+   *   R,G  terrain gradient, signed-sqrt encoded for precision near flat
+   *   B    water mask
+   *   A    local relief over a 3x3 cell, for texture variation
+   */
+  #buildSurfaceTexture() {
+    const n = this.size;
+    const h = this.heights;
+    const step = this.step;
+    const data = new Uint8Array(n * n * 4);
+    const GMAX = 8;
+    const enc = (g) => {
+      const u = Math.sign(g) * Math.sqrt(Math.min(Math.abs(g) / GMAX, 1));
+      return Math.max(0, Math.min(255, Math.round((u * 0.5 + 0.5) * 255)));
+    };
+    for (let j = 0; j < n; j++) {
+      const jm = j > 0 ? j - 1 : 0;
+      const jp = j < n - 1 ? j + 1 : n - 1;
+      for (let i = 0; i < n; i++) {
+        const im = i > 0 ? i - 1 : 0;
+        const ip = i < n - 1 ? i + 1 : n - 1;
+        const c = j * n + i;
+        const gx = (h[j * n + ip] - h[j * n + im]) / ((ip - im) * step);
+        const gz = (h[jp * n + i] - h[jm * n + i]) / ((jp - jm) * step);
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const jj of [jm, j, jp]) {
+          for (const ii of [im, i, ip]) {
+            const v = h[jj * n + ii];
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+          }
+        }
+        const q = c * 4;
+        data[q] = enc(gx);
+        data[q + 1] = enc(gz);
+        data[q + 2] = this.water[c] * 255;
+        data[q + 3] = Math.min(255, Math.round(((hi - lo) / step) * 90));
+      }
+    }
+    const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.UnsignedByteType);
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.anisotropy = 4;
+    tex.needsUpdate = true;
+    this.surfaceTexture = tex;
+    this.gradientMax = GMAX;
   }
 
   static async load(url = 'data/jungfrau.png', onProgress = () => {}) {
