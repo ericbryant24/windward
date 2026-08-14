@@ -649,8 +649,6 @@ void main(){
   float ndl = dot(n, uSunDir);
   float wrap = mix(0.02, 0.32, snow);          // snow scatters light around
   float diff = clamp((ndl + wrap) / (1.0 + wrap), 0.0, 1.0);
-  vec3 sunT = sunTransmittance(uSunDir);
-
   // keep the macro shape shadowing even where detail normals face the sun
   float macroShade = clamp(dot(macro, uSunDir) * 5.0 + 0.12, 0.0, 1.0);
   float sun = diff * shadow * macroShade;
@@ -658,16 +656,16 @@ void main(){
   vec3 col = albedo * uSunRadiance * sun;
   col += albedo * uSkyAmbient * skyVis * (0.40 + 0.60 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0));
   // bounce off the valley floor and the surrounding snowfields
-  col += albedo * uSunRadiance * sunT * 0.05 * skyVis * clamp(1.0 - n.y, 0.0, 1.0) * shadow;
+  col += albedo * uSunRadiance * 0.05 * skyVis * clamp(1.0 - n.y, 0.0, 1.0) * shadow;
 
   // specular: snow sparkle, wet rock, glacier ice
   float gloss = mix(0.05, 0.5, snow) + glacier * 0.35 + water * 0.5;
   vec3 hv = normalize(uSunDir - vdir);
   float spec = pow(clamp(dot(n, hv), 0.0, 1.0), mix(16.0, 110.0, snow)) * gloss;
-  col += uSunRadiance * sunT * spec * shadow * 0.10;
+  col += uSunRadiance * spec * shadow * 0.10;
 
   // forward-scattered glow through snow crystals
-  col += snowCol * uSunRadiance * sunT * pow(clamp(dot(vdir, uSunDir), 0.0, 1.0), 6.0) * snow * 0.03 * shadow;
+  col += snowCol * uSunRadiance * pow(clamp(dot(vdir, uSunDir), 0.0, 1.0), 6.0) * snow * 0.03 * shadow;
 
   col = aerial(col, dist, vdir, (vWorld.y + cameraPosition.y) * 0.5, uSunDir);
   fragColor = vec4(col * uExposure, 1.0);

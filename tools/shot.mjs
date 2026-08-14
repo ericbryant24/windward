@@ -34,6 +34,8 @@ try {
 } catch {
   logs.push('[timeout] never became ready');
 }
+const evalArg = rest.find((a) => a.startsWith('--eval='));
+if (evalArg) await page.evaluate(evalArg.slice(7));
 await page.waitForTimeout(wait);
 
 const info = await page.evaluate(() => ({

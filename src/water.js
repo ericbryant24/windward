@@ -101,12 +101,12 @@ export function createLakes(heightfield, sky) {
           vec3 refl = skyRadiance(r, uSunDir);
           float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(-vdir, n), 0.0, 1.0), 5.0);
 
-          vec3 col = body * (uSkyAmbient * 0.35 + uSunRadiance * sunTransmittance(uSunDir) * max(uSunDir.y, 0.0) * 0.06);
+          vec3 col = body * (uSkyAmbient * 0.35 + uSunRadiance * max(uSunDir.y, 0.0) * 0.06);
           col = mix(col, refl, clamp(fres, 0.0, 1.0));
 
           vec3 hv = normalize(uSunDir - vdir);
           float spec = pow(clamp(dot(n, hv), 0.0, 1.0), 260.0);
-          col += uSunRadiance * sunTransmittance(uSunDir) * spec * 1.6 * fade;
+          col += uSunRadiance * spec * 1.6 * fade;
 
           col = aerial(col, dist, vdir, (uLevel + cameraPosition.y) * 0.5, uSunDir);
           fragColor = vec4(col * uExposure, shore);

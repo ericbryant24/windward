@@ -143,7 +143,9 @@ export class Sky {
       out.y += c[1] * w;
       out.z += c[2] * w;
     }
-    return out.multiplyScalar(Math.PI * 0.55);
+    // Empirical: the analytic dome under-reports the light bouncing between
+    // snowfields and haze, and shaded slopes read as black without it.
+    return out.multiplyScalar(2.45);
   }
 }
 
