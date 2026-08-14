@@ -15,9 +15,25 @@ const isMobile =
   /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || matchMedia('(pointer: coarse)').matches;
 
 const QUALITY = {
-  low: { gridN: 12, maxDepth: 7, baseRange: 1400, lightmapSize: 512, detail: 0, pixelRatio: 1 },
-  med: { gridN: 16, maxDepth: 7, baseRange: 1400, lightmapSize: 768, detail: 1, pixelRatio: 1.5 },
-  high: { gridN: 20, maxDepth: 7, baseRange: 1700, lightmapSize: 1024, detail: 1, pixelRatio: 2 },
+  low: { gridN: 12, maxDepth: 7, baseRange: 1400, lightmapSize: 512, detail: 0, pixelRatio: 1, trees: false },
+  med: {
+    gridN: 16,
+    maxDepth: 7,
+    baseRange: 1400,
+    lightmapSize: 768,
+    detail: 1,
+    pixelRatio: 1.5,
+    treeOptions: { radius: 500, spacing: 17, maxInstances: 1600 },
+  },
+  high: {
+    gridN: 20,
+    maxDepth: 7,
+    baseRange: 1700,
+    lightmapSize: 1024,
+    detail: 1,
+    pixelRatio: 2,
+    treeOptions: { radius: 700, spacing: 14, maxInstances: 3200 },
+  },
 };
 
 const state = { ready: false };
@@ -90,7 +106,7 @@ async function boot() {
   const controls = new Controls(uiRoot);
   controls.setVisible(false);
   const audio = new Audio();
-  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes, audio });
+  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes, audio, quality: QUALITY[qualityName] });
   game.setBaseFov(baseFov);
 
   const applyLighting = () => {

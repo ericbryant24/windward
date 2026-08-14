@@ -2,6 +2,7 @@ import * as THREE from '../vendor/three.module.js';
 import { Air, Glider } from './flight.js';
 import { createAircraft } from './aircraft.js';
 import { World, createThermalClouds } from './world.js';
+import { Trees } from './trees.js';
 import { formatTime } from './hud.js';
 
 const CAMERA_MODES = ['chase', 'far', 'cockpit'];
@@ -12,7 +13,7 @@ const STORE_KEY = 'windward.progress.v1';
  * flight.js; this is everything that turns flying into a game.
  */
 export class Game {
-  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio }) {
+  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio, quality }) {
     this.audio = audio;
     this.renderer = renderer;
     this.scene = scene;
@@ -34,6 +35,11 @@ export class Game {
 
     this.clouds = createThermalClouds(this.air, sky);
     scene.add(this.clouds);
+
+    if (quality?.trees !== false) {
+      this.trees = new Trees(heightfield, sky, quality?.treeOptions);
+      scene.add(this.trees.mesh);
+    }
 
     this.state = 'menu';
     this.mode = 'free';
@@ -154,6 +160,7 @@ export class Game {
     if (this.state === 'flying') this.#simulate(dt);
     if (this.state !== 'menu') this.#placeCamera(false, dt);
 
+    this.trees?.update(dt, this.camera.position);
     this.aircraft.position.copy(this.glider.position);
     this.aircraft.quaternion.copy(this.glider.quaternion);
     this.aircraft.visible = this.state !== 'menu' && CAMERA_MODES[this.cameraMode] !== 'cockpit';
@@ -442,6 +449,7 @@ export class Game {
   setLighting(sunRadiance, skyAmbient) {
     this.world.setLighting(sunRadiance, skyAmbient);
     this.clouds.userData.setLighting(sunRadiance, skyAmbient);
+    this.trees?.setLighting(sunRadiance, skyAmbient);
     for (const m of this.aircraft.userData.materials) {
       m.uniforms.uSunRadiance.value.copy(sunRadiance);
       m.uniforms.uSkyAmbient.value.copy(skyAmbient);

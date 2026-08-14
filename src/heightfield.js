@@ -20,7 +20,56 @@ export class Heightfield {
     this.mips = [];
     this.mipTextures = [];
     this.#buildMips();
+    this.#buildForestMask();
     this.#buildSurfaceTexture();
+  }
+
+  /**
+   * Where the forest grows: below a wandering treeline, off the cliffs, in
+   * patches. Baked on a coarse grid so the terrain shader and the instanced
+   * trees agree about which slopes are wooded — the shader reads it out of the
+   * surface texture, the tree placer samples it directly.
+   */
+  #buildForestMask() {
+    const n = 768;
+    const mask = new Float32Array(n * n);
+    const step = (this.halfSize * 2) / (n - 1);
+    const nrm = new THREE.Vector3();
+    for (let j = 0; j < n; j++) {
+      const z = -this.halfSize + j * step;
+      for (let i = 0; i < n; i++) {
+        const x = -this.halfSize + i * step;
+        const h = this.heightAt(x, z);
+        if (h < 600 || this.isWater(x, z)) continue;
+        const treeLine = 1980 + fbm2(x * 0.00028, z * 0.00028, 4) * 240;
+        const alt = 1 - smoothstep(treeLine - 220, treeLine + 60, h);
+        if (alt <= 0) continue;
+        this.normalAt(x, z, 60, nrm);
+        const slope = smoothstep(0.22, 0.5, nrm.y) * (1 - smoothstep(0.97, 1.0, nrm.y) * 0.35);
+        const patch = smoothstep(0.4, 0.78, fbm2(x * 0.00085, z * 0.00085, 4) * 0.5 + 0.6);
+        mask[j * n + i] = alt * slope * patch;
+      }
+    }
+    this.forestMask = mask;
+    this.forestSize = n;
+    this.forestStep = step;
+  }
+
+  /** Forest density 0..1 at a world position. */
+  forestAt(x, z) {
+    const n = this.forestSize;
+    const fx = Math.min(n - 1.001, Math.max(0, (x + this.halfSize) / this.forestStep));
+    const fz = Math.min(n - 1.001, Math.max(0, (z + this.halfSize) / this.forestStep));
+    const i = fx | 0;
+    const j = fz | 0;
+    const dx = fx - i;
+    const dz = fz - j;
+    const m = this.forestMask;
+    const a = m[j * n + i];
+    const b = m[j * n + i + 1];
+    const c = m[(j + 1) * n + i];
+    const d = m[(j + 1) * n + i + 1];
+    return (a * (1 - dx) + b * dx) * (1 - dz) + (c * (1 - dx) + d * dx) * dz;
   }
 
   /**
@@ -31,7 +80,7 @@ export class Heightfield {
    *
    *   R,G  terrain gradient, signed-sqrt encoded for precision near flat
    *   B    water mask
-   *   A    local relief over a 3x3 cell, for texture variation
+   *   A    forest density
    */
   #buildSurfaceTexture() {
     const n = this.size;
@@ -52,20 +101,13 @@ export class Heightfield {
         const c = j * n + i;
         const gx = (h[j * n + ip] - h[j * n + im]) / ((ip - im) * step);
         const gz = (h[jp * n + i] - h[jm * n + i]) / ((jp - jm) * step);
-        let lo = Infinity;
-        let hi = -Infinity;
-        for (const jj of [jm, j, jp]) {
-          for (const ii of [im, i, ip]) {
-            const v = h[jj * n + ii];
-            if (v < lo) lo = v;
-            if (v > hi) hi = v;
-          }
-        }
         const q = c * 4;
         data[q] = enc(gx);
         data[q + 1] = enc(gz);
         data[q + 2] = this.water[c] * 255;
-        data[q + 3] = Math.min(255, Math.round(((hi - lo) / step) * 90));
+        data[q + 3] = Math.round(
+          255 * this.forestAt(-this.halfSize + i * step, -this.halfSize + j * step)
+        );
       }
     }
     const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.UnsignedByteType);
@@ -201,4 +243,44 @@ export class Heightfield {
     const lim = this.halfSize - margin;
     return x > -lim && x < lim && z > -lim && z < lim;
   }
+}
+
+// ---------------------------------------------------------------- noise ---
+// Small deterministic value-noise, used only for the baked masks.
+function hash2(x, y) {
+  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function vnoise2(x, y) {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
+  const uy = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+  const a = hash2(ix, iy);
+  const b = hash2(ix + 1, iy);
+  const c = hash2(ix, iy + 1);
+  const d = hash2(ix + 1, iy + 1);
+  return (a * (1 - ux) + b * ux) * (1 - uy) + (c * (1 - ux) + d * ux) * uy;
+}
+
+export function fbm2(x, y, octaves = 4) {
+  let amp = 0.5;
+  let sum = 0;
+  for (let i = 0; i < octaves; i++) {
+    sum += amp * (vnoise2(x, y) * 2 - 1);
+    const nx = 0.8 * x + 0.6 * y;
+    const ny = -0.6 * x + 0.8 * y;
+    x = nx * 2.02;
+    y = ny * 2.02;
+    amp *= 0.5;
+  }
+  return sum;
+}
+
+function smoothstep(a, b, x) {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
 }

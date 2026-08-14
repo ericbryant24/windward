@@ -560,7 +560,9 @@ void main(){
   float fade = edgeFade(vWorld.xz);
   vec3 macro = normalize(vec3(-decodeGrad(surf.r) * fade, 1.0, -decodeGrad(surf.g) * fade));
   float water = surf.b;
-  float relief = surf.a;
+  float forestMask = surf.a;
+  // steepness stands in for local roughness now that A carries the forest
+  float relief = clamp(length(vec2(decodeGrad(surf.r), decodeGrad(surf.g))) * 0.55, 0.0, 1.0);
 
   vec3 n = macro;
   float alt = vWorld.y;
@@ -610,11 +612,9 @@ void main(){
   snow *= smoothstep(0.28, 0.55, slope + varFine * 0.09);   // it slides off cliffs
   float glacier = smoothstep(0.72, 0.92, slope) * smoothstep(2650.0, 3050.0, alt);
 
-  float treeLine = uTreeLine + varLarge * 200.0 + varMid * 110.0;
-  float forest = (1.0 - smoothstep(treeLine - 200.0, treeLine + 70.0, alt));
-  forest *= smoothstep(0.42, 0.72, fbm(vWorld.xz * 0.00085, 4) * 0.5 + 0.60);
-  forest *= smoothstep(0.20, 0.46, slope);
-  forest *= smoothstep(575.0, 640.0, alt) * (1.0 - water);
+  // The forest comes from the baked mask so the painted canopy and the
+  // instanced trees standing on it always agree.
+  float forest = smoothstep(0.05, 0.45, forestMask) * (1.0 - water);
 
   float rock = smoothstep(0.66, 0.34, slope + varFine * 0.10);
   rock = max(rock, smoothstep(2700.0, 3200.0, alt) * smoothstep(0.58, 0.32, slope));

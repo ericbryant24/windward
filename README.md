@@ -88,6 +88,11 @@ sky occlusion in the other. Over 38 km of relief that beats a real-time shadow
 map on both quality and cost, and it is what makes the Eiger's north face read
 as a north face. Changing the time of day re-bakes it in about a second.
 
+**Forests** are baked once into a density mask that both the terrain shader and
+the tree placer read, so the painted canopy and the conifers standing on it can
+never disagree about where the woods are. The trees themselves are one
+instanced draw whose buffer is rebuilt as the player moves.
+
 **Shading normals** come from a mipmapped gradient map baked from the
 heightfield, not from per-fragment height derivatives — the derivative of a
 bilinear patch is piecewise constant, which shows up as blocky bands. One
@@ -113,6 +118,7 @@ src/
   sky.js              sun position, sky dome, JS mirror of the sky model
   water.js            the two lakes
   world.js            landmarks, race gates, thermal cumulus
+  trees.js            near-field instanced conifers
   flight.js           air mass and glider dynamics
   aircraft.js         the sailplane, built procedurally
   game.js             modes, scoring, camera, progression
