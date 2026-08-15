@@ -348,7 +348,7 @@ function emptyMesh(cutoff) {
  * Packing beats extra attributes: a dense city tile is a quarter of a million
  * vertices and every float is a megabyte.
  */
-function packStyle(typeId, material, part, ox, oz) {
+export function packStyle(typeId, material, part, ox, oz) {
   let h = (Math.imul(ox | 0, 374761393) + Math.imul(oz | 0, 668265263)) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   const seed = (h >>> 0) % 256;
@@ -361,7 +361,7 @@ function push(pos, nrm, style, x, y, z, nx, ny, nz, sty, u) {
   style.push(sty, u);
 }
 
-function emitWalls(pos, nrm, style, ring, n, base, top, sty) {
+export function emitWalls(pos, nrm, style, ring, n, base, top, sty) {
   let run = 0;
   for (let k = 0; k < n; k++) {
     const ax = ring[k * 2];
@@ -379,24 +379,27 @@ function emitWalls(pos, nrm, style, ring, n, base, top, sty) {
     const u0 = run;
     const u1 = run + len;
     run = u1;
+    // Wound so the outward face is the front face. The ring is
+    // counter-clockwise in x/z, which puts the geometric normal of a
+    // naively-ordered triangle on the inside — see tools/geometry-test.mjs.
     push(pos, nrm, style, ax, base, az, nx, 0, nz, sty, u0);
+    push(pos, nrm, style, bx, top, bz, nx, 0, nz, sty, u1);
     push(pos, nrm, style, bx, base, bz, nx, 0, nz, sty, u1);
-    push(pos, nrm, style, bx, top, bz, nx, 0, nz, sty, u1);
     push(pos, nrm, style, ax, base, az, nx, 0, nz, sty, u0);
-    push(pos, nrm, style, bx, top, bz, nx, 0, nz, sty, u1);
     push(pos, nrm, style, ax, top, az, nx, 0, nz, sty, u0);
+    push(pos, nrm, style, bx, top, bz, nx, 0, nz, sty, u1);
   }
 }
 
-function emitFlatRoof(pos, nrm, style, ring, n, y, sty) {
+export function emitFlatRoof(pos, nrm, style, ring, n, y, sty) {
   for (const [a, b, c] of earcut(ring, n)) {
     push(pos, nrm, style, ring[a * 2], y, ring[a * 2 + 1], 0, 1, 0, sty, 0);
-    push(pos, nrm, style, ring[b * 2], y, ring[b * 2 + 1], 0, 1, 0, sty, 0);
     push(pos, nrm, style, ring[c * 2], y, ring[c * 2 + 1], 0, 1, 0, sty, 0);
+    push(pos, nrm, style, ring[b * 2], y, ring[b * 2 + 1], 0, 1, 0, sty, 0);
   }
 }
 
-function emitRoof(pos, nrm, style, ring, n, eaves, height, kind, angle, sty) {
+export function emitRoof(pos, nrm, style, ring, n, eaves, height, kind, angle, sty) {
   if (height < 0.4 || kind === ROOF_KIND.FLAT) {
     emitFlatRoof(pos, nrm, style, ring, n, eaves + 0.35, sty);
     return;
@@ -424,7 +427,7 @@ function emitRoof(pos, nrm, style, ring, n, eaves, height, kind, angle, sty) {
 }
 
 /** Fan every edge up to a single apex over the centroid: pyramids and spires. */
-function emitApexRoof(pos, nrm, style, ring, n, eaves, height, sty) {
+export function emitApexRoof(pos, nrm, style, ring, n, eaves, height, sty) {
   let cx = 0;
   let cz = 0;
   for (let k = 0; k < n; k++) {
@@ -445,13 +448,13 @@ function emitApexRoof(pos, nrm, style, ring, n, eaves, height, sty) {
     const ny = Math.hypot(bx - ax, bz - az) * 0.6;
     const l = Math.hypot(nx, ny, nz) || 1;
     push(pos, nrm, style, ax, eaves, az, nx / l, ny / l, nz / l, sty, 0);
-    push(pos, nrm, style, bx, eaves, bz, nx / l, ny / l, nz / l, sty, 0);
     push(pos, nrm, style, cx, ay, cz, nx / l, ny / l, nz / l, sty, 0);
+    push(pos, nrm, style, bx, eaves, bz, nx / l, ny / l, nz / l, sty, 0);
   }
 }
 
 /** One flat plane tilted along the building's short axis. */
-function emitSkillionRoof(pos, nrm, style, ring, n, eaves, height, angle, sty) {
+export function emitSkillionRoof(pos, nrm, style, ring, n, eaves, height, angle, sty) {
   const ux = Math.cos(angle);
   const uz = Math.sin(angle);
   const ext = extents(ring, n, ux, uz);
@@ -464,7 +467,7 @@ function emitSkillionRoof(pos, nrm, style, ring, n, eaves, height, angle, sty) {
   const nx = (uz * (height / span)) * inv;
   const nz = (-ux * (height / span)) * inv;
   for (const [a, b, c] of earcut(ring, n)) {
-    for (const i of [a, b, c]) {
+    for (const i of [a, c, b]) {
       const x = ring[i * 2];
       const z = ring[i * 2 + 1];
       push(pos, nrm, style, x, yAt(x, z), z, nx, inv, nz, sty, 0);
@@ -473,7 +476,7 @@ function emitSkillionRoof(pos, nrm, style, ring, n, eaves, height, angle, sty) {
 }
 
 /** Mansard: a steep skirt inset to a flat cap. */
-function emitSkirtRoof(pos, nrm, style, ring, n, eaves, height, sty) {
+export function emitSkirtRoof(pos, nrm, style, ring, n, eaves, height, sty) {
   let cx = 0;
   let cz = 0;
   for (let k = 0; k < n; k++) {
@@ -506,11 +509,11 @@ function emitSkirtRoof(pos, nrm, style, ring, n, eaves, height, sty) {
     const ny = 0.45;
     const k2 = 1 / Math.hypot(nx, ny, nz);
     push(pos, nrm, style, ax, eaves, az, nx * k2, ny * k2, nz * k2, sty, 0);
+    push(pos, nrm, style, cxb, capY, czb, nx * k2, ny * k2, nz * k2, sty, 0);
     push(pos, nrm, style, bx, eaves, bz, nx * k2, ny * k2, nz * k2, sty, 0);
-    push(pos, nrm, style, cxb, capY, czb, nx * k2, ny * k2, nz * k2, sty, 0);
     push(pos, nrm, style, ax, eaves, az, nx * k2, ny * k2, nz * k2, sty, 0);
-    push(pos, nrm, style, cxb, capY, czb, nx * k2, ny * k2, nz * k2, sty, 0);
     push(pos, nrm, style, cxa, capY, cza, nx * k2, ny * k2, nz * k2, sty, 0);
+    push(pos, nrm, style, cxb, capY, czb, nx * k2, ny * k2, nz * k2, sty, 0);
   }
   emitFlatRoof(pos, nrm, style, cap, n, capY, sty);
 }
@@ -519,7 +522,7 @@ function emitSkirtRoof(pos, nrm, style, ring, n, eaves, height, sty) {
  * Gabled roof over the footprint's principal axis, with an eaves overhang.
  * The ridge runs along the long side, which is what a real alpine roof does.
  */
-function emitGableRoof(pos, nrm, style, ring, n, eaves, height, angle, sty) {
+export function emitGableRoof(pos, nrm, style, ring, n, eaves, height, angle, sty) {
   let ux = Math.cos(angle);
   let uz = Math.sin(angle);
   let ext = extents(ring, n, ux, uz);
@@ -551,10 +554,12 @@ function emitGableRoof(pos, nrm, style, ring, n, eaves, height, angle, sty) {
   const nearN = [uz * slope * inv, inv, -ux * slope * inv];
   const farN = [-uz * slope * inv, inv, ux * slope * inv];
 
+  // Reversed for the same reason the walls are: the outward face has to be
+  // the front face or culling removes exactly the side you are looking at.
   const tri = (p, q, r, nn) => {
     push(pos, nrm, style, p[0], p[1], p[2], nn[0], nn[1], nn[2], sty, 0);
-    push(pos, nrm, style, q[0], q[1], q[2], nn[0], nn[1], nn[2], sty, 0);
     push(pos, nrm, style, r[0], r[1], r[2], nn[0], nn[1], nn[2], sty, 0);
+    push(pos, nrm, style, q[0], q[1], q[2], nn[0], nn[1], nn[2], sty, 0);
   };
   tri(a, r1, r0, nearN);
   tri(a, b, r1, nearN);
@@ -573,7 +578,7 @@ function emitGableRoof(pos, nrm, style, ring, n, eaves, height, angle, sty) {
  * above largely because of this clutter — an unbroken plane of tar is the
  * giveaway that a skyline was generated rather than photographed.
  */
-function emitRoofClutter(pos, nrm, style, ring, n, y, ox, oz, wallSty, roofSty) {
+export function emitRoofClutter(pos, nrm, style, ring, n, y, ox, oz, wallSty, roofSty) {
   let minX = Infinity;
   let maxX = -Infinity;
   let minZ = Infinity;
@@ -624,7 +629,7 @@ function extents(ring, n, ux, uz) {
 }
 
 /** Ear clipping for a simple counter-clockwise polygon. */
-function earcut(ring, n) {
+export function earcut(ring, n) {
   const idx = [];
   for (let i = 0; i < n; i++) idx.push(i);
   const tris = [];
