@@ -849,3 +849,23 @@ body {
   content: ' ?';
   opacity: 0.7;
 }
+
+/* Keyboard focus needs to be visible; the pointer never sees this. */
+#ui button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * The flying is the content, so the 3D view keeps moving — but the interface
+ * around it has no business animating for someone who asked it not to.
+ */
+@media (prefers-reduced-motion: reduce) {
+  #ui *,
+  #ui *::before,
+  #ui *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

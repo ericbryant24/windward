@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/ericbryant24/windward#readme",
   "dependencies": {
+    "esbuild": "^0.28.2",
     "playwright": "^1.62.1",
     "pngjs": "^7.0.0",
     "three": "^0.185.1"

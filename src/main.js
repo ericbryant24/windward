@@ -39,6 +39,25 @@ const QUALITY = {
 const state = { ready: false };
 window.WINDWARD = state;
 
+// Sandboxed frames and private browsing can make storage throw on access, not
+// just on write, so every read goes through here too.
+const store = {
+  get(key, fallback = null) {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* preferences just will not persist */
+    }
+  },
+};
+
 const hud = new Hud(uiRoot);
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -75,8 +94,10 @@ addEventListener('orientationchange', () => setTimeout(resize, 150));
 
 async function boot() {
   hud.setProgress(0.02, 'reading the terrain…');
-  const hf = await Heightfield.load('data/jungfrau.png', (p) =>
-    hud.setProgress(p * 0.5, 'reading the terrain…')
+  const hf = await Heightfield.load(
+    'data/jungfrau.png',
+    (p) => hud.setProgress(p * 0.5, 'reading the terrain…'),
+    window.WINDWARD_EMBED ?? null
   );
   await frame();
 
@@ -84,7 +105,7 @@ async function boot() {
   const sky = new Sky(renderer);
   scene.add(sky.mesh);
 
-  let qualityName = params.get('q') || localStorage.getItem('windward.quality') || (isMobile ? 'med' : 'high');
+  let qualityName = params.get('q') || store.get('windward.quality') || (isMobile ? 'med' : 'high');
   if (!QUALITY[qualityName]) qualityName = 'med';
   renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY[qualityName].pixelRatio));
   resize();
@@ -96,7 +117,7 @@ async function boot() {
   const lakes = createLakes(hf, sky);
   scene.add(lakes.group);
 
-  const timeName = params.get('time') || localStorage.getItem('windward.time') || 'afternoon';
+  const timeName = params.get('time') || store.get('windward.time') || 'afternoon';
   sky.setTime(TIME_PRESETS[timeName] ? timeName : 'afternoon');
 
   hud.setProgress(0.66, 'tracing the shadows…');
@@ -148,7 +169,7 @@ async function boot() {
         selectSegment(btn);
         audio.start();
         audio.setEnabled(value === '1');
-        localStorage.setItem('windward.sound', value);
+        store.set('windward.sound', value);
         break;
       case 'resume':
       case 'pause':
@@ -163,7 +184,7 @@ async function boot() {
       case 'time': {
         selectSegment(btn);
         sky.setTime(value);
-        localStorage.setItem('windward.time', value);
+        store.set('windward.time', value);
         hud.toast(`${TIME_PRESETS[value].name} — re-lighting…`);
         await frame();
         await bakeLight(terrain);
@@ -173,7 +194,7 @@ async function boot() {
       }
       case 'quality':
         selectSegment(btn);
-        localStorage.setItem('windward.quality', value);
+        store.set('windward.quality', value);
         hud.toast('Quality changes apply on reload');
         break;
       case 'input':
@@ -214,7 +235,7 @@ async function boot() {
 
   selectByValue('time', timeName);
   selectByValue('quality', qualityName);
-  const soundPref = localStorage.getItem('windward.sound') ?? '1';
+  const soundPref = store.get('windward.sound', '1');
   audio.setEnabled(soundPref === '1');
   selectByValue('sound', soundPref);
 

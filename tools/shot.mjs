@@ -28,7 +28,9 @@ const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push('[pageerror] ' + (e.stack || e.message)));
 
-await page.goto(`http://localhost:8080/index.html${query}`, { waitUntil: 'load' });
+const urlArg = rest.find((a) => a.startsWith('--url='));
+const target = urlArg ? urlArg.slice(6) : 'http://localhost:8080/index.html';
+await page.goto(`${target}${query}`, { waitUntil: 'load' });
 try {
   await page.waitForFunction(() => window.WINDWARD?.ready || window.WINDWARD?.error, { timeout: 90000 });
 } catch {

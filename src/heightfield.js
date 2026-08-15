@@ -121,26 +121,44 @@ export class Heightfield {
     this.gradientMax = GMAX;
   }
 
-  static async load(url = 'data/jungfrau.png', onProgress = () => {}) {
-    const meta = await fetch(url.replace(/\.png$/, '.json')).then((r) => r.json());
+  /**
+   * @param {string} url PNG to fetch; the metadata sits beside it as .json.
+   * @param {(fraction:number)=>void} onProgress
+   * @param {{meta:object, png:string}} [embedded] base64 payload instead of a
+   *   fetch, for the single-file build where there is nothing to fetch from.
+   */
+  static async load(url = 'data/jungfrau.png', onProgress = () => {}, embedded = null) {
+    let meta;
+    let blob;
 
-    // Stream the PNG so the loading bar reflects reality on a slow phone.
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`heightfield: HTTP ${res.status}`);
-    const total = Number(res.headers.get('content-length')) || 2.8e6;
-    const chunks = [];
-    let received = 0;
-    const reader = res.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.length;
-      onProgress(Math.min(0.98, received / total));
+    if (embedded) {
+      meta = embedded.meta;
+      const bin = atob(embedded.png);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      blob = new Blob([bytes], { type: 'image/png' });
+      onProgress(1);
+    } else {
+      meta = await fetch(url.replace(/\.png$/, '.json')).then((r) => r.json());
+
+      // Stream the PNG so the loading bar reflects reality on a slow phone.
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`heightfield: HTTP ${res.status}`);
+      const total = Number(res.headers.get('content-length')) || 2.8e6;
+      const chunks = [];
+      let received = 0;
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        onProgress(Math.min(0.98, received / total));
+      }
+      onProgress(1);
+      blob = new Blob(chunks, { type: 'image/png' });
     }
-    onProgress(1);
 
-    const blob = new Blob(chunks, { type: 'image/png' });
     const bitmap = await createImageBitmap(blob);
     const { size } = meta;
     const canvas = document.createElement('canvas');
