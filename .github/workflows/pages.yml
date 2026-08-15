@@ -33,9 +33,18 @@ jobs:
         with:
           enablement: true
 
+      # Publish only what the browser actually loads — the baking and test
+      # tooling has no business on the public site, and leaving it out keeps
+      # the upload to the game itself.
+      - name: Stage the runtime files
+        run: |
+          mkdir -p _site
+          cp index.html .nojekyll _site/
+          cp -r src vendor data _site/
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: _site
 
       - id: deployment
         uses: actions/deploy-pages@v4
