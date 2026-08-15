@@ -15,7 +15,7 @@ const isMobile =
   /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || matchMedia('(pointer: coarse)').matches;
 
 const QUALITY = {
-  low: { gridN: 12, maxDepth: 7, baseRange: 1400, lightmapSize: 512, detail: 0, pixelRatio: 1, trees: false },
+  low: { gridN: 12, maxDepth: 7, baseRange: 1400, lightmapSize: 512, detail: 0, pixelRatio: 1, trees: false, buildings: false },
   med: {
     gridN: 16,
     maxDepth: 7,
@@ -23,7 +23,7 @@ const QUALITY = {
     lightmapSize: 768,
     detail: 1,
     pixelRatio: 1.5,
-    treeOptions: { radius: 500, spacing: 17, maxInstances: 1600 },
+    treeOptions: { radius: 850, spacing: 17, maxInstances: 3000 },
   },
   high: {
     gridN: 20,
@@ -32,7 +32,7 @@ const QUALITY = {
     lightmapSize: 1024,
     detail: 1,
     pixelRatio: 2,
-    treeOptions: { radius: 700, spacing: 14, maxInstances: 3200 },
+    treeOptions: { radius: 1150, spacing: 15, maxInstances: 5200 },
   },
 };
 
@@ -153,6 +153,8 @@ async function boot() {
       speed: Math.round(game.glider.airspeed * 3.6),
       vario: +game.glider.varioSmooth.toFixed(2),
       score: Math.round(game.score),
+      trees: game.trees?.count ?? 0,
+      settlements: game.buildings?.chunks.length ?? 0,
       calls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
     }),

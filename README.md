@@ -6,13 +6,19 @@ You fly a sailplane, and the only fuel you have is altitude.
 Portrait phone is the primary target — one thumb on the stick, two buttons for
 airbrakes and boost — but it plays fine in landscape and on a desktop keyboard.
 
+Play it at **https://ericbryant24.github.io/windward/** — the branch deploys
+itself to GitHub Pages on every push.
+
+To run it locally:
+
 ```
 python3 -m http.server 8080      # or any static file server
 open http://localhost:8080
 ```
 
 There is no build step. The whole thing is ES modules, a vendored copy of
-three.js, and one 2.6 MB terrain file.
+three.js, and one 2.6 MB terrain file. `node tools/build-standalone.mjs` folds
+all of that into a single 4 MB HTML file if you need one that fetches nothing.
 
 ## The place
 
@@ -90,8 +96,18 @@ as a north face. Changing the time of day re-bakes it in about a second.
 
 **Forests** are baked once into a density mask that both the terrain shader and
 the tree placer read, so the painted canopy and the conifers standing on it can
-never disagree about where the woods are. The trees themselves are one
-instanced draw whose buffer is rebuilt as the player moves.
+never disagree about where the woods are. The trees are one instanced draw
+whose buffer is rebuilt as the player moves; the fade has to finish inside the
+rebuilt disc with room to fly on before the next rebuild, or trees wink into
+existence at the rim. Beyond the near field they thin onto a fixed lattice
+rather than by distance, so approaching a forest never makes trees pop in.
+
+**Villages** — Interlaken, Grindelwald, Lauterbrunnen, Wengen, Mürren, and the
+stations at Kleine Scheidegg and Jungfraujoch — are placed once at load, one
+instanced draw each so the frustum can discard the ones behind you. Chalets sit
+with their ridge along the contour and their uphill side buried in the slope,
+which is most of what makes a scatter of boxes read as Swiss rather than
+suburban. The Sphinx observatory and Piz Gloria are modelled separately.
 
 **Shading normals** come from a mipmapped gradient map baked from the
 heightfield, not from per-fragment height derivatives — the derivative of a
@@ -119,6 +135,7 @@ src/
   water.js            the two lakes
   world.js            landmarks, race gates, thermal cumulus
   trees.js            near-field instanced conifers
+  buildings.js        villages, mountain stations, landmark structures
   flight.js           air mass and glider dynamics
   aircraft.js         the sailplane, built procedurally
   game.js             modes, scoring, camera, progression

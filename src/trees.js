@@ -11,11 +11,19 @@ import { NOISE, SKY, OUTPUT } from './shaders/lib.js';
  * so the trees always stand where the woods are.
  */
 export class Trees {
-  constructor(heightfield, sky, { radius = 650, spacing = 15, maxInstances = 3000 } = {}) {
+  constructor(heightfield, sky, { radius = 1150, spacing = 15, maxInstances = 3800 } = {}) {
     this.hf = heightfield;
     this.radius = radius;
     this.spacing = spacing;
     this.max = maxInstances;
+    // The buffer only covers a disc around wherever it was last rebuilt, so the
+    // fade has to finish inside that disc with room for the player to fly on
+    // before the next rebuild — otherwise trees wink into existence at the rim.
+    this.rebuildStep = 90;
+    this.fadeEnd = radius - this.rebuildStep - 30;
+    // Half the trees stop well short: the far field is thinned on a stable
+    // checkerboard rather than by distance, so nothing pops as you approach.
+    this.nearFadeEnd = Math.min(this.fadeEnd * 0.42, 480);
     this._last = new THREE.Vector3(1e9, 0, 1e9);
 
     this.material = new THREE.ShaderMaterial({
@@ -24,21 +32,21 @@ export class Trees {
         ...sky.uniforms,
         uSunRadiance: { value: new THREE.Vector3(2.2, 2, 1.6) },
         uSkyAmbient: { value: new THREE.Vector3(0.5, 0.7, 1.1) },
-        uRadius: { value: radius },
+
         uSway: { value: 0 },
       },
       vertexShader: /* glsl */ `
         in vec4 aTree;   // xyz = base, w = height
-        in vec2 aTint;   // x = colour jitter, y = lean
-        uniform float uRadius;
+        in vec3 aTint;   // x = colour jitter, y = lean, z = distance it fades out at
         uniform float uSway;
         out vec3 vWorld;
         out vec3 vNormal;
         out float vTint;
         void main(){
           float dist = distance(cameraPosition.xz, aTree.xz);
-          // shrink into the ground over the last stretch instead of popping
-          float fade = 1.0 - smoothstep(uRadius * 0.82, uRadius, dist);
+          // grow up out of the ground over a long band instead of appearing
+          float fade = 1.0 - smoothstep(aTint.z * 0.74, aTint.z, dist);
+          if (fade <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
           float h = aTree.w * fade;
 
           vec3 p = position;
@@ -135,9 +143,9 @@ export class Trees {
     geom.setIndex(idx);
 
     this.treeData = new Float32Array(this.max * 4);
-    this.tintData = new Float32Array(this.max * 2);
+    this.tintData = new Float32Array(this.max * 3);
     this.treeAttr = new THREE.InstancedBufferAttribute(this.treeData, 4);
-    this.tintAttr = new THREE.InstancedBufferAttribute(this.tintData, 2);
+    this.tintAttr = new THREE.InstancedBufferAttribute(this.tintData, 3);
     this.treeAttr.setUsage(THREE.DynamicDrawUsage);
     this.tintAttr.setUsage(THREE.DynamicDrawUsage);
     geom.setAttribute('aTree', this.treeAttr);
@@ -151,23 +159,43 @@ export class Trees {
     this.material.uniforms.uSway.value += dt * 0.9;
     // Rebuilding on every frame would be wasted work; the buffer only needs to
     // change once the player has actually moved into new ground.
-    if (position.distanceToSquared(this._last) < 110 * 110) return;
+    if (position.distanceToSquared(this._last) < this.rebuildStep * this.rebuildStep) return;
     this._last.copy(position);
     this.#rebuild(position);
   }
 
+  /**
+   * Fill the buffer near-field first. If the cap is ever reached it is the
+   * distant, already-thinned trees that get dropped, never the ones under the
+   * wingtip — filling in raw scan order would leave a lopsided wedge of forest
+   * on whichever side of the map the loop happened to start.
+   */
   #rebuild(centre) {
+    this.count = 0;
+    this.#scatter(centre, false);
+    this.#scatter(centre, true);
+    this.treeAttr.needsUpdate = true;
+    this.tintAttr.needsUpdate = true;
+    this.mesh.geometry.instanceCount = this.count;
+  }
+
+  #scatter(centre, far) {
     const hf = this.hf;
     const s = this.spacing;
-    const r = this.radius;
+    const r = far ? this.fadeEnd : this.nearFadeEnd;
     const gx0 = Math.floor((centre.x - r) / s);
     const gx1 = Math.ceil((centre.x + r) / s);
     const gz0 = Math.floor((centre.z - r) / s);
     const gz1 = Math.ceil((centre.z + r) / s);
-    let n = 0;
+    let n = this.count;
 
     for (let gz = gz0; gz <= gz1 && n < this.max; gz++) {
       for (let gx = gx0; gx <= gx1 && n < this.max; gx++) {
+        // Beyond the near field only every fourth cell is used, on a fixed
+        // lattice rather than by distance, so thinning never pops.
+        const isFar = gx % 2 === 0 && gz % 2 === 0;
+        if (far !== isFar) continue;
+
         // deterministic jitter so trees do not crawl as the buffer rebuilds
         const h1 = hash2i(gx, gz);
         const h2 = hash2i(gx + 9871, gz - 3313);
@@ -175,28 +203,26 @@ export class Trees {
         const z = (gz + h2) * s;
         const dx = x - centre.x;
         const dz = z - centre.z;
-        if (dx * dx + dz * dz > r * r) continue;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > r * r) continue;
+        if (far && d2 < this.nearFadeEnd * this.nearFadeEnd * 0.25) continue;
 
         const density = hf.forestAt(x, z);
         if (density < 0.06) continue;
-        const h3 = hash2i(gx - 517, gz + 2281);
-        if (h3 > density * 1.45) continue;
+        // the far field is already sparse; trim it a little further
+        if (hash2i(gx - 517, gz + 2281) > density * (far ? 1.15 : 1.5)) continue;
 
         const y = hf.heightAt(x, z);
-        const h4 = hash2i(gx + 71, gz + 137);
         this.treeData[n * 4] = x;
         this.treeData[n * 4 + 1] = y - 0.6;
         this.treeData[n * 4 + 2] = z;
-        this.treeData[n * 4 + 3] = 11 + h4 * 13 + density * 5;
-        this.tintData[n * 2] = hash2i(gx * 3 + 5, gz * 7 - 11);
-        this.tintData[n * 2 + 1] = (h2 - 0.5) * 0.16;
+        this.treeData[n * 4 + 3] = 11 + hash2i(gx + 71, gz + 137) * 13 + density * 5;
+        this.tintData[n * 3] = hash2i(gx * 3 + 5, gz * 7 - 11);
+        this.tintData[n * 3 + 1] = (h2 - 0.5) * 0.16;
+        this.tintData[n * 3 + 2] = far ? this.fadeEnd : this.nearFadeEnd;
         n++;
       }
     }
-
-    this.treeAttr.needsUpdate = true;
-    this.tintAttr.needsUpdate = true;
-    this.mesh.geometry.instanceCount = n;
     this.count = n;
   }
 

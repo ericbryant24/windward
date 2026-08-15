@@ -3,6 +3,7 @@ import { Air, Glider } from './flight.js';
 import { createAircraft } from './aircraft.js';
 import { World, createThermalClouds } from './world.js';
 import { Trees } from './trees.js';
+import { Buildings } from './buildings.js';
 import { formatTime } from './hud.js';
 
 const CAMERA_MODES = ['chase', 'far', 'cockpit'];
@@ -39,6 +40,10 @@ export class Game {
     if (quality?.trees !== false) {
       this.trees = new Trees(heightfield, sky, quality?.treeOptions);
       scene.add(this.trees.mesh);
+    }
+    if (quality?.buildings !== false) {
+      this.buildings = new Buildings(heightfield, sky, this.world.places);
+      scene.add(this.buildings.group);
     }
 
     this.state = 'menu';
@@ -161,6 +166,7 @@ export class Game {
     if (this.state !== 'menu') this.#placeCamera(false, dt);
 
     this.trees?.update(dt, this.camera.position);
+    this.buildings?.update(this.camera.position);
     this.aircraft.position.copy(this.glider.position);
     this.aircraft.quaternion.copy(this.glider.quaternion);
     this.aircraft.visible = this.state !== 'menu' && CAMERA_MODES[this.cameraMode] !== 'cockpit';
@@ -450,6 +456,7 @@ export class Game {
     this.world.setLighting(sunRadiance, skyAmbient);
     this.clouds.userData.setLighting(sunRadiance, skyAmbient);
     this.trees?.setLighting(sunRadiance, skyAmbient);
+    this.buildings?.setLighting(sunRadiance, skyAmbient);
     for (const m of this.aircraft.userData.materials) {
       m.uniforms.uSunRadiance.value.copy(sunRadiance);
       m.uniforms.uSkyAmbient.value.copy(skyAmbient);
