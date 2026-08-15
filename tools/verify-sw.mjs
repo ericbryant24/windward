@@ -390,9 +390,12 @@ await step('reloads with no network', async () => {
 });
 
 await step('flies with no network', async () => {
-  await page.click('[data-action="start"][data-value="free"]');
+  await page.click('[data-action="fly"]');
   await page.waitForSelector('.flight.open', { timeout: 10000 });
-  const before = await page.evaluate(() => window.WINDWARD.stats());
+  const before = await page.evaluate(() => ({
+    ...window.WINDWARD.stats(),
+    hdg: window.WINDWARD.game.glider.headingDeg,
+  }));
   const box = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
   await page.mouse.move(box.w * 0.2, box.h * 0.75);
   await page.mouse.down();
@@ -400,11 +403,18 @@ await step('flies with no network', async () => {
   await page.waitForTimeout(3000);
   await page.mouse.up();
   const after = await page.evaluate(() => window.WINDWARD.stats());
+  const heading = await page.evaluate(() => window.WINDWARD.game.glider.headingDeg);
   const bank = await page.evaluate(() => window.WINDWARD.game.glider.bankDeg);
+  const turned = Math.abs(((heading - before.hdg + 540) % 360) - 180);
   if (after.phase !== 'flying') throw new Error(`phase ${after.phase}`);
   if (!isFinite(after.alt) || after.alt < 200) throw new Error(`altitude ${after.alt}`);
-  if (bank < 12) throw new Error(`stick right produced bank ${bank.toFixed(1)}deg`);
-  return `alt ${before.alt}->${after.alt} m, bank ${bank.toFixed(0)}deg`;
+  // The stick is a roll rate, not a bank angle: held over for three seconds it
+  // can go all the way round, so the sign and the magnitude of the bank at the
+  // end are not the question. Whether the aeroplane responded is.
+  if (Math.abs(bank) < 12 && turned < 25) {
+    throw new Error(`stick right produced bank ${bank.toFixed(1)}deg, turn ${turned.toFixed(1)}deg`);
+  }
+  return `alt ${before.alt}->${after.alt} m, bank ${bank.toFixed(0)}deg, turned ${turned.toFixed(0)}deg`;
 });
 
 await step('the world is really there, not a stub', async () => {

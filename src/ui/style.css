@@ -6,6 +6,12 @@
   --accent-warm: #ffcf70;
   --danger: #ff6b5e;
   --lift: #6ff2a8;
+  /* Medals as ink. The pips are discs with a fill, a rim and a glow and need
+     their own three hexes; these are the same three medals read as text, so
+     bronze is lifted clear of the panel it sits on. */
+  --medal-bronze: #c8843f;
+  --medal-silver: #dbe6f0;
+  --medal-gold: #ffcf70;
   --panel: rgba(9, 18, 28, 0.62);
   --panel-solid: rgba(9, 18, 28, 0.9);
   --stroke: rgba(150, 190, 220, 0.22);
@@ -171,97 +177,42 @@ body {
   letter-spacing: 0.08em;
 }
 
-.maps {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-/* The map is the biggest decision on this screen, so it is made first and
-   made obvious. Everything below it is a choice about how to fly; this is a
-   choice about where. */
-.map-card {
-  text-align: left;
-  background: var(--panel);
-  border: 1px solid var(--stroke);
-  border-radius: 16px;
-  padding: 13px 14px;
+/* One button, and it is the biggest thing on the screen. There is no mode to
+   choose before flying, so nothing may stand between the menu and the air. */
+.fly-btn {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  opacity: 0.62;
-  transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--accent);
+  background: linear-gradient(180deg, rgba(97, 210, 255, 0.26), rgba(97, 210, 255, 0.12));
+  box-shadow: 0 8px 30px rgba(8, 40, 60, 0.5);
+  transition: transform 0.12s ease, background 0.15s ease;
 }
 
-.map-card.on {
-  opacity: 1;
-  border-color: var(--accent);
-  background: rgba(20, 44, 62, 0.72);
-  box-shadow: 0 0 0 1px var(--accent) inset;
-}
-
-.map-card:active {
+.fly-btn:active {
   transform: scale(0.985);
+  background: rgba(97, 210, 255, 0.34);
 }
 
-.map-name {
-  font-size: 18px;
+.fly-go {
+  font-size: 22px;
   font-weight: 650;
-  letter-spacing: 0.02em;
-}
-
-.map-sub {
-  font-size: 11px;
-  color: var(--accent);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
   text-transform: uppercase;
 }
 
-.map-blurb {
+.fly-where {
   font-size: 12px;
-  color: var(--dim);
-  line-height: 1.4;
-  margin-top: 2px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(226, 240, 252, 0.7);
 }
 
-.modes {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.mode-card {
-  text-align: left;
-  background: var(--panel);
-  border: 1px solid var(--stroke);
-  border-radius: 16px;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease;
-}
-
-.mode-card:active {
-  transform: scale(0.985);
-  border-color: var(--accent);
-  background: rgba(20, 44, 62, 0.7);
-}
-
-.mode-name {
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.mode-desc {
-  font-size: 12.5px;
-  color: var(--dim);
-  line-height: 1.45;
-}
-
-/* The checklist. Its job is to make the map look like it has unfinished
+/* The checklist. Its job is to make the game look like it has unfinished
    business in it, so the medal you have not won reads louder than the ones
    you have. */
 .tasks {
@@ -269,6 +220,116 @@ body {
   border: 1px solid var(--stroke);
   border-radius: 16px;
   padding: 13px 14px 8px;
+}
+
+/* Every challenge in the game as one strip of dots — both levels, no gap
+   between them. It is the only place the whole shape of the thing is visible
+   at once, and it is why the two maps read as one game. */
+.pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0 8px;
+}
+
+.pip {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid rgba(150, 190, 220, 0.45);
+}
+
+.pip.shut {
+  border-style: dashed;
+  border-color: rgba(150, 190, 220, 0.22);
+}
+
+.pip.m1 {
+  background: #96552a;
+  border-color: #b06f3c;
+}
+
+.pip.m2 {
+  background: #b9c6d2;
+  border-color: #e2ecf5;
+}
+
+.pip.m3 {
+  background: var(--accent-warm);
+  border-color: #ffe4a8;
+  box-shadow: 0 0 8px rgba(255, 207, 112, 0.6);
+}
+
+/* Two levels of one game, so they are tabs on one list rather than two
+   screens. Switching them costs nothing; only launching something on the far
+   side of the pair costs a reload. */
+.level-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0 10px;
+}
+
+.level-tab {
+  text-align: left;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0.68;
+  transition: opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.level-tab.on {
+  opacity: 1;
+  border-color: var(--accent);
+  background: rgba(20, 44, 62, 0.7);
+}
+
+.level-tab span {
+  font-size: 14.5px;
+  font-weight: 620;
+}
+
+.level-tab em {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.level-tab b {
+  font-size: 11px;
+  color: var(--accent-warm);
+  font-weight: 500;
+}
+
+/* Which one you are standing in, so the reload is never a surprise. */
+.level-tab.here em::after {
+  content: ' · loaded';
+  color: var(--accent);
+}
+
+.level-blurb {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+.level-travel:not(:empty) {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+/* A build with one map baked in has nowhere to travel to. */
+.menu.single .level-tabs,
+.menu.single .level-travel {
+  display: none;
 }
 
 .task-head {
@@ -290,24 +351,38 @@ body {
 }
 
 .task-note {
-  margin: 4px 0 10px;
+  margin: 4px 0 0;
   font-size: 11.5px;
   line-height: 1.45;
   color: var(--dim);
 }
 
-.task-note em {
-  font-style: normal;
-  color: rgba(196, 214, 232, 0.85);
-}
-
+/* A row is a launcher now, not a scoreboard line: the whole thing is the
+   button that puts you at that marker in that aeroplane. */
 .task-row {
+  width: 100%;
   display: grid;
   grid-template-columns: 14px 1fr auto;
   align-items: center;
   gap: 10px;
-  padding: 8px 0;
+  padding: 9px 2px;
+  text-align: left;
+  background: none;
+  border: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
+  transition: background 0.12s ease;
+}
+
+.task-row:active {
+  background: rgba(97, 210, 255, 0.12);
+}
+
+.task-row.locked {
+  opacity: 0.45;
+}
+
+.task-row.locked i {
+  border-style: dashed;
 }
 
 .task-row i {
@@ -339,6 +414,21 @@ body {
 .task-row span {
   display: block;
   font-size: 13.5px;
+}
+
+/* Which ship it is flown in, said before the player commits rather than
+   discovered when the aeroplane changes underneath them. */
+.task-row u {
+  margin-left: 7px;
+  text-decoration: none;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(97, 210, 255, 0.4);
+  border-radius: 6px;
+  padding: 1px 5px;
+  white-space: nowrap;
 }
 
 .task-row em {
@@ -618,6 +708,22 @@ body {
   color: var(--dim);
 }
 
+/* Down the left side, in the one column of the portrait screen that nothing
+   else wants: clear of the toasts above it and well clear of the thumb stick,
+   which owns the bottom 46%. The canvas draws its own rim, so there is no panel
+   here to square off a picture that is round. */
+.minimap {
+  position: absolute;
+  left: calc(var(--safe-l) + 12px);
+  top: calc(var(--safe-t) + 196px);
+  width: min(34vw, 148px);
+  height: min(34vw, 148px);
+  pointer-events: none;
+  /* Above the floating place names, which are pinned to the world and will
+     otherwise wander across the map and write a mountain over a shoreline. */
+  z-index: 2;
+}
+
 .score-chip {
   position: absolute;
   left: calc(var(--safe-l) + 12px);
@@ -673,13 +779,41 @@ body {
   color: var(--accent-warm);
 }
 
-.task em {
+/* The running clock, tinted with the medal it is still inside. Primary,
+   because it is the number the run is actually being scored on. */
+.task em.clock {
   font-style: normal;
-  font-size: 11.5px;
+  font-size: 14px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.task em.clock[data-standing='3'] {
+  color: var(--medal-gold);
+}
+
+.task em.clock[data-standing='2'] {
+  color: var(--medal-silver);
+}
+
+.task em.clock[data-standing='1'] {
+  color: var(--medal-bronze);
+}
+
+.task em.clock[data-standing='0'] {
   color: var(--dim);
 }
 
-.task em.low {
+/* Time left. Small and quiet until it is the thing about to end the flight. */
+.task i {
+  font-style: normal;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+
+.task i.low {
   color: var(--danger);
 }
 
@@ -718,6 +852,23 @@ body {
 .warn.on {
   opacity: 1;
   animation: pulse 0.85s ease-in-out infinite;
+}
+
+/* Two bands, because they ask for different things. The buffet is a buzz you
+   can fly out of by easing off or opening the brakes; an airframe being used
+   up is not, and reading them the same costs the pilot the dive. */
+.warn.buzz {
+  color: var(--accent-warm);
+  text-shadow: 0 0 18px rgba(255, 176, 64, 0.5);
+}
+
+.warn.grave {
+  font-size: 19px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: rgba(255, 60, 40, 0.16);
+  border: 1px solid rgba(255, 60, 40, 0.5);
+  animation-duration: 0.4s;
 }
 
 @keyframes pulse {
@@ -931,6 +1082,28 @@ body {
   border-color: rgba(255, 107, 94, 0.55);
 }
 
+.toast.ask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toast.ask button {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  /* Thumb-sized, because this is the one toast meant to be hit. */
+  padding: 7px 12px;
+}
+
+.toast.ask button:first-of-type {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ----------------------------------------------------------- results --- */
 .results {
   position: absolute;
@@ -1014,6 +1187,14 @@ body {
   .task {
     top: calc(var(--safe-t) + 98px);
   }
+
+  /* A wide screen is a short one: the map moves up under the task chip and is
+     sized off the height, which is the axis that ran out. */
+  .minimap {
+    top: calc(var(--safe-t) + 128px);
+    width: min(26vh, 148px);
+    height: min(26vh, 148px);
+  }
 }
 
 /* ------------------------------------------------------- place labels --- */
@@ -1057,6 +1238,59 @@ body {
 .place-label.unknown span::after {
   content: ' ?';
   opacity: 0.7;
+}
+
+/* The signpost. A hoop is fifty metres across on a map thirty-eight kilometres
+   wide, so the thing that makes a challenge findable is its name hanging in the
+   air above it with the ship and the range on the line underneath. */
+.task-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
+}
+
+.task-label i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  margin: 0 auto 5px;
+  border-radius: 50%;
+  border: 1px solid rgba(150, 190, 220, 0.6);
+}
+
+.task-label.m1 i {
+  background: #96552a;
+  border-color: #b06f3c;
+}
+
+.task-label.m2 i {
+  background: #b9c6d2;
+  border-color: #e2ecf5;
+}
+
+.task-label.m3 i {
+  background: var(--accent-warm);
+  border-color: #ffe4a8;
+}
+
+.task-label span {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: rgba(232, 244, 255, 0.97);
+}
+
+.task-label em {
+  display: block;
+  margin-top: 1px;
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
 }
 
 /* Keyboard focus needs to be visible; the pointer never sees this. */
@@ -1199,6 +1433,35 @@ body {
 
 .gauge em.ship span {
   color: var(--accent);
+}
+
+/* Overspeed wear. Hidden on an undamaged ship so the card stays quiet, and it
+   only ever fills — nothing in a flight puts it back. */
+.gauge em.ship i.wear {
+  display: block;
+  margin-top: 4px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--stroke);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.gauge em.ship i.wear.on {
+  opacity: 1;
+}
+
+.gauge em.ship i.wear u {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: var(--accent-warm);
+  transition: width 0.25s linear;
+}
+
+.gauge em.ship i.wear.bad u {
+  background: var(--danger);
 }
 
 /* Best glide and the approach to the stall, read off this ship's own polar

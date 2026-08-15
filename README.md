@@ -22,7 +22,11 @@ all of that into a single 4 MB HTML file if you need one that fetches nothing.
 
 ## The places
 
-Two maps, picked from the menu or with `?map=`.
+Two levels of one game, picked from the level select or with `?map=`. Switching
+reloads — four megabytes of terrain really do have to be swapped — but nothing
+you have earned belongs to a map: one medal tally, one aeroplane, one list of
+things left to do, and the level select shows both of them whichever one is in
+memory.
 
 **Jungfrau** — 38 × 38 km centred on 46.60 N, 7.93 E, resampled to a 25 m grid
 from public SRTM-derived elevation tiles. Everything is where it should be: the
@@ -54,8 +58,10 @@ is about finding the places where the air is going up faster than you are going
 down:
 
 - **Thermals** form over sun-facing slopes and are marked by cumulus at
-  cloudbase. Circle inside one and you climb. Where they form depends on the
-  time of day, because it depends on which slopes the sun is on.
+  cloudbase. Circle inside one and you climb. Where they form depends on which
+  slopes the sun is on, which is why the sun does not move: the medal ladder is
+  calibrated against one sky, and an hour that halves the lift would quietly be
+  a difficulty setting.
 - **Ridge lift** runs up any face the wind is hitting. Fly along a windward
   ridge, low, and you can stay up indefinitely without circling.
 - **Sink** is everywhere else, and there is a ring of it around every thermal.
@@ -74,18 +80,42 @@ matters. Faster, higher beeps mean better lift.
 | Camera | Double-tap the right half | C |
 | Pause | ❚❚ | Esc or P |
 
-The stick commands a **bank angle** and an **angle of attack**, not raw rates.
-Centre it and the ship rolls level and flies itself. That is a deliberate
-choice: on a phone you cannot afford to be fighting an attitude you did not ask
-for. Tilt steering is available in the menu if you prefer it.
+The stick moves **surfaces**: sideways is aileron and commands a roll rate,
+fore and aft is elevator and commands a pitch rate. There is no bank limit, so
+rolls and loops work. What keeps the ship the right way up when you let go is
+modelled dihedral and static longitudinal stability, not an autopilot. Tilt
+steering is available in the menu if you prefer it.
 
-### Modes
+### Flying, and challenges
 
-- **Free Flight** — no clock. Nineteen landmarks to find, and a ridge-proximity
-  multiplier that pays for flying close to the rock.
-- **Jungfrau Circuit** — eleven gates from the Lauterbrunnen valley, over the
-  Joch, around the Eiger's north face and back. Against the clock.
-- **Height Hunt** — five minutes to get as high as the air will let you.
+There are no game modes. There is one button on the menu and it puts you in the
+air over whichever level is loaded, in whichever aeroplane you picked, with no
+clock: nineteen landmarks to find and a ridge-proximity multiplier that pays for
+flying close to the rock.
+
+Everything else is a **challenge** — fourteen of them, seven per level, standing
+out in the world as hoops with a light column under them. Fly through one and it
+starts; or press it on the level select and you are taken to it. Four kinds,
+all scored on a single number where lower always wins:
+
+| | |
+|---|---|
+| slalom | a run of gates, timed — from a six-gate trench dash to the sixty-kilometre descent of the whole Oberland |
+| collect | markers to gather on one arrival, timed |
+| climb | a fixed height gain, timed |
+| lowpass | hold it under a ceiling for a set time, scored on mean height |
+
+Two rules make a challenge a designed thing rather than a stopwatch:
+
+- **The challenge names the aeroplane.** Starting one puts you in that ship —
+  the jet down the Chicago river, the trainer on the thermal climbs, the
+  ballasted nineteen-metre for the long descents. One calibrated set of medal
+  times per challenge instead of one per aircraft per challenge, and every
+  attempt starts at the same place at the same speed. Free flight lets you fly
+  anything.
+- **They unlock on medals earned anywhere.** Four are open on a fresh save; the
+  rest raise their markers as the count climbs, and the count spans both levels,
+  so golds over the Alps open the lakefront.
 
 Landing counts: put it down slowly on gentle ground and you get the bonus
 instead of the wreck.
@@ -106,7 +136,8 @@ to be precisely the next level's fine mip. Node skirts backstop the rest.
 **Light** is ray-marched into a texture once at load: sun shadow in one channel,
 sky occlusion in the other. Over 38 km of relief that beats a real-time shadow
 map on both quality and cost, and it is what makes the Eiger's north face read
-as a north face. Changing the time of day re-bakes it in about a second.
+as a north face. `?time=` re-bakes it in about a second, which is how the
+calibrator and the screenshot tool see the other hours.
 
 **Forests** are baked once into a density mask that both the terrain shader and
 the tree placer read, so the painted canopy and the conifers standing on it can
@@ -167,16 +198,17 @@ src/
   terrain.js          CDLOD quadtree, terrain shader, lightmap bake
   sky.js              sun position, sky dome, JS mirror of the sky model
   water.js            the two lakes
-  world.js            landmarks, race gates, thermal cumulus
+  world.js            landmarks, gate courses, thermal cumulus
   trees.js            near-field instanced conifers
   buildings.js        OSM footprints, tiled and extruded on demand
   network.js          roads, rails, cables, and the traffic on them
   binary.js           shared loaders for the packed data files
   flight.js           air mass and glider dynamics
   aircraft.js         the sailplane, built procedurally
-  game.js             modes, scoring, camera, progression
+  game.js             rules, scoring, camera, progression
+  challenges.js       the fourteen tasks, their markers, and the medal book
   controls.js         touch stick, keyboard, gamepad, tilt
-  hud.js              instruments and menus
+  hud.js              instruments, level select, menus
   audio.js            procedural wind and variometer
   materials.js        shared lit material and lofting helpers
   shaders/            GLSL shared between modules

@@ -41,7 +41,10 @@ export const FLEET = [
     // you every second you are trying to hold a thermalling turn.
     rollStability: 0.30,
     maxPitchRate: 1.5, // rad/s at full elevator
-    brakeDragFactor: 7.0,
+    // Sized off the dive, not the circuit: fully out, these hold a vertical
+    // dive below Vne, which is the only thing that does. Six to one on
+    // approach, which is what a modern glider's boards really give.
+    brakeDragFactor: 9.5,
     brakeLiftLoss: 0.28,
     boostThrust: 1750, // N — a motorglider's get-out-of-jail card
     boostBurn: 1 / 7, // full tank lasts 7 s
@@ -52,7 +55,7 @@ export const FLEET = [
       chord: 0.95,
       taperPower: 1,
       dihedral: 0.58,
-      sweep: 0.26,
+      sweep: 0.95,
       wingY: -0.03,
       wingZ: -0.15,
       fuseLength: 1,
@@ -85,18 +88,18 @@ export const FLEET = [
     maxRollRate: 2.6,
     rollStability: 0.44, // a trainer is built to right itself
     maxPitchRate: 1.6,
-    brakeDragFactor: 5.5,
+    brakeDragFactor: 11.0, // barn doors, and the ship they are bolted to is slow
     brakeLiftLoss: 0.24,
     boostThrust: 1200,
     boostBurn: 1 / 9,
     boostRecharge: 1 / 22,
-    vne: 48,
+    vne: 54,
     look: {
       span: 7.4,
       chord: 1.34,
       taperPower: 0.55, // nearly constant chord, rounded off at the tip
       dihedral: 0.95,
-      sweep: 0.1,
+      sweep: 0.37,
       wingY: 0.16, // shoulder-mounted, sat up on the pod
       wingZ: -0.1,
       fuseLength: 0.9,
@@ -129,7 +132,7 @@ export const FLEET = [
     maxRollRate: 1.45,
     rollStability: 0.20, // nineteen metres of wing takes its time
     maxPitchRate: 1.15,
-    brakeDragFactor: 6.0,
+    brakeDragFactor: 9.5,
     brakeLiftLoss: 0.3,
     boostThrust: 2600,
     boostBurn: 1 / 6,
@@ -140,7 +143,7 @@ export const FLEET = [
       chord: 0.82,
       taperPower: 1.5,
       dihedral: 1.5, // the span bends visibly under all that water
-      sweep: 0.3,
+      sweep: 1.1,
       wingY: -0.02,
       wingZ: -0.12,
       fuseLength: 1.18,
@@ -174,20 +177,22 @@ export const FLEET = [
     maxRollRate: 2.0,
     rollStability: 0.48, // light, short-span, very stable
     maxPitchRate: 1.8,
-    brakeDragFactor: 4.0,
+    brakeDragFactor: 5.0,
     brakeLiftLoss: 0.2,
     // Not a boost at all but an engine: less shove than the gliders get, and
     // a tank you can run for the better part of a minute.
     boostThrust: 620,
     boostBurn: 1 / 45,
     boostRecharge: 1 / 34,
-    vne: 38,
+    // Wires and struts, but the engine can push it to 142 km/h in level flight
+    // and a redline underneath that would leave it permanently in the buzz.
+    vne: 46,
     look: {
       span: 5.05,
       chord: 1.5,
       taperPower: 0.4,
       dihedral: 0.3,
-      sweep: 0.04,
+      sweep: 0.15,
       wingY: 0.78, // parasol wing on struts, pilot underneath
       wingZ: -0.35,
       fuseLength: 0.62,
@@ -200,6 +205,79 @@ export const FLEET = [
       prop: true,
       body: [0.86, 0.32, 0.09],
       trim: [0.12, 0.12, 0.14],
+    },
+  },
+  {
+    id: 'javelin',
+    name: 'Javelin 9',
+    kind: 'Jet-assisted racer',
+    blurb: 'All turbine and no wing. It accelerates; it does not climb.',
+    // A tonne of aeroplane on nine square metres — nearly three times the
+    // Draco's wing loading, which is where every one of its manners comes
+    // from. It cannot circle in anything, and it does not need to.
+    mass: 1150,
+    wingArea: 9.5,
+    aspectRatio: 8.53,
+    // An intake, a fat body and a wing thick enough to hold fuel. Draggy for a
+    // sailplane; slippery for anything with an engine in it.
+    cd0: 0.018,
+    oswald: 0.78,
+    clSlope: 5.0,
+    // A thin fast section stalls early and means it.
+    alphaStallDeg: 11.0,
+    alphaMaxDeg: 13,
+    alphaMinDeg: -7,
+    trimAlphaDeg: 2.74,
+    // 324 km/h hands off and 437 with the turbine lit. Deliberately clear of
+    // the redline: game.js puts a retried challenge back in the air at a third
+    // over trim, and on this ship that has to still be an airspeed, not a
+    // structural event.
+    trimSpeed: 90,
+    speedStability: 0.16,
+    // Short stiff wings snap between banks — it rolls faster than anything
+    // else here and still turns like a barge, because a six-hundred-metre
+    // circle at trim is arithmetic and no amount of aileron argues with it.
+    maxRollRate: 2.8,
+    rollStability: 0.16, // almost no dihedral: it stays where you put it
+    maxPitchRate: 1.1,
+    brakeDragFactor: 11.0, // proper speedbrake panels, and it needs them
+    brakeLiftLoss: 0.22,
+    // An engine, not a get-out-of-jail card: half a minute of it, and a long
+    // wait afterwards. Thrust is what this ship soars on.
+    boostThrust: 1900,
+    boostBurn: 1 / 34,
+    boostRecharge: 1 / 46,
+    vne: 140, // 504 km/h — flat out and level sits right on the edge of the buzz
+    look: {
+      span: 4.5,
+      chord: 1.75,
+      taperPower: 0.8, // broad to the tip: a clipped delta, not a sailplane
+      dihedral: 0.1,
+      sweep: 2.1, // the tip sits two metres behind the root: about thirty degrees
+      wingY: -0.2, // low-mounted, under the intake trunks
+      wingZ: 0.1,
+      fuseLength: 1.15,
+      fuseWidth: 1.5,
+      tail: 1.2, // a fin big enough to hold a short body straight at 120 m/s
+      canopy: 0.72,
+      foil: 0.075,
+      matte: true, // satin paint, not gelcoat: without it the dark grey reads white
+      jet: true,
+      // A stout, area-ruled body with an engine down the middle of it, rather
+      // than the glider's pod and boom.
+      fuse: [
+        [-3.4, 0.10, 0.10, 0.0],
+        [-2.9, 0.34, 0.30, -0.02],
+        [-2.1, 0.52, 0.46, -0.04],
+        [-1.0, 0.62, 0.56, -0.04],
+        [0.4, 0.66, 0.58, -0.01],
+        [1.8, 0.60, 0.54, 0.02],
+        [3.2, 0.50, 0.48, 0.05],
+        [4.4, 0.42, 0.42, 0.07],
+        [5.4, 0.38, 0.38, 0.08],
+      ],
+      body: [0.17, 0.19, 0.23],
+      trim: [0.86, 0.21, 0.03],
     },
   },
 ];

@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { MEDAL_NAMES, formatMetric } from './challenges.js';
+import { MEDAL_NAMES, formatMetric, formatClock } from './challenges.js';
 import { Air } from './flight.js';
 import { polar, getAircraft } from './fleet.js';
 
@@ -43,11 +43,17 @@ export class Hud {
     this.task = this.el('.task');
     this.taskName = this.el('[data-taskname]');
     this.taskProgress = this.el('[data-taskprogress]');
+    this.taskClock = this.el('[data-taskclock]');
     this.taskTime = this.el('[data-tasktime]');
     this.ship = this.el('[data-ship]');
     this.shipPolar = this.el('[data-shippolar]');
+    this.wear = this.el('.wear');
+    this.wearFill = this.el('.wear u');
     this.flash = this.el('.crash-flash');
     this.offlineBlock = this.el('.offline-block');
+    // The canvas only; what goes on it belongs to src/minimap.js, which the
+    // game hands the world it is drawing.
+    this.minimapCanvas = this.el('.minimap');
 
     this._v = new THREE.Vector3();
     this.polar = polar(getAircraft()); // until the game says which ship it is
@@ -69,7 +75,20 @@ export class Hud {
     setTimeout(() => (this.loading.style.display = 'none'), 700);
   }
 
-  /** Point the menu at a region: its name, its tagline, its course. */
+  /**
+   * Hand the loading screen back for a map change. The reload is real — four
+   * megabytes of terrain have to be swapped — but it must not read as leaving
+   * one game and starting another, so the destination's own loading screen goes
+   * up before this document dies and the arriving one continues it.
+   */
+  showTransition(region) {
+    this.loading.style.display = '';
+    this.loading.classList.remove('gone');
+    this.setRegion(region);
+    this.setProgress(0.04, `crossing to ${region.name}…`);
+  }
+
+  /** Point the menu and the loading screen at a region. */
   setRegion(region) {
     const set = (attr, text) => {
       const el = this.root.querySelector(`[${attr}]`);
@@ -77,64 +96,103 @@ export class Hud {
     };
     set('data-tagline', region.tagline);
     set('data-loadline', region.loadingTagline);
-    set('data-circuitname', region.circuitName);
-    set('data-circuitdesc', region.circuitDesc);
-    set('data-freedesc', region.freeDesc);
-    for (const b of this.root.querySelectorAll('[data-action="map"]')) {
-      b.classList.toggle('on', b.dataset.value === region.id);
-    }
-    // A single-file build carries one map's data and cannot switch, so do not
-    // offer a choice that would only reload the same region. It is also already
-    // as offline as a thing can be, so the download shelf has nothing to say.
+    // A single-file build carries one map's data and cannot travel to the
+    // other. It is also already as offline as a thing can be, so the download
+    // shelf has nothing to say.
     if (window.WINDWARD_REGION) {
-      for (const sel of ['.maps', '.setting.offline']) {
-        const el = this.root.querySelector(sel);
-        if (el) el.style.display = 'none';
-      }
+      this.root.querySelector('.menu').classList.add('single');
+      const el = this.root.querySelector('.setting.offline');
+      if (el) el.style.display = 'none';
     }
-  }
-
-  showMenu(show, { discovered = 0, total = 0, best = {} } = {}) {
-    this.menu.classList.toggle('open', show);
-    if (show) {
-      this.el('[data-discovered]').textContent = `${discovered}/${total}`;
-      const t = best.circuit;
-      this.el('[data-bestcircuit]').textContent = t ? formatTime(t) : '—';
-      this.el('[data-bestalt]').textContent = best.altitude ? `${Math.round(best.altitude)} m` : '—';
-    }
-  }
-
-  showFlight(show) {
-    this.flight.classList.toggle('open', show);
   }
 
   /**
-   * The menu checklist. Challenges are found by flying into them, so this is a
-   * scoreboard rather than a launcher — it says what is out there, where, and
-   * what you have taken off it so far.
+   * The menu, which is a level select. Everything on it spans both maps: one
+   * medal tally, one aircraft, one list of things left to do — the loaded
+   * terrain is just which of the two you can reach without waiting.
    */
-  setChallenges({ rows, total, golds, medalled }) {
-    this.el('[data-goldcount]').textContent = `${golds} of ${total} golds`;
-    this.el('[data-medalcount]').textContent = medalled
-      ? `${medalled}/${total} medalled`
-      : 'none medalled yet';
-    this.el('.task-list').innerHTML = rows
+  showMenu(show, view = null) {
+    this.menu.classList.toggle('open', show);
+    if (!show || !view) return;
+    this.view = view;
+    // Landing on the level you are standing in, the first time. After that the
+    // menu stays where the player last left it.
+    if (!this.level || !view.levels.some((l) => l.id === this.level)) this.level = view.here;
+
+    this.el('[data-flywhere]').textContent = view.levels.find((l) => l.id === view.here)?.name ?? '';
+    this.el('[data-goldcount]').textContent = `${view.golds} of ${view.total} golds`;
+    this.el('[data-medalcount]').textContent = view.medalled
+      ? `${view.medalled} of ${view.total} carry a medal`
+      : 'nothing medalled yet — the map opens up as they do';
+    this.el('.pips').innerHTML = view.levels
+      .flatMap((l) => l.rows.map((r) => `<i class="pip m${r.medal}${r.open ? '' : ' shut'}"></i>`))
+      .join('');
+
+    this.el('.level-tabs').innerHTML = view.levels
       .map(
-        ({ def, medal, best }) => `
-        <div class="task-row m${medal}">
-          <i title="${MEDAL_NAMES[medal]}"></i>
-          <div>
-            <span>${def.name}</span>
-            <em>${def.where} · ${def.blurb}</em>
-          </div>
-          <b>${best == null ? '—' : formatMetric(def, best)}</b>
-        </div>`
+        (l) => `
+        <button class="level-tab${l.id === this.level ? ' on' : ''}${l.id === view.here ? ' here' : ''}"
+                data-action="level" data-value="${l.id}">
+          <span>${l.name}</span>
+          <em>${l.sub}</em>
+          <b>${l.golds}/${l.total} golds</b>
+        </button>`
+      )
+      .join('');
+
+    this.el('[data-discovered]').textContent = `${view.discovered}/${view.places}`;
+    this.el('[data-medalstat]').textContent = `${view.medalled}/${view.total}`;
+    this.el('[data-bestscore]').textContent = view.score ? view.score.toLocaleString('en-US') : '—';
+    this.#drawLevel();
+  }
+
+  /** Switch which level the list is showing. No reload: this is only a list. */
+  selectLevel(id) {
+    if (!this.view || this.level === id) return;
+    this.level = id;
+    for (const b of this.root.querySelectorAll('.level-tab')) {
+      b.classList.toggle('on', b.dataset.value === id);
+    }
+    this.#drawLevel();
+  }
+
+  #drawLevel() {
+    const level = this.view.levels.find((l) => l.id === this.level);
+    if (!level) return;
+    const away = level.id !== this.view.here;
+    this.el('.level-blurb').textContent = level.blurb;
+    this.el('.level-travel').innerHTML = away
+      ? `<button class="btn" data-action="goto" data-value="${level.id}">Fly to ${level.name}</button>`
+      : '';
+    this.el('.task-list').innerHTML = level.rows
+      .map(({ def, ship, medal, best, open }) =>
+        open
+          ? `<button class="task-row m${medal}" data-action="challenge" data-value="${def.id}">
+               <i title="${MEDAL_NAMES[medal]}"></i>
+               <div>
+                 <span>${def.name}<u>${ship.name}</u></span>
+                 <em>${def.where} · ${def.blurb}</em>
+               </div>
+               <b>${best == null ? 'unflown' : formatMetric(def, best)}</b>
+             </button>`
+          : // Named, but not yet standing in the world. Hiding the name as well
+            // would only make the list shorter — what the player needs from
+            // this screen is the shape of what is left, and a row that says
+            // "Locked" five times running is not a shape.
+            `<div class="task-row locked">
+               <i></i>
+               <div>
+                 <span>${def.name}<u>${ship.name}</u></span>
+                 <em>${def.where} · raised at ${def.needs} medals</em>
+               </div>
+               <b>${def.needs} med</b>
+             </div>`
       )
       .join('');
   }
 
-  setMode(mode) {
-    this.flight.dataset.mode = mode;
+  showFlight(show) {
+    this.flight.classList.toggle('open', show);
   }
 
   /**
@@ -184,7 +242,9 @@ export class Hud {
   }
 
   /**
-   * The hangar, and the instruments that go with whichever ship is chosen.
+   * The hangar: which ship plain flying uses. Challenges name their own and
+   * ignore this, which is why the shelf says so on the label rather than
+   * pretending the choice reaches further than it does.
    *
    * Every figure on a card comes out of fleet.js polar(), which reads the same
    * coefficients the flight model does — so the card cannot flatter the ship.
@@ -206,8 +266,11 @@ export class Hud {
         </button>`;
       })
       .join('');
+    this.setShip(list.find((s) => s.id === selectedId) ?? list[0]);
+  }
 
-    const spec = list.find((s) => s.id === selectedId) ?? list[0];
+  /** The instruments follow whatever is actually bolted on, chosen or issued. */
+  setShip(spec) {
     this.polar = polar(spec);
     this.ship.textContent = spec.name;
     this.shipPolar.textContent = `${this.polar.bestLD.toFixed(0)}:1 · ↓${this.polar.minSink.toFixed(1)}`;
@@ -240,9 +303,43 @@ export class Hud {
     }, 2600);
   }
 
+  /**
+   * A toast that waits to be answered, and there is only ever one. Used for
+   * the run you just lost: 2.6 seconds is long enough to read "out of time"
+   * and nowhere near long enough to decide to go again.
+   */
+  ask(text, buttons) {
+    this.dismissAsk();
+    const el = document.createElement('div');
+    el.className = 'toast ask bad';
+    el.innerHTML =
+      `<span>${text}</span>` +
+      buttons.map((b) => `<button data-action="${b.action}">${b.label}</button>`).join('');
+    // Any press answers it, including the one that only means "not now".
+    el.addEventListener('click', () => this.dismissAsk());
+    this._ask = el;
+    this.toastArea.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('in'));
+  }
+
+  dismissAsk() {
+    const el = this._ask;
+    if (!el) return;
+    this._ask = null;
+    el.classList.remove('in');
+    setTimeout(() => el.remove(), 500);
+  }
+
+  /**
+   * Two bands, and they must not read alike at a glance: the stall and the
+   * first flutter are things you fly out of, an airframe being used up is not.
+   */
   setWarning(text) {
-    this.warn.textContent = text || '';
-    this.warn.classList.toggle('on', !!text);
+    const say = text || '';
+    this.warn.textContent = say;
+    this.warn.classList.toggle('on', !!say);
+    this.warn.classList.toggle('buzz', say === 'STALL' || say === 'VNE');
+    this.warn.classList.toggle('grave', say === 'OVERSPEED' || say.startsWith('AIRFRAME'));
   }
 
   /** A hit felt through the screen: harder impacts flash longer and redder. */
@@ -257,7 +354,7 @@ export class Hud {
 
   /** Per-frame instrument refresh. */
   update(state) {
-    const { glider, ground, objective, camera, mode, timer, score, streak, challenge } = state;
+    const { glider, ground, objective, camera, score, streak, challenge } = state;
 
     this.alt.textContent = Math.round(glider.position.y);
     this.agl.textContent = `${Math.max(0, Math.round(glider.position.y - ground))} agl`;
@@ -270,6 +367,13 @@ export class Hud {
     const best = this.polar.bestLDSpeed * thin;
     this.spd.classList.toggle('glide', Math.abs(glider.airspeed - best) < best * 0.07);
     this.spd.classList.toggle('slow', glider.airspeed < this.polar.stallSpeed * thin * 1.08);
+
+    // The airframe never mends inside a flight, so this bar only ever fills.
+    // That is the point of showing it: the second dive is not the first one.
+    const wear = glider.broken ? 1 : glider.damage;
+    this.wear.classList.toggle('on', wear > 0.001);
+    this.wear.classList.toggle('bad', wear > 0.6);
+    this.wearFill.style.width = `${Math.min(100, wear * 100).toFixed(0)}%`;
 
     const v = THREE.MathUtils.clamp(glider.varioSmooth / 5, -1, 1);
     this.varioFill.style.height = `${Math.abs(v) * 50}%`;
@@ -314,11 +418,7 @@ export class Hud {
       this.arrow.style.opacity = '0';
     }
 
-    if (mode === 'circuit') {
-      this.timer.textContent = formatTime(timer);
-    } else {
-      this.timer.textContent = `${Math.round(glider.boost * 100)}%`;
-    }
+    this.timer.textContent = `${Math.round(glider.boost * 100)}%`;
     this.score.textContent = Math.round(score).toLocaleString('en-US');
 
     if (streak > 1.05) {
@@ -332,7 +432,12 @@ export class Hud {
     if (challenge) {
       this.taskName.textContent = challenge.name;
       this.taskProgress.textContent = challenge.progress;
-      this.taskTime.textContent = `${challenge.remaining.toFixed(1)}s`;
+      // Elapsed is the figure a medal ladder is flown against: it says which
+      // rung you are still on for while there is time to fly differently.
+      // Remaining only becomes interesting when it is about to end the run.
+      this.taskClock.textContent = formatClock(challenge.elapsed);
+      this.taskClock.dataset.standing = challenge.standing ?? '';
+      this.taskTime.textContent = `−${formatClock(challenge.remaining)}`;
       this.taskTime.classList.toggle('low', challenge.remaining < 10);
     }
   }
@@ -359,13 +464,6 @@ export class Hud {
   }
 }
 
-export function formatTime(seconds) {
-  if (!isFinite(seconds)) return '—';
-  const m = Math.floor(seconds / 60);
-  const s = seconds - m * 60;
-  return `${m}:${s.toFixed(1).padStart(4, '0')}`;
-}
-
 const TEMPLATE = /* html */ `
 <div class="loading">
   <div class="brand">
@@ -388,64 +486,37 @@ const TEMPLATE = /* html */ `
       <p class="sub" data-tagline>Jungfrau region · real terrain · 38 × 38 km</p>
     </header>
 
-    <div class="maps" data-group="map">
-      <button class="map-card on" data-action="map" data-value="jungfrau">
-        <span class="map-name">Jungfrau</span>
-        <span class="map-sub">38 × 38 km · Switzerland</span>
-        <span class="map-blurb">Ridge lift off the big north faces, thermals over the meadows.</span>
-      </button>
-      <button class="map-card" data-action="map" data-value="chicago">
-        <span class="map-name">Chicago</span>
-        <span class="map-sub">14 × 14 km · Illinois</span>
-        <span class="map-blurb">No hills to lean on. Thermals off hot roofs, and the lake kills you.</span>
-      </button>
-    </div>
-
-    <div class="fleet">
-      <div class="fleet-head"><span>Aircraft</span><b>numbers off its own polar</b></div>
-      <div class="fleet-list"></div>
-    </div>
-
-    <div class="modes">
-      <button class="mode-card" data-action="start" data-value="free">
-        <span class="mode-name">Free Flight</span>
-        <span class="mode-desc" data-freedesc>Hunt thermals, ride the ridges, find every landmark.</span>
-      </button>
-      <button class="mode-card" data-action="start" data-value="circuit">
-        <span class="mode-name" data-circuitname>Jungfrau Circuit</span>
-        <span class="mode-desc" data-circuitdesc>Eleven gates from Lauterbrunnen to the Eiger. Beat the clock.</span>
-      </button>
-      <button class="mode-card" data-action="start" data-value="climb">
-        <span class="mode-name">Height Hunt</span>
-        <span class="mode-desc">Five minutes. Climb as high as the air will let you.</span>
-      </button>
-    </div>
+    <button class="fly-btn" data-action="fly">
+      <span class="fly-go">Fly</span>
+      <span class="fly-where" data-flywhere>Jungfrau</span>
+    </button>
 
     <div class="tasks">
       <div class="task-head">
         <span>Challenges</span>
         <b data-goldcount>0 of 0 golds</b>
       </div>
-      <p class="task-note">Out in the map. Fly into a marker to start one — <em data-medalcount>none medalled yet</em>.</p>
+      <div class="pips"></div>
+      <p class="task-note" data-medalcount>nothing medalled yet</p>
+
+      <div class="level-tabs"></div>
+      <p class="level-blurb"></p>
+      <div class="level-travel"></div>
       <div class="task-list"></div>
     </div>
 
+    <div class="fleet">
+      <div class="fleet-head"><span>Aircraft</span><b>for flying · challenges name their own</b></div>
+      <div class="fleet-list"></div>
+    </div>
+
     <div class="stats">
-      <div><span>Landmarks found</span><b data-discovered>0/0</b></div>
-      <div><span>Best circuit</span><b data-bestcircuit>—</b></div>
-      <div><span>Best climb</span><b data-bestalt>—</b></div>
+      <div><span>Landmarks</span><b data-discovered>0/0</b></div>
+      <div><span>Medalled</span><b data-medalstat>0/0</b></div>
+      <div><span>Best score</span><b data-bestscore>—</b></div>
     </div>
 
     <div class="settings">
-      <div class="setting">
-        <span>Time of day</span>
-        <div class="segmented" data-group="time">
-          <button data-action="time" data-value="morning">Morning</button>
-          <button data-action="time" data-value="midday">Noon</button>
-          <button class="on" data-action="time" data-value="afternoon">Afternoon</button>
-          <button data-action="time" data-value="golden">Golden</button>
-        </div>
-      </div>
       <div class="setting">
         <span>Quality</span>
         <div class="segmented" data-group="quality">
@@ -513,7 +584,7 @@ const TEMPLATE = /* html */ `
     <div class="gauge right">
       <b data-spd>0</b><span class="unit">km/h</span>
       <em data-timer>0:00.0</em>
-      <em class="ship"><b data-ship>—</b><span data-shippolar>—</span></em>
+      <em class="ship"><b data-ship>—</b><span data-shippolar>—</span><i class="wear"><u></u></i></em>
     </div>
   </div>
 
@@ -523,11 +594,14 @@ const TEMPLATE = /* html */ `
     <em class="netto" data-netto>air 0.0</em>
   </div>
 
+  <canvas class="minimap"></canvas>
+
   <div class="score-chip"><b data-score>0</b><span>pts</span></div>
   <div class="task">
     <span data-taskname>—</span>
     <b data-taskprogress>—</b>
-    <em data-tasktime>—</em>
+    <em class="clock" data-taskclock>—</em>
+    <i data-tasktime>—</i>
   </div>
   <div class="streak"></div>
   <div class="warn"></div>

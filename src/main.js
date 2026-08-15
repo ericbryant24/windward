@@ -9,6 +9,7 @@ import { Game } from './game.js';
 import { loadBuildings } from './buildings.js';
 import { loadNetwork } from './network.js';
 import { getRegion, DEFAULT_REGION } from './regions.js';
+import { findChallenge, regionOfChallenge } from './challenges.js';
 import { store } from './store.js';
 import { Audio } from './audio.js';
 import { Offline, formatBytes } from './offline.js';
@@ -138,7 +139,12 @@ async function boot() {
   const lakes = createLakes(hf, sky);
   scene.add(lakes.group);
 
-  const timeName = params.get('time') || store.get('windward.time') || 'afternoon';
+  // Fixed at afternoon for players. Thermals are seeded off the sun, so the
+  // hour is not lighting — it is the strength of every column on the map, and
+  // the medal ladder is calibrated against one of them: at midday the Oberland
+  // Ceiling's gold is 47 s quicker than the best line anyone can fly. ?time=
+  // survives for the calibrator and the screenshot tool, which want the sweep.
+  const timeName = params.get('time') || 'afternoon';
   sky.setTime(TIME_PRESETS[timeName] ? timeName : 'afternoon');
 
   hud.setProgress(0.66, region.loading[2]);
@@ -189,7 +195,7 @@ async function boot() {
     renderer,
     camera,
     stats: () => ({
-      mode: game.mode,
+      challenge: game.challenges.active?.def.id ?? null,
       phase: game.state,
       alt: Math.round(game.glider.position.y),
       speed: Math.round(game.glider.airspeed * 3.6),
@@ -209,12 +215,53 @@ async function boot() {
   });
 
   // ------------------------------------------------------------- input ---
+  /**
+   * Cross to the other level. A region is a different terrain, a different city
+   * and a different sky bake, so the document really does have to be replaced —
+   * but the seam is hidden: the destination's loading screen goes up here,
+   * before this page is torn down, and the arriving page raises the same one
+   * with the same brand on it and finishes the bar.
+   */
+  function travel(id, challenge = null) {
+    if (!id || id === region.id) return;
+    store.set('windward.region', id);
+    const url = new URL(location.href);
+    url.searchParams.set('map', id);
+    if (challenge) url.searchParams.set('challenge', challenge);
+    else url.searchParams.delete('challenge');
+    hud.showTransition(getRegion(id));
+    // One frame, so the browser paints the destination's loading screen before
+    // the navigation freezes this document. Without it the last thing on screen
+    // is the menu of the map being left, and the seam shows.
+    requestAnimationFrame(() => requestAnimationFrame(() => (location.href = url.toString())));
+  }
+
   hud.onAction = async (action, value, btn) => {
     switch (action) {
-      case 'start':
+      case 'fly':
         audio.start();
-        game.startMode(value);
+        game.startFlight();
         break;
+      case 'level':
+        hud.selectLevel(value);
+        break;
+      case 'goto':
+        travel(value);
+        break;
+      case 'challenge': {
+        const def = findChallenge(value);
+        if (!def) break;
+        // The level select lists both maps, so half the things on it are not in
+        // memory. Pressing one of those is a journey, not an error: hand the
+        // challenge id to the next document and it opens straight into it.
+        if (regionOfChallenge(value) !== region.id) {
+          travel(regionOfChallenge(value), value);
+          break;
+        }
+        audio.start();
+        game.startChallenge(def);
+        break;
+      }
       case 'sound':
         selectSegment(btn);
         audio.start();
@@ -229,7 +276,7 @@ async function boot() {
         game.toMenu();
         break;
       case 'restart':
-        game.startMode(game.mode);
+        game.restart();
         break;
       case 'challenge-retry':
         game.retryChallenge();
@@ -237,35 +284,14 @@ async function boot() {
       case 'challenge-resume':
         game.resumeFree();
         break;
-      case 'time': {
-        selectSegment(btn);
-        sky.setTime(value);
-        store.set('windward.time', value);
-        hud.toast(`${TIME_PRESETS[value].name} — re-lighting…`);
-        await frame();
-        await bakeLight(terrain);
-        applyLighting();
-        game.reseedAir();
+      case 'challenge-dismiss':
+        game.dismissChallenge();
         break;
-      }
       case 'quality':
         selectSegment(btn);
         store.set('windward.quality', value);
         hud.toast('Quality changes apply on reload');
         break;
-      case 'map': {
-        // A region is a different terrain, a different city and a different
-        // sky bake. Reloading is honest about that rather than pretending it
-        // can be swapped in place.
-        if (value === region.id) break;
-        selectSegment(btn);
-        store.set('windward.region', value);
-        const url = new URL(location.href);
-        url.searchParams.set('map', value);
-        hud.toast(`Loading ${getRegion(value).name}…`);
-        location.href = url.toString();
-        break;
-      }
       case 'input':
         if (value === 'tilt') {
           if (!(await controls.enableTilt())) {
@@ -324,7 +350,6 @@ async function boot() {
     lastTap = now;
   });
 
-  selectByValue('time', timeName);
   selectByValue('quality', qualityName);
   const soundPref = store.get('windward.sound', '1');
   audio.setEnabled(soundPref === '1');
@@ -333,9 +358,14 @@ async function boot() {
   hud.setProgress(1, 'ready');
   hud.hideLoading();
   if (offlineNote) hud.toast(offlineNote);
-  const autostart = params.get('start');
-  if (autostart) game.startMode(autostart);
-  else game.toMenu();
+  // Arriving with a challenge named in the URL is the other half of travel():
+  // the player pressed a row on the level select for a map that was not loaded,
+  // and what they asked for was the challenge, not the loading screen.
+  const wanted = params.get('challenge');
+  const arriving = wanted && regionOfChallenge(wanted) === region.id ? findChallenge(wanted) : null;
+  game.toMenu();
+  if (arriving) game.startChallenge(arriving);
+  else if (params.get('start')) game.startFlight();
 
   // Only now. Precaching the 2.4 MB shell while the player is still waiting on
   // four megabytes of terrain would make the thing they asked for slower to

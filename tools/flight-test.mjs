@@ -5,6 +5,10 @@
  * flies the real model instead and prints both, so a spec that reads well but
  * does not fly shows up as a disagreement rather than as a nice card.
  *
+ * The second half flies each ship off the top of its envelope: there is no
+ * speed clamp any more, so a dive really does run away, and what the numbers
+ * have to show is that it runs away at a rate a pilot can do something about.
+ *
  *   node tools/flight-test.mjs
  */
 import * as THREE from '../vendor/three.module.js';
@@ -30,9 +34,11 @@ const dt = 1 / 120;
 const G = 9.80665;
 const RHO0 = 1.225;
 const problems = [];
-// High enough that the fastest ship at full forward stick still has room for a
-// forty-second run, and every measurement is corrected back to sea level.
-const START = 7000;
+// A working soaring height. It used to be seven kilometres, to give the old
+// full-forward-stick sweep room to run; nothing dives on this bench any more,
+// and up there the Javelin's true trim speed is past its own redline. Every
+// measurement is corrected back to sea level regardless.
+const START = 2500;
 
 function sim(g, input, seconds) {
   const full = { roll: 0, pitch: 0, brake: 0, boost: false, ...input };
@@ -40,16 +46,35 @@ function sim(g, input, seconds) {
 }
 
 /**
- * Hold a stick position and measure the glide.
+ * Hold an angle of attack and measure the glide.
+ *
+ * A polar point IS an angle of attack: it fixes the lift coefficient, and the
+ * speed and the sink follow from the wing loading. Holding one is also the only
+ * way to sweep the whole range. The bench used to hold a stick position, which
+ * works while the airframe's own stability can balance the elevator — true of
+ * the gliders, and not remotely true of the Javelin, whose stick sweep never
+ * got within 20 m/s of the speed its own minimum sink is at. Holding a SPEED
+ * is worse still: chasing the ASI works the elevator continuously and the
+ * induced drag of all that stirring shows up as a polar two points down.
  *
  * The phugoid in this model is barely damped — a real one is not damped much
  * either — so height alone swings by tens of metres and never settles. Total
  * energy height (altitude plus the height the airspeed is worth) is immune to
  * that trade and leaves only what drag is actually taking.
  */
-function glideAt(g, pitch) {
-  g.reset(new THREE.Vector3(0, START, 0), 0, g.spec.trimSpeed);
-  sim(g, { pitch }, 20);
+function glideAt(g, alphaDeg) {
+  const spec = g.spec;
+  const target = THREE.MathUtils.degToRad(alphaDeg);
+  // Launched at the speed that angle of attack asks for, rather than at trim.
+  // The elevator can only hold an alpha the ship is already near: told to pull
+  // to nine degrees from 100 m/s the Javelin does not slow down, it loops, and
+  // twenty seconds later it is still nowhere near the number.
+  const cl = spec.clSlope * target;
+  const v = Math.sqrt((2 * spec.mass * G) / (spec.wingArea * Air.density(START) * cl));
+  g.reset(new THREE.Vector3(0, START, 0), 0, v);
+  const pilot = () => THREE.MathUtils.clamp((target - g.alpha) * 20, -1, 1);
+  for (let i = 0; i < 20 / dt; i++) g.update(dt, { roll: 0, pitch: pilot(), brake: 0, boost: false });
+  if (g.broken) return { speed: 0, sink: Infinity, ld: 0, alt: START, broken: true };
   const energy = () => g.position.y + (g.airspeed * g.airspeed) / (2 * G);
   const e0 = energy();
   const y0 = g.position.y;
@@ -59,7 +84,7 @@ function glideAt(g, pitch) {
   let vSum = 0;
   let n = 0;
   for (let i = 0; i < span / dt; i++) {
-    g.update(dt, { roll: 0, pitch, brake: 0, boost: false });
+    g.update(dt, { roll: 0, pitch: pilot(), brake: 0, boost: false });
     vSum += g.airspeed;
     n++;
   }
@@ -75,7 +100,30 @@ function glideAt(g, pitch) {
     sink: rawSink * toSeaLevel,
     ld: rawSink > 0.01 ? ground / rawSink : 0,
     alt,
+    broken: g.broken,
   };
+}
+
+/**
+ * What the engine is worth, in metres of climb per second.
+ *
+ * Total energy again, not altitude: a fast ship left hands-off spends thrust on
+ * speed rather than height, and would read as sinking while it accelerated. The
+ * pilot can trade it back whenever they choose, so energy is the honest number.
+ *
+ * The window is the tank: the Vela's seven seconds of boost and the Javelin's
+ * half-minute of turbine are different instruments, and averaging both over the
+ * same clock would flatter one and libel the other.
+ */
+function poweredClimb(g) {
+  const spec = g.spec;
+  g.reset(new THREE.Vector3(0, 1500, 0), 0, spec.trimSpeed);
+  sim(g, {}, 3);
+  const energy = () => g.position.y + (g.airspeed * g.airspeed) / (2 * G);
+  const span = Math.min(12, 0.9 / spec.boostBurn);
+  const e0 = energy();
+  sim(g, { boost: true }, span);
+  return (energy() - e0) / span;
 }
 
 /**
@@ -123,11 +171,18 @@ function turn360(g) {
   const y0 = g.position.y;
   let t = 0;
   let turned = 0;
+  let path = 0;
+  let bankSum = 0;
   let prev = g.headingDeg;
-  while (t < 120) {
+  while (t < 150) {
     const err = BANK - g.bankRad;
     sim(g, { roll: Math.max(-0.4, Math.min(0.4, err * 2)), pitch: 0.28 }, dt);
     t += dt;
+    // Ground track rather than the speed at the finish line: a ship that is
+    // still settling into the turn flies a circle its last-instant speed does
+    // not describe, and the fast ships take a long time to settle.
+    path += Math.hypot(g.velocity.x, g.velocity.z) * dt;
+    bankSum += g.bankDeg * dt;
     let d = g.headingDeg - prev;
     if (d > 180) d -= 360;
     if (d < -180) d += 360;
@@ -135,8 +190,111 @@ function turn360(g) {
     prev = g.headingDeg;
     if (Math.abs(turned) >= 360) break;
   }
-  const ground = Math.hypot(g.velocity.x, g.velocity.z);
-  return { time: t, radius: (ground * t) / (2 * Math.PI), lost: y0 - g.position.y, bank: g.bankDeg };
+  return {
+    time: t,
+    radius: path / (2 * Math.PI),
+    speed: path / t,
+    lost: y0 - g.position.y,
+    bank: bankSum / t,
+    closed: Math.abs(turned) >= 360,
+  };
+}
+
+// ---- diving ----------------------------------------------------------------
+/**
+ * Point it down and hold it there.
+ *
+ * The stick is a rate command and the airframe is genuinely speed-stable, so a
+ * dive is something a pilot has to keep doing: let go and the nose comes up on
+ * its own. Anything that pins the stick instead measures a bunt into an outside
+ * loop, which is what the ship does at full forward stick and is not a dive.
+ *
+ * Height matters as much as angle. A dive is flown at soaring altitudes, not at
+ * the seven kilometres the polar bench uses, because a fifth of the air is a
+ * fifth of the drag and the airbrakes are the first thing to notice.
+ */
+const DIVE_ALT = 3200;
+const _fv = new THREE.Vector3();
+
+function diveTest(spec, angleDeg, { brakeAfter = null, pullAfter = null, hands = false } = {}) {
+  const g = new Glider(air, spec);
+  g.reset(new THREE.Vector3(0, DIVE_ALT, 0), 0, spec.trimSpeed);
+  g.quaternion.setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(-angleDeg), 0, 0, 'YXZ'));
+  g.velocity.copy(g.forward(_fv)).multiplyScalar(spec.trimSpeed);
+  const target = THREE.MathUtils.degToRad(angleDeg);
+
+  let t = 0;
+  let toVne = null;
+  let hVne = 0;
+  let peak = 0;
+  let peakBuffet = 0;
+  let brake = 0;
+  let pulling = false;
+  let recovered = null;
+  while (t < 200 && g.position.y > 0) {
+    if (toVne === null && g.airspeed > spec.vne) {
+      toVne = t;
+      hVne = g.position.y;
+    }
+    if (toVne !== null) {
+      if (brakeAfter !== null && t - toVne >= brakeAfter) brake = 1;
+      if (pullAfter !== null && t - toVne >= pullAfter) pulling = true;
+      if (recovered === null && (brake || pulling || hands) && g.airspeed < spec.vne) recovered = t - toVne;
+    }
+    // A pilot flying the dive angle, the same way turn360 flies a bank.
+    const dive = Math.asin(THREE.MathUtils.clamp(-g.forward(_fv).y, -1, 1));
+    const pitch = pulling ? 1 : hands ? 0 : THREE.MathUtils.clamp((dive - target) * 3, -1, 1);
+    g.update(dt, { roll: 0, pitch, brake, boost: false });
+    peak = Math.max(peak, g.airspeed);
+    peakBuffet = Math.max(peakBuffet, g.buffet);
+    t += dt;
+    if (g.broken) {
+      return { toVne, failedAfter: t - toVne, drop: hVne - g.position.y, peak, peakBuffet, damage: 1, g };
+    }
+    // Recovered and settled: nothing more to learn from flying it further.
+    if (recovered !== null && t - toVne > recovered + 5) break;
+  }
+  return { toVne, failedAfter: null, drop: toVne === null ? 0 : hVne - g.position.y, peak, peakBuffet, damage: g.damage, recovered, g };
+}
+
+/**
+ * Flat out and level, with the boost button held down and never let go — which
+ * is how it will be flown. Past the tank it pulses on the recharge, so this is
+ * the hardest a pilot can push an engine, and no engine may be able to take its
+ * own aeroplane apart.
+ */
+function levelTop(spec) {
+  const g = new Glider(air, spec);
+  g.reset(new THREE.Vector3(0, 1500, 0), 0, spec.trimSpeed);
+  let peak = 0;
+  for (let i = 0; i < 90 / dt; i++) {
+    const climb = Math.asin(THREE.MathUtils.clamp(g.forward(_fv).y, -1, 1));
+    g.update(dt, { roll: 0, pitch: THREE.MathUtils.clamp(-climb * 3, -1, 1), brake: 0, boost: true });
+    peak = Math.max(peak, g.airspeed);
+  }
+  return { speed: g.airspeed, peak, damage: g.damage, broken: g.broken };
+}
+
+/**
+ * What is left after the wing goes: it must fall, it must not fly, and it must
+ * arrive fast enough that the touchdown test in game.js cannot mistake it for
+ * a landing and hand the player a Safe Landing card for a break-up.
+ */
+function fallTest(g) {
+  for (let i = 0; i < 30 / dt; i++) g.update(dt, { roll: 0, pitch: 1, brake: 1, boost: true });
+  return { speed: g.airspeed, sink: -g.varioSmooth, lift: g.loadFactor, still: g.broken };
+}
+
+/** How long after passing Vne a recovery still works, to the quarter second. */
+function lastChance(spec, key) {
+  const base = diveTest(spec, 90);
+  if (base.failedAfter === null) return null;
+  let last = null;
+  for (let d = 0; d <= base.failedAfter; d += 0.25) {
+    if (diveTest(spec, 90, { [key]: d }).failedAfter !== null) break;
+    last = d;
+  }
+  return last;
 }
 
 const f1 = (v) => v.toFixed(1).padStart(5);
@@ -159,17 +317,39 @@ for (const spec of FLEET) {
   const expected = trimSpeedAt(spec, Air.density(g.position.y));
 
   // ---- polar -------------------------------------------------------------
+  // Swept from just short of the break down to the lowest lift coefficient
+  // that still keeps the ship inside its redline at the height the bench flies
+  // at. Both ends are the ship's own: no fixed pair of angles suits a trainer
+  // that hangs on to sixteen degrees and a jet that lets go at eleven.
+  const w = (spec.mass * G) / spec.wingArea;
+  const clAtVne = (2 * w) / (Air.density(START) * (spec.vne * 0.92) ** 2);
+  const hi = spec.alphaStallDeg * 0.88;
+  const lo = Math.min(hi - 1, (THREE.MathUtils.radToDeg(clAtVne / spec.clSlope)));
   let best = { ld: 0 };
   let least = { sink: Infinity };
-  const points = [];
-  for (let i = -10; i <= 10; i++) {
-    const p = glideAt(g, i / 10);
-    points.push(p);
+  let slowest = Infinity;
+  let fastest = 0;
+  let brokeGliding = false;
+  for (let i = 0; i <= 16; i++) {
+    const p = glideAt(g, lo + ((hi - lo) * i) / 16);
+    brokeGliding ||= p.broken;
     if (p.ld > best.ld) best = p;
     if (p.sink < least.sink) least = p;
+    slowest = Math.min(slowest, p.speed);
+    fastest = Math.max(fastest, p.speed);
   }
   const book = polar(spec);
   const circle = turn360(g);
+  const climb = poweredClimb(g);
+  // A ship that out-sinks a weak day is not a soaring machine, whatever else
+  // it is. That single fact decides which of the checks below it has to pass:
+  // there is no flag in the spec saying so, because the polar already says it.
+  const soarer = least.sink < 2.0;
+  const dive = diveTest(spec, 90);
+  const braked = diveTest(spec, 90, { brakeAfter: 0 });
+  const brakeWindow = lastChance(spec, 'brakeAfter');
+  const stickWindow = lastChance(spec, 'pullAfter');
+  const top = levelTop(spec);
 
   console.log(`\n${spec.name}  —  ${spec.kind}     (flown numbers corrected to sea level)`);
   console.log(
@@ -185,16 +365,29 @@ for (const spec of FLEET) {
     `  360 at 45 deg bank ${f1(circle.time)} s   radius ${f0(circle.radius)} m   bank ${f0(circle.bank)}   height lost ${f0(circle.lost)} m`
   );
   console.log(
-    `  speed range    ${f1(points[20].speed)} .. ${f1(points[0].speed)} m/s   vne ${spec.vne}   stall ${f1(book.stallSpeed)}`
+    `  envelope       ${f1(book.stallSpeed)} .. ${f0(spec.vne)} m/s   flown ${f1(slowest)} .. ${f1(fastest)}   ${soarer ? 'soars' : `no soaring: ${climb.toFixed(1)} m/s of climb on thrust`}`
   );
   console.log(
     `  span ${f1(wingSpan(spec))} m   ${f0(spec.mass)} kg   ${f1((spec.mass * G) / spec.wingArea)} N/m^2 wing loading`
   );
+  console.log(
+    `  vertical dive  Vne at ${f1(dive.toVne)} s, airframe fails ${dive.failedAfter === null ? 'never' : f1(dive.failedAfter) + ' s later'} (${f0(dive.drop)} m below Vne), peak ${f0(dive.peak)} m/s`
+  );
+  console.log(
+    `  recovery       brakes work to Vne+${brakeWindow === null ? '—' : f1(brakeWindow)} s, stick alone to Vne+${stickWindow === null ? '—' : f1(stickWindow)} s   brakes at Vne hold ${f0(braked.peak)} m/s`
+  );
+  console.log(
+    `  flat out level ${f1(top.peak)} m/s  (${f0(top.peak * 3.6)} km/h) on thrust, holding the button down`
+  );
 
   const fail = (why) => problems.push(`${spec.name}: ${why}`);
   // Weak-day lift in this game runs about 2.6 m/s before the background sink
-  // is taken off it. A ship that cannot climb in that cannot be flown.
-  if (!(least.sink < 2.0)) fail(`min sink ${least.sink.toFixed(2)} m/s — cannot stay up`);
+  // is taken off it. A ship that cannot climb in that has to have some other
+  // way of staying up, and for the Javelin that way is the turbine.
+  if (!soarer && !(climb > 1.5)) {
+    fail(`sinks at ${least.sink.toFixed(2)} m/s and only climbs ${climb.toFixed(2)} on thrust — cannot stay up`);
+  }
+  if (brokeGliding) fail('broke its own airframe inside the gliding half of the stick');
   if (!(best.ld > 8)) fail(`best glide only ${best.ld.toFixed(1)}:1`);
   if (Math.abs(trimmed - expected) > expected * 0.06) {
     fail(`settles at ${trimmed.toFixed(1)} m/s, its own trim algebra says ${expected.toFixed(1)}`);
@@ -208,7 +401,84 @@ for (const spec of FLEET) {
   if (Math.abs(least.sink - book.minSink) > book.minSink * 0.18) {
     fail(`flown min sink ${least.sink.toFixed(2)} disagrees with the quoted ${book.minSink.toFixed(2)}`);
   }
-  if (!(circle.radius < 400 && circle.time < 60)) fail(`360 takes ${circle.time.toFixed(0)} s`);
+  // A 45-degree turn radius is V^2/g and nothing else; no aeroplane argues
+  // with that, and a bound in metres would simply outlaw a fast one. What the
+  // model has to get right is that the ship holds the bank and flies the
+  // circle the arithmetic says it should.
+  if (!circle.closed) fail(`never completed a 360 at 45 degrees of bank`);
+  const ideal = circle.speed ** 2 / (G * Math.tan(THREE.MathUtils.degToRad(circle.bank)));
+  if (circle.radius < ideal * 0.9 || circle.radius > ideal * 1.8) {
+    fail(`circles at ${circle.radius.toFixed(0)} m where ${circle.bank.toFixed(0)} deg at ${circle.speed.toFixed(0)} m/s wants ${ideal.toFixed(0)} m`);
+  }
+  if (circle.time > 90) fail(`360 takes ${circle.time.toFixed(0)} s`);
+  // Only a ship that lives on thermals has to fit inside one.
+  if (soarer && circle.radius > 400) fail(`too wide to core a thermal: ${circle.radius.toFixed(0)} m radius`);
+
+  // ---- the top of the envelope ------------------------------------------
+  // The clamp that used to sit at the bottom of Glider.update pinned every
+  // ship at Vne, so a vertical dive was a non-event. These say it is not.
+  if (!(dive.peak > spec.vne * 1.3)) {
+    fail(`a held vertical dive only reaches ${dive.peak.toFixed(0)} m/s against a ${spec.vne} m/s redline`);
+  }
+  // How long the airframe lasts is measured on the ship's own clock. Gravity
+  // adds half a Vne in vne/2g seconds whatever the aeroplane, so that is the
+  // beat a dive is counted in; a fixed number of seconds would call the same
+  // behaviour an instant kill in the Kite and a non-event in the Javelin.
+  const beat = spec.vne / (2 * G);
+  if (dive.failedAfter === null) fail('a held vertical dive never damages the airframe');
+  else if (!(dive.failedAfter > beat && dive.failedAfter < beat * 5)) {
+    fail(`airframe fails ${dive.failedAfter.toFixed(1)} s after Vne, against a ${beat.toFixed(1)} s beat — an instant kill or a non-event`);
+  }
+  if (!(dive.peakBuffet > 1)) fail('nothing buffets on the way to the redline');
+  // Airbrakes are the answer, and they have to be a better answer than the
+  // stick or there is no reason to reach for them.
+  if (braked.failedAfter !== null) fail('full brakes at Vne do not stop the dive');
+  if (!(braked.peak < spec.vne * 1.12)) {
+    fail(`brakes at Vne still let it run to ${braked.peak.toFixed(0)} m/s`);
+  }
+  if (!(brakeWindow > stickWindow)) {
+    fail(`brakes save no more of the dive than the stick does (${brakeWindow} s vs ${stickWindow} s)`);
+  }
+  if (!(brakeWindow > dive.failedAfter * 0.6)) {
+    fail(`brakes only work for the first ${brakeWindow} s of a ${dive.failedAfter.toFixed(1)} s dive`);
+  }
+  // Letting go has to help. The stick is a rate command, so a dive is only
+  // ever held on purpose; taking your hand off it must always buy time, and in
+  // a soaring machine — trimmed slow, with a wing that wants its alpha back —
+  // it must fly the ship out on its own.
+  const abandoned = diveTest(spec, 90, { hands: true });
+  if (soarer && abandoned.failedAfter !== null) fail('a vertical dive left alone still breaks the ship');
+  if (abandoned.failedAfter !== null && abandoned.failedAfter < dive.failedAfter) {
+    fail('letting go of the stick in a dive makes it worse');
+  }
+
+  // ---- what is left of it ------------------------------------------------
+  // The wreck is game.js's job, but only if the break-up actually arrives as a
+  // crash. Full back stick, full brakes and full power on a broken airframe
+  // must do exactly nothing.
+  const wreckage = fallTest(dive.g);
+  console.log(
+    `  break-up       wreckage falls at ${f0(wreckage.sink)} m/s, so 500 m of air lasts ${f1(500 / wreckage.sink)} s`
+  );
+  if (!wreckage.still) fail('the airframe repaired itself after breaking up');
+  if (wreckage.lift !== 0) fail('a broken airframe is still making lift');
+  if (!(wreckage.sink > 12)) fail(`wreckage floats down at ${wreckage.sink.toFixed(1)} m/s`);
+  // The same two-part test game.js touches down on. Failing either is enough,
+  // and what saves the heavy ships is the rate of descent rather than the speed.
+  if (wreckage.speed < spec.trimSpeed * 0.79 && wreckage.sink < spec.trimSpeed * 0.18) {
+    fail(`wreckage arrives at ${wreckage.speed.toFixed(0)} m/s and ${wreckage.sink.toFixed(0)} m/s down — game.js would call that a landing`);
+  }
+
+  // Something has to say so before the redline, not after it.
+  const warned = diveTest(spec, 45);
+  if (warned.peakBuffet < 1 || warned.damage === 0) fail('a 45 degree dive neither buffets nor costs anything');
+  if (!(top.peak > spec.trimSpeed)) fail(`thrust does not even hold ${spec.trimSpeed} m/s in level flight`);
+  // The engine must not be able to break the aeroplane on its own. Holding the
+  // boost button in level flight is the least deliberate thing a player can do
+  // and it cannot be the thing that costs them the airframe.
+  if (top.broken || top.damage > 0.05) {
+    fail(`held boost in level flight reaches ${top.peak.toFixed(0)} m/s and wears the airframe ${(top.damage * 100).toFixed(0)}%`);
+  }
   // The number in the name is the span, and the span is what the aspect ratio
   // and the wing area already say it is. A ship cannot be called something the
   // rest of its own numbers contradict.
@@ -221,6 +491,22 @@ for (const spec of FLEET) {
     fail(`drawn ${(spec.look.span * 2).toFixed(1)} m across but flies as ${wingSpan(spec).toFixed(1)} m`);
   }
   if (!isFinite(g.position.y)) fail('came apart numerically');
+}
+
+// ---- the dive, angle by angle ----------------------------------------------
+// Seconds from passing Vne to the wing letting go, holding each angle. The
+// question this table exists to answer is whether a dive is a decision: a row
+// of dashes would mean the redline is decoration, and a row of ones would mean
+// the game kills you for looking down.
+console.log('\ndive — seconds from Vne to airframe failure, holding the angle');
+console.log('                ' + [20, 30, 45, 60, 75, 90].map((a) => `${a}deg`.padStart(7)).join('') + '    at Vne');
+for (const spec of FLEET) {
+  const cells = [20, 30, 45, 60, 75, 90].map((a) => {
+    const d = diveTest(spec, a);
+    return (d.failedAfter === null ? (d.toVne === null ? 'never' : 'ground') : d.failedAfter.toFixed(1)).padStart(7);
+  });
+  const d90 = diveTest(spec, 90);
+  console.log(`  ${spec.name.padEnd(12)}${cells.join('')}    ${f1(d90.toVne)} s`);
 }
 
 // ---- the handling checks the flight model has always had -------------------
@@ -237,7 +523,9 @@ function show(l) {
     'alt',
     f0(g.position.y),
     'g',
-    g.loadFactor.toFixed(2)
+    g.loadFactor.toFixed(2),
+    'wear',
+    g.damage.toFixed(2)
   );
 }
 console.log(`\nhandling — ${FLEET[0].name}`);
@@ -267,6 +555,10 @@ for (let i = 0; i < 14 / dt; i++) {
 }
 show('45 deg turn, held 14 s');
 if (g.bankDeg < 20) problems.push('right stick did not produce a right bank');
+// Rolling costs speed control, and the Vela does go past its redline holding
+// full aileron for ten seconds. That is the ship, not a bug — but a roll must
+// not be a death sentence, and the wear it leaves must be worth noticing.
+if (g.broken) problems.push('rolling the ship tore it apart');
 
 if (problems.length) {
   console.log('\nFAILURES:\n' + problems.map((p) => ' - ' + p).join('\n'));

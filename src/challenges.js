@@ -1,6 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { makeLitMaterial } from './materials.js';
-import { CHALLENGES } from './regions.js';
+import { CHALLENGES, REGIONS } from './regions.js';
+import { getAircraft } from './fleet.js';
 import { store } from './store.js';
 
 /**
@@ -8,12 +9,18 @@ import { store } from './store.js';
  * task types, and the medals you keep.
  *
  * Challenges are deliberately not a game mode. They are things you fly into
- * while free flying, which is the whole point — you finish one over the Loop
- * and the next marker is already two kilometres down the river. A mode would
- * mean a menu, a teleport and a reload between every sixty-second task.
+ * while flying, which is the whole point — you finish one over the Loop and the
+ * next marker is already two kilometres down the river. A mode would mean a
+ * menu, a teleport and a reload between every sixty-second task.
  *
  * Everything scores on one number and lower always wins, so a single medal
  * rule serves all four types. See CHALLENGES in regions.js for the content.
+ *
+ * The medal book at the bottom of this file is deliberately map-blind. One
+ * store, keyed by challenge id, read the same way whichever terrain happens to
+ * be loaded — which is what lets a level select on the Jungfrau tell you the
+ * truth about Chicago, and lets a gold over the Alps unlock a marker on the
+ * lakefront.
  */
 
 /** The ring you fly through to start one, in metres — see markerGeometry. */
@@ -21,6 +28,8 @@ const MARKER_RADIUS = 52;
 /** And how far back out before it will trigger again. */
 const REARM_RADIUS = 300;
 const PICKUP_RADIUS = 34;
+/** Height of the light column that makes a marker findable from far off. */
+const BEACON_HEIGHT = 460;
 
 export const MEDAL_NAMES = ['None', 'Bronze', 'Silver', 'Gold'];
 
@@ -46,9 +55,99 @@ export function challengeMetric(def) {
   return def.type === 'lowpass' ? 'height' : 'time';
 }
 
+/**
+ * A slalom is over in ninety seconds and reads best in seconds; a circuit takes
+ * nine minutes, and "548.3 s" is a number nobody can picture.
+ */
+export function formatClock(seconds) {
+  if (seconds == null || !isFinite(seconds)) return '—';
+  if (seconds < 100) return `${seconds.toFixed(1)} s`;
+  const m = Math.floor(seconds / 60);
+  return `${m}:${(seconds - m * 60).toFixed(1).padStart(4, '0')}`;
+}
+
 export function formatMetric(def, value) {
   if (value == null || !isFinite(value)) return '—';
-  return challengeMetric(def) === 'height' ? `${Math.round(value)} m` : `${value.toFixed(1)} s`;
+  if (challengeMetric(def) === 'height') return `${Math.round(value)} m`;
+  return formatClock(value);
+}
+
+// ------------------------------------------------------- the medal book ---
+/**
+ * One store for the whole game. It was per-region, which is most of why two
+ * maps read as two games: the same player had two unrelated tallies and no
+ * screen that could add them up. Challenge ids are unique across regions, so
+ * the region never has to appear in the key at all.
+ *
+ * The `.v2` is that change. The times underneath it were flown against a
+ * control law and a set of thresholds that no longer exist, so they are not
+ * worth carrying forward — a bronze earned under the old physics would show up
+ * here as a gold nobody flew.
+ */
+const MEDAL_KEY = 'windward.medals.v2';
+
+export function loadMedals() {
+  try {
+    const raw = JSON.parse(store.get(MEDAL_KEY) ?? '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveMedals(best) {
+  store.set(MEDAL_KEY, JSON.stringify(best));
+}
+
+/** Every challenge in the game, grouped by the level it stands in. */
+export function levels() {
+  return Object.values(REGIONS).map((region) => ({ region, defs: CHALLENGES[region.id] ?? [] }));
+}
+
+/** Which region a challenge belongs to, for the level select's cross-map jumps. */
+export function regionOfChallenge(id) {
+  for (const [regionId, defs] of Object.entries(CHALLENGES)) {
+    if (defs.some((d) => d.id === id)) return regionId;
+  }
+  return null;
+}
+
+export function findChallenge(id) {
+  for (const defs of Object.values(CHALLENGES)) {
+    const def = defs.find((d) => d.id === id);
+    if (def) return def;
+  }
+  return null;
+}
+
+/** The aeroplane a challenge is flown in. Never the player's choice. */
+export function shipFor(def) {
+  return getAircraft(def.ship);
+}
+
+/**
+ * The one number the whole progression turns on: how many challenges anywhere
+ * carry a medal. Golds are the trophy, but medals are the currency — a player
+ * who bronzes everything should still see the map open up.
+ */
+export function tally(best = loadMedals()) {
+  let total = 0;
+  let medalled = 0;
+  let golds = 0;
+  for (const { defs } of levels()) {
+    for (const def of defs) {
+      total++;
+      const m = best[def.id] == null ? 0 : medalFor(def, best[def.id]);
+      if (m > 0) medalled++;
+      if (m === 3) golds++;
+    }
+  }
+  return { total, medalled, golds };
+}
+
+/** A locked challenge has no marker in the world and no row to press. */
+export function unlocked(def, medalled) {
+  return medalled >= (def.needs ?? 0);
 }
 
 export class Challenges {
@@ -57,8 +156,7 @@ export class Challenges {
     this.hf = heightfield;
     this.buildings = buildings;
     this.defs = CHALLENGES[regionId] ?? [];
-    this.storeKey = `windward.medals.${regionId}`;
-    this.best = loadBest(this.storeKey);
+    this.best = loadMedals();
 
     this.group = new THREE.Group();
     this.group.visible = false;
@@ -73,8 +171,25 @@ export class Challenges {
         side: THREE.DoubleSide,
       })
     );
+    // The beacons are the same four colours seen from four kilometres away.
+    // Emissive is pushed well past the sky's own radiance on purpose: a
+    // half-transparent column darker than what is behind it reads as a dark
+    // bar against the sky and vanishes entirely against the ground, and it has
+    // to work against both.
+    this.beaconMaterials = MEDAL_TINTS.map((t) =>
+      makeLitMaterial(sky, {
+        color: new THREE.Color(...t.color),
+        emissive: new THREE.Color(...t.emissive),
+        emissiveStrength: 4.5,
+        roughness: 0.9,
+        opacity: 0.26,
+        transparent: true,
+        side: THREE.DoubleSide,
+      })
+    );
 
     const markerGeom = markerGeometry();
+    const beaconGeom = beaconGeometry();
     this.markers = this.defs.map((def) => {
       const v = world.toLocal(def.marker.lat, def.marker.lon);
       const position = new THREE.Vector3(v.x, heightfield.heightAt(v.x, v.z) + def.marker.agl, v.z);
@@ -82,13 +197,25 @@ export class Challenges {
       // across it: what you see is the plane you have to cross to start.
       const hdg = THREE.MathUtils.degToRad(def.marker.heading);
       const normal = new THREE.Vector3(Math.sin(hdg), 0, -Math.cos(hdg));
-      const mesh = new THREE.Mesh(markerGeom, this.materials[this.medalOf(def)]);
+      const medal = this.medalOf(def);
+      const mesh = new THREE.Mesh(markerGeom, this.materials[medal]);
       mesh.position.copy(position);
       mesh.lookAt(position.x + normal.x, position.y, position.z + normal.z);
       this.group.add(mesh);
       const facing = mesh.quaternion.clone();
-      return { def, position, normal, radius: MARKER_RADIUS, mesh, facing, locked: false };
+      // Rooted on the ground and running up past the hoop, rather than hanging
+      // off it: what it is for is telling you a task is over there, from a long
+      // way off and from below, which is where most of a flight is spent.
+      const ground = heightfield.heightAt(v.x, v.z);
+      const height = position.y - ground + 90;
+      const beacon = new THREE.Mesh(beaconGeom, this.beaconMaterials[medal]);
+      beacon.position.set(v.x, ground + height * 0.5, v.z);
+      beacon.scale.setY(height / BEACON_HEIGHT);
+      beacon.renderOrder = 20;
+      this.group.add(beacon);
+      return { def, position, normal, radius: MARKER_RADIUS, mesh, beacon, facing, locked: false };
     });
+    this.refreshUnlocks();
 
     // One shared blob, repositioned per run: only one collect is ever live, and
     // building the meshes on arm would allocate mid-flight. Sized from the data
@@ -114,28 +241,34 @@ export class Challenges {
     return v == null ? 0 : medalFor(def, v);
   }
 
-  /** The menu checklist: every challenge on this map, with what you have won. */
-  summary() {
-    const rows = this.defs.map((def) => ({
-      def,
-      medal: this.medalOf(def),
-      best: this.best[def.id] ?? null,
-    }));
-    return {
-      rows,
-      total: rows.length,
-      golds: rows.filter((r) => r.medal === 3).length,
-      medalled: rows.filter((r) => r.medal > 0).length,
-    };
+  /**
+   * Hide the markers of challenges that have not been earned yet, and report
+   * the ones that just appeared. A hoop you are not allowed to fly through is
+   * litter; a hoop that was not there last flight is a reason to go and look.
+   */
+  refreshUnlocks() {
+    const { medalled } = tally(this.best);
+    const opened = [];
+    for (const m of this.markers) {
+      const open = unlocked(m.def, medalled);
+      if (open && m.mesh.visible === false) opened.push(m.def);
+      m.mesh.visible = open;
+      m.beacon.visible = open;
+    }
+    return opened;
   }
 
   #record(def, value) {
     const prev = this.best[def.id];
     if (prev != null && prev <= value) return false;
     this.best[def.id] = value;
-    store.set(this.storeKey, JSON.stringify(this.best));
+    saveMedals(this.best);
     const marker = this.markers.find((m) => m.def === def);
-    if (marker) marker.mesh.material = this.materials[this.medalOf(def)];
+    if (marker) {
+      const medal = this.medalOf(def);
+      marker.mesh.material = this.materials[medal];
+      marker.beacon.material = this.beaconMaterials[medal];
+    }
     return true;
   }
 
@@ -161,7 +294,7 @@ export class Challenges {
     marker.locked = true;
 
     if (def.type === 'slalom') {
-      this.world.setCourse(def.gates, false, def.id);
+      this.world.setCourse(def.gates, def.id);
       this.world.resetGates();
       this.world.group.visible = true;
       run.gateIndex = 0;
@@ -192,14 +325,21 @@ export class Challenges {
     return run;
   }
 
-  /** Put the world back the way free flight expects it. */
+  /** Put the world back the way plain flying expects it. */
   abort() {
     this.active = null;
     for (const mesh of this.pickups) mesh.visible = false;
-    if (this.world.courseId !== 'circuit') {
-      this.world.setCourse(this.world.circuit, true, 'circuit');
-      this.world.group.visible = false;
-    }
+    this.world.clearCourse();
+  }
+
+  /**
+   * Abort, and give up the run as well. A lost or finished task stays retryable
+   * — that is what lastDef is for — right up until the player says they are
+   * done with it by flying on, so only that says so.
+   */
+  forget() {
+    this.abort();
+    this.lastDef = null;
   }
 
   /**
@@ -220,10 +360,12 @@ export class Challenges {
     // About the hoop's own axis, so the ring stays across the course and only
     // the gem inside it turns.
     for (const m of this.markers) {
+      if (!m.mesh.visible) continue;
       m.mesh.quaternion.copy(m.facing);
       m.mesh.rotateZ(this.spin);
     }
     for (const m of this.materials) m.uniforms.uPulse.value += dt * 2.6;
+    for (const m of this.beaconMaterials) m.uniforms.uPulse.value += dt * 2.6;
 
     if (this.active) this.#step(dt, position, prevPos, agl);
     else this.#checkMarkers(position, prevPos);
@@ -238,6 +380,7 @@ export class Challenges {
    */
   #checkMarkers(position, prevPos) {
     for (const m of this.markers) {
+      if (!m.mesh.visible) continue;
       if (m.locked) {
         if (m.position.distanceToSquared(position) > REARM_RADIUS * REARM_RADIUS) m.locked = false;
         continue;
@@ -311,6 +454,9 @@ export class Challenges {
       medal: medalFor(def, value),
       best: this.best[def.id],
       improved,
+      // A first medal can put new hoops in the sky, and the moment to say so is
+      // the results card that earned them.
+      opened: this.refreshUnlocks(),
     });
   }
 
@@ -345,7 +491,7 @@ export class Challenges {
     let near = null;
     let nearD = 2600 * 2600;
     for (const m of this.markers) {
-      if (this.medalOf(m.def) === 3) continue;
+      if (!m.mesh.visible || this.medalOf(m.def) === 3) continue;
       const d = m.position.distanceToSquared(position);
       if (d < nearD) {
         nearD = d;
@@ -365,11 +511,21 @@ export class Challenges {
     else if (def.type === 'collect') progress = `${run.taken.filter(Boolean).length}/${def.picks.length}`;
     else if (def.type === 'climb') progress = `${Math.max(0, Math.round(run.gain))}/${def.gain} m`;
     else progress = `${run.hold.toFixed(1)}/${def.hold} s`;
-    return { name: def.name, progress, remaining: Math.max(0, run.limit - run.elapsed) };
+    // The medal this run is still on for, which is the whole reason to show a
+    // running clock. A low pass is scored on height, so its clock is only ever
+    // a deadline and there is no standing to lose by being slow.
+    const standing = challengeMetric(def) === 'time' ? medalFor(def, run.elapsed) : null;
+    return {
+      name: def.name,
+      progress,
+      elapsed: run.elapsed,
+      standing,
+      remaining: Math.max(0, run.limit - run.elapsed),
+    };
   }
 
   setLighting(sunRadiance, skyAmbient) {
-    for (const m of this.materials) {
+    for (const m of [...this.materials, ...this.beaconMaterials]) {
       m.uniforms.uSunRadiance.value.copy(sunRadiance);
       m.uniforms.uSkyAmbient.value.copy(skyAmbient);
     }
@@ -379,6 +535,15 @@ export class Challenges {
 /** A hoop standing across the course, with a gem turning inside it. */
 function markerGeometry() {
   return mergeParts([new THREE.TorusGeometry(MARKER_RADIUS, 3, 5, 22), new THREE.OctahedronGeometry(20, 0)]);
+}
+
+/**
+ * The light column under a marker. Open-ended and tapered so it reads as a
+ * shaft rather than a post, and thin enough that flying through one is not a
+ * thing that can happen by accident.
+ */
+function beaconGeometry() {
+  return new THREE.CylinderGeometry(3, 11, BEACON_HEIGHT, 5, 1, true);
 }
 
 /** Concatenate small parts so a marker costs one draw call, not several. */
@@ -399,13 +564,4 @@ function mergeParts(parts) {
   out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
   return out;
-}
-
-function loadBest(key) {
-  try {
-    const raw = JSON.parse(store.get(key) ?? '{}');
-    return raw && typeof raw === 'object' ? raw : {};
-  } catch {
-    return {};
-  }
 }

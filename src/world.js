@@ -3,7 +3,7 @@ import { makeLitMaterial } from './materials.js';
 import { NOISE, SKY, OUTPUT } from './shaders/lib.js';
 import { mulberry32 } from './flight.js';
 
-import { PLACES, CIRCUITS } from './regions.js';
+import { PLACES } from './regions.js';
 
 export class World {
   constructor(heightfield, sky, scene, regionId = 'jungfrau') {
@@ -11,7 +11,6 @@ export class World {
     this.sky = sky;
     this.scene = scene;
     this.regionId = regionId;
-    this.circuit = CIRCUITS[regionId] ?? [];
     this.mpdLon = 111320 * Math.cos((heightfield.meta.centerLat * Math.PI) / 180);
 
     this.places = (PLACES[regionId] ?? []).map((p) => {
@@ -38,7 +37,7 @@ export class World {
       side: THREE.DoubleSide,
     });
 
-    this.setCourse(this.circuit, true, 'circuit');
+    this.group.visible = false;
   }
 
   toLocal(lat, lon) {
@@ -51,13 +50,14 @@ export class World {
 
   // ------------------------------------------------------------- gates ---
   /**
-   * Lay out a run of gates. The race circuit is one course; a slalom challenge
-   * swaps in another and puts this one back when it is done, which is why the
-   * course is built here rather than in the constructor.
+   * Lay out a run of gates. Only one gate course exists at a time and it always
+   * belongs to a running challenge, so it is built when that challenge arms and
+   * torn down when it ends — there is no standing course to go back to.
    *
-   * @param {boolean} closed A circuit loops back on itself; a slalom does not.
+   * Every course is a run rather than a lap: both of the long ones descend the
+   * region end to end, and the short ones never did loop.
    */
-  setCourse(defs, closed = true, courseId = 'circuit') {
+  setCourse(defs, courseId = null) {
     for (const g of this.gates) {
       this.group.remove(g.mesh);
       g.mesh.geometry.dispose();
@@ -73,10 +73,10 @@ export class World {
 
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
-      // An open course has no wrap-around, so each end takes its heading from
-      // the single neighbour it has.
-      const next = points[closed ? (i + 1) % points.length : Math.min(i + 1, points.length - 1)];
-      const prev = points[closed ? (i - 1 + points.length) % points.length : Math.max(i - 1, 0)];
+      // No wrap-around, so each end takes its heading from the single
+      // neighbour it has.
+      const next = points[Math.min(i + 1, points.length - 1)];
+      const prev = points[Math.max(i - 1, 0)];
       // face the gate along the course so you fly through, not past
       const dir = new THREE.Vector3(next.x - prev.x, next.y - prev.y, next.z - prev.z).normalize();
 
@@ -97,6 +97,12 @@ export class World {
         passed: false,
       });
     }
+  }
+
+  /** No course at all: what the sky looks like when you are just flying. */
+  clearCourse() {
+    if (this.gates.length) this.setCourse([]);
+    this.group.visible = false;
   }
 
   resetGates() {

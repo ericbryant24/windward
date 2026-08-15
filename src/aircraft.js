@@ -44,7 +44,7 @@ export function createAircraft(sky, spec = getAircraft()) {
     const a = (i / ring) * Math.PI * 2;
     fuseProfile.push([Math.cos(a), Math.sin(a)]);
   }
-  const stations = [
+  const stations = look.fuse ?? [
     [-3.4, 0.05, 0.05, 0.02],
     [-3.0, 0.22, 0.2, 0.0],
     [-2.3, 0.36, 0.34, -0.03],
@@ -70,13 +70,18 @@ export function createAircraft(sky, spec = getAircraft()) {
   // Fractions of half-span, root chord, tip rise and tip sweep. One shape for
   // every ship; the spec stretches it. taperPower under 1 fattens the tip into
   // a trainer's near-constant chord, over 1 draws it out into a racing planform.
+  // The sweep column now ends at 1 like the rise column, so look.sweep is
+  // simply where the tip ends up. It used to stop at 0.274 while the tip trim
+  // and the winglet were hung at the full value, so they sat behind their own
+  // wing; harmless at a glider's 0.26 and unmissable at the Javelin's two
+  // metres. Each ship's sweep was scaled by the same 3.65 to keep it put.
   const PLANFORM = [
     [0.0, 1.0, 0.0, 0.0],
-    [0.212, 0.968, 0.104, 0.021],
-    [0.556, 0.842, 0.345, 0.063],
-    [0.834, 0.653, 0.655, 0.126],
-    [0.974, 0.358, 0.897, 0.211],
-    [1.0, 0.105, 1.0, 0.274],
+    [0.212, 0.968, 0.104, 0.077],
+    [0.556, 0.842, 0.345, 0.23],
+    [0.834, 0.653, 0.655, 0.46],
+    [0.974, 0.358, 0.897, 0.77],
+    [1.0, 0.105, 1.0, 1.0],
   ];
   const buildWing = (sign) => {
     const secs = PLANFORM.map(([f, chordF, riseF, sweepF]) => {
@@ -187,6 +192,60 @@ export function createAircraft(sky, spec = getAircraft()) {
     }
   }
 
+  // ---- turbine: intakes, tailpipe, and the flame out the back ------------
+  // What tells a jet from a glider at half a kilometre is the holes, so the
+  // intake mouths and the nozzle are their own near-black discs rather than
+  // shading on the fairing.
+  let flame = null;
+  let flameMat = null;
+  if (look.jet) {
+    const duct = makeLitMaterial(sky, {
+      color: new THREE.Color(0.04, 0.045, 0.055),
+      roughness: 0.75,
+      fresnel: 0.08,
+    });
+    materials.push(duct);
+
+    for (const sign of [-1, 1]) {
+      const trunk = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), shell);
+      trunk.scale.set(0.26 * W, 0.25 * W, 1.35 * L);
+      trunk.position.set(sign * 0.6 * W, 0.04, -0.45 * L);
+      group.add(trunk);
+
+      const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.2 * W, 14), duct);
+      mouth.position.set(sign * 0.6 * W, 0.04, -1.72 * L);
+      mouth.rotation.y = Math.PI; // facing the airflow, which comes down -Z
+      group.add(mouth);
+    }
+
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.32 * W, 0.28 * W, 1.0 * L, 14, 1, true), shell);
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(0, 0.06, 5.1 * L);
+    group.add(pipe);
+
+    const nozzle = new THREE.Mesh(new THREE.CircleGeometry(0.27 * W, 14), duct);
+    nozzle.position.set(0, 0.06, 5.58 * L);
+    group.add(nozzle);
+
+    // A hot nozzle rather than a rocket plume. Anything longer reads as a paper
+    // dart taped to the tail — the turbine has to say "lit" at chase-camera
+    // distance and then get out of the way of the aeroplane.
+    flameMat = makeLitMaterial(sky, {
+      color: new THREE.Color(0.5, 0.16, 0.03),
+      emissive: new THREE.Color(1.0, 0.44, 0.12),
+      emissiveStrength: 2.4,
+      roughness: 1,
+      fresnel: 0,
+      opacity: 0,
+      transparent: true,
+    });
+    materials.push(flameMat);
+    flame = new THREE.Mesh(new THREE.ConeGeometry(0.2 * W, 0.85 * L, 12, 1, true), flameMat);
+    flame.rotation.x = -Math.PI / 2; // apex aft, so it tapers away from the ship
+    flame.position.set(0, 0.06, 5.62 * L + 0.42 * L);
+    group.add(flame);
+  }
+
   // ---- pusher propeller --------------------------------------------------
   let prop = null;
   let discMat = null;
@@ -217,12 +276,20 @@ export function createAircraft(sky, spec = getAircraft()) {
 
   group.userData.materials = materials;
   group.userData.spec = spec;
-  /** Only the propeller moves, and only when there is fuel going through it. */
+  /** Only the engine moves, and only when there is fuel going through it. */
   group.userData.animate = (dt, glider) => {
-    if (!prop) return;
-    const rate = glider.boosting ? 46 : 6 + glider.airspeed * 0.3;
-    prop.rotation.z += rate * dt;
-    discMat.uniforms.uOpacity.value = glider.boosting ? 0.34 : 0.08;
+    if (prop) {
+      const rate = glider.boosting ? 46 : 6 + glider.airspeed * 0.3;
+      prop.rotation.z += rate * dt;
+      discMat.uniforms.uOpacity.value = glider.boosting ? 0.34 : 0.08;
+    }
+    if (flame) {
+      // Lit or out, with nothing in between, and never quite steady while lit.
+      flameMat.uniforms.uPulse.value += dt * 47;
+      const want = glider.boosting ? 0.62 : 0;
+      flameMat.uniforms.uOpacity.value = THREE.MathUtils.damp(flameMat.uniforms.uOpacity.value, want, 14, dt);
+      flame.visible = flameMat.uniforms.uOpacity.value > 0.01;
+    }
   };
   return group;
 }
