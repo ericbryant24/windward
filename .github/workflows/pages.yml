@@ -1,8 +1,12 @@
 name: Deploy to GitHub Pages
 
-# The game is a static site with no build step, so Pages serves the repository
-# root as-is. `enablement: true` turns Pages on for the repo the first time this
-# runs, so there is nothing to click in Settings.
+# The game is a static site with no build step, so this just stages the files
+# the browser needs and hands them to Pages.
+#
+# Pages itself has to be switched on once by hand, under
+# Settings -> Pages -> Build and deployment -> Source: GitHub Actions. The
+# workflow token is not allowed to create the Pages site itself, on public or
+# private repositories, so asking it to only produced a confusing failure.
 
 on:
   push:
@@ -30,8 +34,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       # Publish only what the browser actually loads — the baking and test
       # tooling has no business on the public site, and leaving it out keeps
