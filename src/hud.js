@@ -66,6 +66,12 @@ export class Hud {
     for (const b of this.root.querySelectorAll('[data-action="map"]')) {
       b.classList.toggle('on', b.dataset.value === region.id);
     }
+    // A single-file build carries one map's data and cannot switch, so do not
+    // offer a control that would only reload the same region.
+    if (window.WINDWARD_REGION) {
+      const row = this.root.querySelector('[data-group="map"]')?.closest('.setting');
+      if (row) row.style.display = 'none';
+    }
   }
 
   showMenu(show, { discovered = 0, total = 0, best = {} } = {}) {
