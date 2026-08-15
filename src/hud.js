@@ -60,6 +60,7 @@ export class Hud {
       if (el) el.textContent = text;
     };
     set('data-tagline', region.tagline);
+    set('data-loadline', region.loadingTagline);
     set('data-circuitname', region.circuitName);
     set('data-circuitdesc', region.circuitDesc);
     set('data-freedesc', region.freeDesc);
@@ -67,10 +68,10 @@ export class Hud {
       b.classList.toggle('on', b.dataset.value === region.id);
     }
     // A single-file build carries one map's data and cannot switch, so do not
-    // offer a control that would only reload the same region.
+    // offer a choice that would only reload the same region.
     if (window.WINDWARD_REGION) {
-      const row = this.root.querySelector('[data-group="map"]')?.closest('.setting');
-      if (row) row.style.display = 'none';
+      const maps = this.root.querySelector('.maps');
+      if (maps) maps.style.display = 'none';
     }
   }
 
@@ -199,7 +200,7 @@ const TEMPLATE = /* html */ `
 <div class="loading">
   <div class="brand">
     <h1>WINDWARD</h1>
-    <p>Soaring the Bernese Alps</p>
+    <p data-loadline>Soaring the Bernese Alps</p>
   </div>
   <div class="loading-bar"><span></span></div>
   <div class="loading-note">reading the terrain…</div>
@@ -211,6 +212,19 @@ const TEMPLATE = /* html */ `
       <h1>WINDWARD</h1>
       <p class="sub" data-tagline>Jungfrau region · real terrain · 38 × 38 km</p>
     </header>
+
+    <div class="maps" data-group="map">
+      <button class="map-card on" data-action="map" data-value="jungfrau">
+        <span class="map-name">Jungfrau</span>
+        <span class="map-sub">38 × 38 km · Switzerland</span>
+        <span class="map-blurb">Ridge lift off the big north faces, thermals over the meadows.</span>
+      </button>
+      <button class="map-card" data-action="map" data-value="chicago">
+        <span class="map-name">Chicago</span>
+        <span class="map-sub">14 × 14 km · Illinois</span>
+        <span class="map-blurb">No hills to lean on. Thermals off hot roofs, and the lake kills you.</span>
+      </button>
+    </div>
 
     <div class="modes">
       <button class="mode-card" data-action="start" data-value="free">
@@ -234,13 +248,6 @@ const TEMPLATE = /* html */ `
     </div>
 
     <div class="settings">
-      <div class="setting">
-        <span>Map</span>
-        <div class="segmented" data-group="map">
-          <button class="on" data-action="map" data-value="jungfrau">Jungfrau</button>
-          <button data-action="map" data-value="chicago">Chicago</button>
-        </div>
-      </div>
       <div class="setting">
         <span>Time of day</span>
         <div class="segmented" data-group="time">

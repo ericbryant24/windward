@@ -108,6 +108,8 @@ async function boot() {
   state.region = region;
   document.title = `Windward — ${region.name}`;
 
+  // Before anything loads, so the loading screen names the right place.
+  hud.setRegion(region);
   hud.setProgress(0.02, region.loading[0]);
   const hf = await Heightfield.load(
     region.data.terrain,
