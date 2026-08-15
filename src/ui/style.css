@@ -751,9 +751,11 @@ body {
   -webkit-backdrop-filter: blur(6px);
 }
 
+/* Below the speed gauge, which carries the ship and its glide ratio under the
+   airspeed and so runs two lines taller than the altimeter opposite. */
 .pause {
   right: calc(var(--safe-r) + 12px);
-  top: calc(var(--safe-t) + 76px);
+  top: calc(var(--safe-t) + 108px);
 }
 
 /* ---------------------------------------------------------- controls --- */
@@ -1001,8 +1003,7 @@ body {
     height: 70%;
   }
 
-  .score-chip,
-  .pause {
+  .score-chip {
     top: calc(var(--safe-t) + 62px);
   }
 
@@ -1076,4 +1077,378 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* ---- the hangar --------------------------------------------------------- */
+/* Which aeroplane changes the game more than any other choice on this screen,
+   so it gets cards with real numbers rather than a row of names. */
+.fleet {
+  margin-bottom: 16px;
+}
+
+.fleet-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.fleet-head span {
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: 0.02em;
+}
+
+.fleet-head b {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dim);
+}
+
+.fleet-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ship-card {
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  opacity: 0.62;
+  transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.ship-card.on {
+  opacity: 1;
+  border-color: var(--accent);
+  background: rgba(20, 44, 62, 0.72);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.ship-card:active {
+  transform: scale(0.985);
+}
+
+.ship-name {
+  font-size: 15.5px;
+  font-weight: 650;
+}
+
+.ship-kind {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.ship-figures {
+  display: flex;
+  gap: 9px;
+  margin: 5px 0 3px;
+}
+
+.ship-figures i {
+  font-style: normal;
+  line-height: 1.15;
+}
+
+.ship-figures b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 620;
+}
+
+.ship-figures em {
+  display: block;
+  font-style: normal;
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.ship-blurb {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--dim);
+}
+
+/* ---- the polar, in flight ----------------------------------------------- */
+.gauge em.ship {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid var(--stroke);
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.gauge em.ship b {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.gauge em.ship span {
+  color: var(--accent);
+}
+
+/* Best glide and the approach to the stall, read off this ship's own polar
+   and corrected for the air it is actually flying in. */
+.gauge b.glide {
+  color: var(--lift);
+}
+
+.gauge b.slow {
+  color: var(--accent-warm);
+}
+
+/* ---- impact ------------------------------------------------------------- */
+/* Kept out of the layer tree entirely between crashes: a full-screen gradient
+   costs a full-screen composite every frame even at zero opacity, and this one
+   is wanted for about a second per flight. */
+.crash-flash {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 107, 94, 0) 35%,
+    rgba(255, 107, 94, calc(0.28 + 0.5 * var(--hit, 0.5))) 100%
+  );
+}
+
+.crash-flash.hit {
+  display: block;
+  animation: crash-hit calc(0.5s + var(--hit, 0.5) * 0.9s) ease-out forwards;
+}
+
+@keyframes crash-hit {
+  0% {
+    opacity: 1;
+  }
+  12% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---- what the air is doing ---------------------------------------------- */
+/* Netto sits on the same scale as the vario bar, so the gap between the mark
+   and the top of the fill is the airframe's own sink, read at a glance. */
+.vario-air {
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  height: 2px;
+  margin-bottom: -1px;
+  background: rgba(226, 240, 252, 0.75);
+  border-radius: 2px;
+  transition: bottom 0.12s linear;
+}
+
+.vario-air.up {
+  background: var(--lift);
+  box-shadow: 0 0 8px rgba(111, 242, 168, 0.7);
+}
+
+.netto {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.netto.up {
+  color: var(--lift);
+}
+
+/* The wind, directly under the compass, because that is the instrument it is
+   read against: straight up is the nose, so an arrow pointing up is a
+   tailwind. Its own row rather than a chip pinned inside the compass — the
+   compass is wider than the centre column on a narrow phone and runs under
+   both gauges, so anything at its edges is painted over. */
+.wind {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px 2px;
+  border-radius: 6px;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+}
+
+.wind i {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.wind b {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(226, 240, 252, 0.85);
+}
+
+/* --------------------------------------------------------------- offline --- */
+/* Wider than a segmented control and stacked, because "download 4.3 MB" is a
+   decision and needs the size and the progress next to the button, not a
+   two-state toggle. */
+.setting.offline {
+  display: block;
+}
+
+.offline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.offline-head span {
+  font-size: 13px;
+}
+
+.offline-head b {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.offline-note {
+  margin: 3px 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(180, 200, 220, 0.5);
+}
+
+.offline-maps {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.offline-map {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.offline-map span {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.offline-map em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.offline-map button {
+  border: 1px solid var(--stroke);
+  border-radius: 9px;
+  background: rgba(97, 210, 255, 0.14);
+  color: var(--ink);
+  padding: 6px 11px;
+  font-size: 11.5px;
+  min-width: 74px;
+}
+
+.offline-map button[disabled] {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.offline-map.on button {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--dim);
+}
+
+.offline-map.update {
+  border-color: rgba(255, 207, 112, 0.5);
+}
+
+.offline-map.update button {
+  background: rgba(255, 207, 112, 0.18);
+}
+
+/* The bar is only worth the row it costs while something is moving or stored. */
+.offline-map i {
+  grid-column: 1 / -1;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  display: none;
+}
+
+.offline-map.on i,
+.offline-map.busy i {
+  display: block;
+}
+
+.offline-map i b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #b6f0ff);
+  transition: width 0.2s linear;
+}
+
+.offline-map.on i b {
+  background: rgba(111, 242, 168, 0.55);
+}
+
+/* Nothing is loading, so the bar and its running commentary are a lie. */
+.loading.blocked .loading-bar,
+.loading.blocked .loading-note {
+  display: none;
+}
+
+.offline-block {
+  display: none;
+  width: min(88vw, 380px);
+  text-align: center;
+}
+
+.offline-block.on {
+  display: block;
+}
+
+.offline-block h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-warm);
+}
+
+.offline-block-msg {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+
+.offline-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
 }

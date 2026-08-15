@@ -3,14 +3,14 @@
   "region": "chicago",
   "source": "OpenStreetMap contributors, ODbL — see ATTRIBUTION.md",
   "format": 2,
-  "count": 145396,
-  "vertices": 837021,
+  "count": 145386,
+  "vertices": 836947,
   "vertexScale": 20,
-  "parts": 958,
+  "parts": 953,
   "heights": {
-    "fromHeightTag": 614,
+    "fromHeightTag": 610,
     "fromLevels": 72384,
-    "inferred": 72398,
+    "inferred": 72392,
     "surveyedPercent": 50.2
   },
   "note": "Footprints, positions, orientations and building:part massing are surveyed data. Heights are surveyed where tagged and inferred from type and footprint area otherwise. Facade materials are inferred from height and use except where building:material is tagged."

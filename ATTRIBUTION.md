@@ -59,8 +59,8 @@ building's type and the area of its footprint, and roof pitch likewise except
 where `roof:shape` is tagged. Treat that skyline as characteristic rather than
 surveyed.
 
-**Chicago — 145,396 buildings, 50% with a surveyed height.** 614 carry a
-`height` tag and 72,384 carry `building:levels`. More importantly, 958 of these
+**Chicago — 145,386 buildings, 50% with a surveyed height.** 610 carry a
+`height` tag and 72,384 carry `building:levels`. More importantly, 953 of these
 are `building:part` records under the Simple 3D Buildings scheme, which is how
 the towers that define the skyline are actually mapped: Willis Tower is a
 `type=building` relation carrying no height at all, with nine bundled tubes as

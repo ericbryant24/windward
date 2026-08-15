@@ -11,11 +11,16 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="description" content="Soar a glider over the real Jungfrau Alps, or over Chicago and its 104,000 real buildings." />
+    <meta name="description" content="Soar a glider over the real Jungfrau Alps, or over Chicago and its 145,386 real buildings." />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1a2a'/%3E%3Cpath d='M3 19h26l-1.6 2.2H4.6z' fill='%23dbeeff'/%3E%3Cpath d='M15 9h2l1.4 10h-4.8z' fill='%23dbeeff'/%3E%3Cpath d='M4 26l6-9 5 4 6-9 7 14z' fill='%2361d2ff' opacity='.45'/%3E%3C/svg%3E"
     />
+    <!-- Everything here stays document-relative: the site lives on a project
+         subpath, and one leading slash would point the installed app at the
+         wrong origin root. -->
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
     <link rel="stylesheet" href="src/ui/style.css" />
   </head>
   <body>

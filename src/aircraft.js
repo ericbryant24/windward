@@ -1,20 +1,26 @@
 import * as THREE from '../vendor/three.module.js';
 import { makeLitMaterial, loft, airfoil } from './materials.js';
+import { getAircraft } from './fleet.js';
 
 /**
- * The ship: a 15-metre sailplane built procedurally so it ships as code rather
- * than a model file. Nose points down -Z to match the flight model.
+ * The ship, built procedurally from the chosen aircraft's `look` block so it
+ * ships as code rather than as four model files. Nose points down -Z to match
+ * the flight model.
+ *
+ * Everything here is driven off the same spec the physics reads, so a 29-metre
+ * open-class ship really does have twice the span of the trainer on screen.
  */
-export function createAircraft(sky) {
+export function createAircraft(sky, spec = getAircraft()) {
+  const look = spec.look;
   const group = new THREE.Group();
 
   const shell = makeLitMaterial(sky, {
-    color: new THREE.Color(0.78, 0.79, 0.80),
-    roughness: 0.16,
-    fresnel: 0.5,
+    color: new THREE.Color(...look.body),
+    roughness: look.matte ? 0.42 : 0.16,
+    fresnel: look.matte ? 0.2 : 0.5,
   });
   const trim = makeLitMaterial(sky, {
-    color: new THREE.Color(0.55, 0.09, 0.06),
+    color: new THREE.Color(...look.trim),
     roughness: 0.22,
     fresnel: 0.4,
   });
@@ -26,6 +32,10 @@ export function createAircraft(sky) {
     transparent: true,
     side: THREE.DoubleSide,
   });
+  const materials = [shell, trim, canopyMat];
+
+  const L = look.fuseLength;
+  const W = look.fuseWidth;
 
   // ---- fuselage: pod and boom ------------------------------------------
   const fuseProfile = [];
@@ -48,32 +58,37 @@ export function createAircraft(sky) {
   const fuse = loft(
     stations.map(([z, sx, sy, oy]) => ({
       points: fuseProfile,
-      origin: new THREE.Vector3(0, oy, z),
-      scaleX: sx,
-      scaleY: sy,
+      origin: new THREE.Vector3(0, oy, z * L),
+      scaleX: sx * W,
+      scaleY: sy * W,
     }))
   );
   group.add(new THREE.Mesh(fuse, shell));
 
   // ---- wings -------------------------------------------------------------
-  const foil = airfoil(12, 0.115, 0.022);
-  // Slight dihedral and taper toward the tip, swept just enough to look right.
-  const WING = [
-    [0.0, 0.95, 0.0, 0.0],
-    [1.6, 0.92, 0.06, 0.02],
-    [4.2, 0.80, 0.20, 0.06],
-    [6.3, 0.62, 0.38, 0.12],
-    [7.35, 0.34, 0.52, 0.2],
-    [7.55, 0.10, 0.58, 0.26],
+  const foil = airfoil(12, look.foil ?? 0.115, 0.022);
+  // Fractions of half-span, root chord, tip rise and tip sweep. One shape for
+  // every ship; the spec stretches it. taperPower under 1 fattens the tip into
+  // a trainer's near-constant chord, over 1 draws it out into a racing planform.
+  const PLANFORM = [
+    [0.0, 1.0, 0.0, 0.0],
+    [0.212, 0.968, 0.104, 0.021],
+    [0.556, 0.842, 0.345, 0.063],
+    [0.834, 0.653, 0.655, 0.126],
+    [0.974, 0.358, 0.897, 0.211],
+    [1.0, 0.105, 1.0, 0.274],
   ];
   const buildWing = (sign) => {
-    const secs = WING.map(([span, chord, rise, sweep]) => ({
-      points: foil,
-      origin: new THREE.Vector3(0, -0.03 + rise, -0.15 + sweep),
-      scaleX: chord,
-      scaleY: chord,
-      spanAt: sign * span,
-    }));
+    const secs = PLANFORM.map(([f, chordF, riseF, sweepF]) => {
+      const chord = look.chord * Math.pow(chordF, look.taperPower);
+      return {
+        points: foil,
+        origin: new THREE.Vector3(0, look.wingY + riseF * look.dihedral, look.wingZ + sweepF * look.sweep),
+        scaleX: chord,
+        scaleY: chord,
+        spanAt: sign * f * look.span,
+      };
+    });
     const positions = [];
     const indices = [];
     const n = foil.length;
@@ -110,10 +125,11 @@ export function createAircraft(sky) {
   group.add(new THREE.Mesh(buildWing(-1), shell));
 
   // ---- tail --------------------------------------------------------------
+  const T = look.tail;
   const finGeom = buildPanel(
     [
-      [4.5, 0.1, 0.62],
-      [5.35, 1.45, 0.32],
+      [4.5 * L, 0.1, 0.62 * T],
+      [5.35 * L, 1.45 * T, 0.32 * T],
     ],
     0.05,
     'vertical'
@@ -121,44 +137,107 @@ export function createAircraft(sky) {
   group.add(new THREE.Mesh(finGeom, shell));
 
   const stabGeom = buildPanel(
-    [
-      [5.15, 1.5, 0.42],
-      [5.3, 1.5, 0.42],
-    ],
-    0.05,
-    'horizontal',
-    1.35
-  );
+    [[5.15 * L, 1.5 * T, 0.42 * T]], 0.05, 'horizontal', 1.35, 1.32 * T);
   group.add(new THREE.Mesh(stabGeom, shell));
 
   // ---- canopy ------------------------------------------------------------
+  const C = look.canopy;
   const canopy = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), canopyMat);
-  canopy.scale.set(0.36, 0.34, 1.35);
-  canopy.position.set(0, 0.24, -1.55);
+  canopy.scale.set(0.36 * W * C, 0.34 * C, 1.35 * L * C);
+  canopy.position.set(0, 0.24, -1.55 * L);
   group.add(canopy);
 
   // ---- nose flash and wingtip trim --------------------------------------
   const nose = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), trim);
-  nose.scale.set(0.23, 0.22, 0.55);
-  nose.position.set(0, 0.02, -3.15);
+  nose.scale.set(0.23 * W, 0.22 * W, 0.55 * L);
+  nose.position.set(0, 0.02, -3.15 * L);
   group.add(nose);
 
+  const tipChord = look.chord * Math.pow(0.105, look.taperPower);
   for (const sign of [-1, 1]) {
     const tip = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), trim);
-    tip.scale.set(0.16, 0.07, 0.34);
-    tip.position.set(sign * 7.5, 0.24, 0.08);
+    tip.scale.set(0.16, 0.07, tipChord * 0.6 + 0.1);
+    tip.position.set(sign * look.span * 0.995, look.wingY + look.dihedral, look.wingZ + look.sweep);
     group.add(tip);
+
+    // A winglet is what a long thin wing does instead of a wingtip: it reads
+    // at a distance as the extra span it effectively is.
+    if (look.winglet) {
+      const wl = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 8), shell);
+      wl.scale.set(0.05, look.winglet, tipChord * 0.75);
+      wl.position.set(sign * look.span, look.wingY + look.dihedral + look.winglet * 0.85, look.wingZ + look.sweep);
+      wl.rotation.z = -sign * 0.12;
+      group.add(wl);
+    }
   }
 
-  group.userData.materials = [shell, trim, canopyMat];
+  // ---- struts: what a parasol wing sits on -------------------------------
+  if (look.strut) {
+    for (const sign of [-1, 1]) {
+      const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1, 6), trim);
+      const top = new THREE.Vector3(sign * look.span * 0.5, look.wingY + look.dihedral * 0.5, look.wingZ + 0.2);
+      const foot = new THREE.Vector3(sign * 0.28 * W, -0.32, -0.4 * L);
+      strut.position.copy(top).add(foot).multiplyScalar(0.5);
+      strut.scale.y = top.distanceTo(foot);
+      strut.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3().subVectors(top, foot).normalize()
+      );
+      group.add(strut);
+    }
+  }
+
+  // ---- pusher propeller --------------------------------------------------
+  let prop = null;
+  let discMat = null;
+  if (look.prop) {
+    prop = new THREE.Group();
+    prop.position.set(0, look.wingY * 0.4 + 0.1, 1.35 * L);
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), trim);
+    prop.add(hub);
+    for (const sign of [-1, 1]) {
+      const blade = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), trim);
+      blade.scale.set(0.34, 0.07, 0.045);
+      blade.position.set(sign * 0.38, 0, 0);
+      blade.rotation.z = sign * 0.3;
+      prop.add(blade);
+    }
+    discMat = makeLitMaterial(sky, {
+      color: new THREE.Color(0.7, 0.72, 0.75),
+      roughness: 0.5,
+      opacity: 0.06,
+      transparent: true,
+      side: THREE.DoubleSide,
+    });
+    materials.push(discMat);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.72, 20), discMat);
+    prop.add(disc);
+    group.add(prop);
+  }
+
+  group.userData.materials = materials;
+  group.userData.spec = spec;
+  /** Only the propeller moves, and only when there is fuel going through it. */
+  group.userData.animate = (dt, glider) => {
+    if (!prop) return;
+    const rate = glider.boosting ? 46 : 6 + glider.airspeed * 0.3;
+    prop.rotation.z += rate * dt;
+    discMat.uniforms.uOpacity.value = glider.boosting ? 0.34 : 0.08;
+  };
   return group;
+}
+
+/** Free every buffer and program the ship owns, so swapping ships cannot leak. */
+export function disposeAircraft(group) {
+  group.traverse((o) => o.geometry?.dispose());
+  for (const m of group.userData.materials) m.dispose();
 }
 
 /**
  * Flat tapered panel used for the tail surfaces.
  * spec: [[z, extent, chord], ...] from root to tip.
  */
-function buildPanel(spec, thickness, orientation, sweepScale = 1) {
+function buildPanel(spec, thickness, orientation, sweepScale = 1, stabY = 1.32) {
   const positions = [];
   const indices = [];
   const foil = airfoil(8, 0.14, 0);
@@ -190,7 +269,7 @@ function buildPanel(spec, thickness, orientation, sweepScale = 1) {
       });
     }
     for (const s of sections) {
-      for (const [px, py] of foil) positions.push(s.along, 1.32 + py * thickness * 6, s.z + px * s.chord);
+      for (const [px, py] of foil) positions.push(s.along, stabY + py * thickness * 6, s.z + px * s.chord);
     }
   }
   for (let i = 0; i < sections.length - 1; i++) {

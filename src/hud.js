@@ -1,5 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { MEDAL_NAMES, formatMetric } from './challenges.js';
+import { Air } from './flight.js';
+import { polar, getAircraft } from './fleet.js';
 
 /**
  * All of the 2D UI: loading, menus, and the in-flight instruments. DOM rather
@@ -32,14 +34,23 @@ export class Hud {
     this.score = this.el('[data-score]');
     this.chip = this.el('.streak');
     this.compassTape = this.el('.compass-tape');
+    this.varioAir = this.el('.vario-air');
+    this.netto = this.el('[data-netto]');
+    this.windArrow = this.el('.wind i');
+    this.windSpeed = this.el('[data-wind]');
     this.arrow = this.el('.gate-arrow');
     this.warn = this.el('.warn');
     this.task = this.el('.task');
     this.taskName = this.el('[data-taskname]');
     this.taskProgress = this.el('[data-taskprogress]');
     this.taskTime = this.el('[data-tasktime]');
+    this.ship = this.el('[data-ship]');
+    this.shipPolar = this.el('[data-shippolar]');
+    this.flash = this.el('.crash-flash');
+    this.offlineBlock = this.el('.offline-block');
 
     this._v = new THREE.Vector3();
+    this.polar = polar(getAircraft()); // until the game says which ship it is
     this.onAction = () => {};
     this.root.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action]');
@@ -73,10 +84,13 @@ export class Hud {
       b.classList.toggle('on', b.dataset.value === region.id);
     }
     // A single-file build carries one map's data and cannot switch, so do not
-    // offer a choice that would only reload the same region.
+    // offer a choice that would only reload the same region. It is also already
+    // as offline as a thing can be, so the download shelf has nothing to say.
     if (window.WINDWARD_REGION) {
-      const maps = this.root.querySelector('.maps');
-      if (maps) maps.style.display = 'none';
+      for (const sel of ['.maps', '.setting.offline']) {
+        const el = this.root.querySelector(sel);
+        if (el) el.style.display = 'none';
+      }
     }
   }
 
@@ -123,6 +137,82 @@ export class Hud {
     this.flight.dataset.mode = mode;
   }
 
+  /**
+   * The offline shelf. A map is 4-odd megabytes of somebody's phone, so the
+   * size is on the button before it is pressed and again after, and the bar is
+   * the real byte count coming down rather than a spinner.
+   */
+  setOffline({ note, space, maps = [], updateReady = false }) {
+    this.el('[data-offlinespace]').textContent = space ?? '';
+    this.el('[data-offlinenote]').textContent = note ?? '';
+    this.el('.offline-maps').innerHTML = [
+      ...maps.map(
+        (m) => `
+        <div class="offline-map${m.cached ? ' on' : ''}${m.busy ? ' busy' : ''}">
+          <span>${m.name}</span>
+          <em>${m.label}</em>
+          <button ${m.busy ? 'disabled' : ''} data-action="${m.cached ? 'offline-remove' : 'offline-download'}" data-value="${m.id}">${
+            m.busy ? `${Math.round(m.progress * 100)}%` : m.cached ? 'Remove' : 'Download'
+          }</button>
+          <i><b style="width:${(m.busy ? m.progress : m.cached ? 1 : 0) * 100}%"></b></i>
+        </div>`
+      ),
+      updateReady
+        ? `<div class="offline-map update">
+             <span>New version</span>
+             <em>downloaded and ready</em>
+             <button data-action="offline-update">Reload</button>
+           </div>`
+        : '',
+    ].join('');
+  }
+
+  /**
+   * The dead end: no network, and the map this session wants is not on the
+   * device. Said on the loading screen, because there is no world behind it to
+   * put a menu on top of.
+   */
+  showOfflineBlock(message, buttons = []) {
+    this.loading.classList.remove('gone');
+    this.loading.classList.add('blocked');
+    this.loading.style.display = '';
+    this.offlineBlock.classList.add('on');
+    this.el('.offline-block-msg').textContent = message;
+    this.el('.offline-block-actions').innerHTML = buttons
+      .map((b) => `<button class="btn ${b.primary ? 'primary' : ''}" data-action="${b.action}" data-value="${b.value ?? ''}">${b.label}</button>`)
+      .join('');
+  }
+
+  /**
+   * The hangar, and the instruments that go with whichever ship is chosen.
+   *
+   * Every figure on a card comes out of fleet.js polar(), which reads the same
+   * coefficients the flight model does — so the card cannot flatter the ship.
+   */
+  setFleet(list, selectedId) {
+    this.el('.fleet-list').innerHTML = list
+      .map((spec) => {
+        const p = polar(spec);
+        return `
+        <button class="ship-card ${spec.id === selectedId ? 'on' : ''}" data-action="aircraft" data-value="${spec.id}">
+          <span class="ship-name">${spec.name}</span>
+          <span class="ship-kind">${spec.kind}</span>
+          <span class="ship-figures">
+            <i><b>${p.bestLD.toFixed(0)}:1</b><em>glide</em></i>
+            <i><b>${p.minSink.toFixed(1)}</b><em>m/s sink</em></i>
+            <i><b>${Math.round(spec.trimSpeed * 3.6)}</b><em>km/h trim</em></i>
+          </span>
+          <span class="ship-blurb">${spec.blurb}</span>
+        </button>`;
+      })
+      .join('');
+
+    const spec = list.find((s) => s.id === selectedId) ?? list[0];
+    this.polar = polar(spec);
+    this.ship.textContent = spec.name;
+    this.shipPolar.textContent = `${this.polar.bestLD.toFixed(0)}:1 · ↓${this.polar.minSink.toFixed(1)}`;
+  }
+
   showResults(title, lines, buttons) {
     this.results.classList.add('open');
     this.el('.results h2').textContent = title;
@@ -155,6 +245,16 @@ export class Hud {
     this.warn.classList.toggle('on', !!text);
   }
 
+  /** A hit felt through the screen: harder impacts flash longer and redder. */
+  impact(severity) {
+    this.flash.style.setProperty('--hit', severity.toFixed(2));
+    this.flash.classList.remove('hit');
+    void this.flash.offsetWidth; // restart the animation on a second crash
+    this.flash.classList.add('hit');
+    clearTimeout(this._flashTimer);
+    this._flashTimer = setTimeout(() => this.flash.classList.remove('hit'), 1600);
+  }
+
   /** Per-frame instrument refresh. */
   update(state) {
     const { glider, ground, objective, camera, mode, timer, score, streak, challenge } = state;
@@ -163,20 +263,52 @@ export class Hud {
     this.agl.textContent = `${Math.max(0, Math.round(glider.position.y - ground))} agl`;
     this.spd.textContent = Math.round(glider.airspeed * 3.6);
 
+    // The polar is quoted at sea level; thinner air up here means the same
+    // wing needs more true airspeed for the same lift coefficient, so the
+    // bands on the speed readout have to move with altitude or they lie.
+    const thin = Math.sqrt(Air.density(0) / Air.density(glider.position.y));
+    const best = this.polar.bestLDSpeed * thin;
+    this.spd.classList.toggle('glide', Math.abs(glider.airspeed - best) < best * 0.07);
+    this.spd.classList.toggle('slow', glider.airspeed < this.polar.stallSpeed * thin * 1.08);
+
     const v = THREE.MathUtils.clamp(glider.varioSmooth / 5, -1, 1);
     this.varioFill.style.height = `${Math.abs(v) * 50}%`;
     this.varioFill.style.bottom = v >= 0 ? '50%' : `${50 - Math.abs(v) * 50}%`;
     this.varioFill.classList.toggle('down', v < 0);
     this.varioText.textContent = `${glider.varioSmooth >= 0 ? '+' : ''}${glider.varioSmooth.toFixed(1)}`;
 
+    // Netto beside the ship's own vario: the mark is where the air is going,
+    // the bar is where the ship is going, and the gap between them is what the
+    // airframe costs to keep flying.
+    const air = THREE.MathUtils.clamp(glider.nettoSmooth / 5, -1, 1);
+    this.varioAir.style.bottom = `${50 + air * 50}%`;
+    this.varioAir.classList.toggle('up', glider.nettoSmooth > 0.15);
+    this.netto.textContent = `air ${glider.nettoSmooth >= 0 ? '+' : ''}${glider.nettoSmooth.toFixed(1)}`;
+    this.netto.classList.toggle('up', glider.nettoSmooth > 0.15);
+
     this.compassTape.style.backgroundPosition = `${-glider.headingDeg * 4}px 0`;
+
+    // Where the wind is going, seen from the cockpit: the top of the compass is
+    // the nose, so an arrow pointing up is a tailwind. Read off the vector the
+    // flight model just flew through, gradient and all, not the region's table.
+    const wind = glider.wind;
+    const bearing = (Math.atan2(wind.x, -wind.z) * 180) / Math.PI;
+    this.windArrow.style.transform = `rotate(${bearing - glider.headingDeg - 90}deg)`;
+    this.windSpeed.textContent = Math.round(Math.hypot(wind.x, wind.z) * 3.6);
 
     if (objective) {
       this.objective.classList.add('on');
       this.objectiveName.textContent = objective.name;
-      const d = objective.position.distanceTo(glider.position);
-      this.objectiveDist.textContent = d > 1500 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`;
-      this.#pointArrow(objective.position, camera, glider);
+      // A readout with nothing to point at still has something to say: "no
+      // lift within reach" is an answer, and a distance to nowhere is not.
+      if (objective.position) {
+        const d = objective.position.distanceTo(glider.position);
+        this.objectiveDist.textContent = d > 1500 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`;
+        this.#pointArrow(objective.position, camera, glider);
+      } else {
+        this.objectiveDist.textContent = '';
+        this.arrow.style.opacity = '0';
+      }
     } else {
       this.objective.classList.remove('on');
       this.arrow.style.opacity = '0';
@@ -242,6 +374,11 @@ const TEMPLATE = /* html */ `
   </div>
   <div class="loading-bar"><span></span></div>
   <div class="loading-note">reading the terrain…</div>
+  <div class="offline-block">
+    <h2>No connection</h2>
+    <p class="offline-block-msg"></p>
+    <div class="offline-block-actions"></div>
+  </div>
 </div>
 
 <div class="menu">
@@ -262,6 +399,11 @@ const TEMPLATE = /* html */ `
         <span class="map-sub">14 × 14 km · Illinois</span>
         <span class="map-blurb">No hills to lean on. Thermals off hot roofs, and the lake kills you.</span>
       </button>
+    </div>
+
+    <div class="fleet">
+      <div class="fleet-head"><span>Aircraft</span><b>numbers off its own polar</b></div>
+      <div class="fleet-list"></div>
     </div>
 
     <div class="modes">
@@ -333,6 +475,14 @@ const TEMPLATE = /* html */ `
           <button data-action="invert" data-value="1">Inverted</button>
         </div>
       </div>
+      <div class="setting offline">
+        <div class="offline-head">
+          <span>Offline play</span>
+          <b data-offlinespace></b>
+        </div>
+        <p class="offline-note" data-offlinenote></p>
+        <div class="offline-maps"></div>
+      </div>
     </div>
 
     <p class="hint">Keyboard: arrows or WASD to fly · Space boost · B airbrakes · C camera · R respawn</p>
@@ -351,7 +501,11 @@ const TEMPLATE = /* html */ `
       <em data-agl>0 agl</em>
     </div>
     <div class="centre">
-      <div class="compass"><div class="compass-tape"></div><div class="compass-mark"></div></div>
+      <div class="compass">
+        <div class="compass-tape"></div>
+        <div class="compass-mark"></div>
+      </div>
+      <div class="wind"><i>➤</i><b data-wind>0</b></div>
       <div class="objective">
         <span data-objective>—</span><b data-objdist>—</b>
       </div>
@@ -359,12 +513,14 @@ const TEMPLATE = /* html */ `
     <div class="gauge right">
       <b data-spd>0</b><span class="unit">km/h</span>
       <em data-timer>0:00.0</em>
+      <em class="ship"><b data-ship>—</b><span data-shippolar>—</span></em>
     </div>
   </div>
 
   <div class="vario">
-    <div class="vario-track"><div class="vario-fill"></div></div>
+    <div class="vario-track"><div class="vario-fill"></div><i class="vario-air"></i></div>
     <span data-vario>0.0</span>
+    <em class="netto" data-netto>air 0.0</em>
   </div>
 
   <div class="score-chip"><b data-score>0</b><span>pts</span></div>
@@ -378,6 +534,7 @@ const TEMPLATE = /* html */ `
   <div class="gate-arrow">➤</div>
 
   <button class="icon-btn pause" data-action="pause" aria-label="Pause">❚❚</button>
+  <div class="crash-flash"></div>
 </div>
 
 <div class="toasts"></div>

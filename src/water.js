@@ -42,6 +42,10 @@ export function createLakes(heightfield, sky) {
         uSunRadiance: { value: new THREE.Vector3(20, 19, 18) },
         uSkyAmbient: { value: new THREE.Vector3(0.6, 0.8, 1.2) },
         uTime: { value: 0 },
+        // The wind the air model is running over this water, m/s. A lake is the
+        // one surface big enough to show it: streaks lie along the wind and the
+        // gusts walk downwind across them.
+        uWind: { value: new THREE.Vector2(0, 0) },
       },
       vertexShader: /* glsl */ `
         out vec3 vWorld;
@@ -64,8 +68,29 @@ export function createLakes(heightfield, sky) {
         uniform vec3 uSunRadiance;
         uniform vec3 uSkyAmbient;
         uniform float uTime;
+        uniform vec2 uWind;
         in vec3 vWorld;
         out vec4 fragColor;
+
+        /**
+         * Ripples in the wind's own frame: the noise is squashed across the
+         * wind and stretched along it, which is what turns a uniform chop into
+         * the streaks that give a lake its direction from the air. The whole
+         * field is carried downwind at the same time.
+         */
+        float ripples(vec2 p, float t, vec2 dir, float speed){
+          vec2 q = vec2(dot(p, dir), dot(p, vec2(-dir.y, dir.x)));
+          q.x -= t * speed;
+          vec2 a = vec2(q.x * 0.34, q.y);
+          return fbm(a * 0.055 + vec2(t * 0.35, t * 0.11), 3) +
+                 0.6 * fbm(vec2(q.x * 0.5, q.y) * 0.21 - vec2(t * 0.6, t * 0.2), 2);
+        }
+
+        /** Cat's paws: long thin patches of roughened water walking downwind. */
+        float catspaw(vec2 p, float t, vec2 dir, float speed){
+          vec2 q = vec2(dot(p, dir) * 0.16 - t * speed * 1.35, dot(p, vec2(-dir.y, dir.x)));
+          return smoothstep(0.06, 0.42, fbm(q * 0.0052, 3));
+        }
 
         void main(){
           vec2 uv = vWorld.xz / (2.0 * uHalfSize) + 0.5;
@@ -82,10 +107,15 @@ export function createLakes(heightfield, sky) {
           vec2 p = vWorld.xz;
           float t = uTime;
           float e = 0.9;
-          float w0 = fbm(p * 0.055 + vec2(t * 0.35, t * 0.11), 3) + 0.6 * fbm(p * 0.21 - vec2(t * 0.6, t * 0.2), 2);
-          float wx = fbm((p + vec2(e, 0.0)) * 0.055 + vec2(t * 0.35, t * 0.11), 3) + 0.6 * fbm((p + vec2(e, 0.0)) * 0.21 - vec2(t * 0.6, t * 0.2), 2);
-          float wz = fbm((p + vec2(0.0, e)) * 0.055 + vec2(t * 0.35, t * 0.11), 3) + 0.6 * fbm((p + vec2(0.0, e)) * 0.21 - vec2(t * 0.6, t * 0.2), 2);
-          vec3 n = normalize(vec3(-(wx - w0) * 0.55 * fade, 1.0, -(wz - w0) * 0.55 * fade));
+          float speed = length(uWind);
+          vec2 dir = speed > 0.05 ? uWind / speed : vec2(1.0, 0.0);
+          float cat = catspaw(p, t, dir, speed);
+          // Harder wind, steeper chop; and steeper still inside a gust front.
+          float chop = 0.55 * fade * (0.45 + 0.55 * clamp(speed / 9.0, 0.0, 1.0)) * (0.7 + 0.85 * cat);
+          float w0 = ripples(p, t, dir, speed);
+          float wx = ripples(p + vec2(e, 0.0), t, dir, speed);
+          float wz = ripples(p + vec2(0.0, e), t, dir, speed);
+          vec3 n = normalize(vec3(-(wx - w0) * chop, 1.0, -(wz - w0) * chop));
 
           // ---- depth --------------------------------------------------------
           float bed = sampleHeightTex(uHeight, uHeightSize, uHeightStep, vWorld.xz);
@@ -108,6 +138,9 @@ export function createLakes(heightfield, sky) {
           vec3 hv = normalize(uSunDir - vdir);
           float spec = pow(clamp(dot(n, hv), 0.0, 1.0), 260.0);
           col += uSunRadiance * spec * 1.6 * fade;
+          // Roughened water scatters instead of mirroring, so a gust reads as a
+          // dull patch drawn across the reflection.
+          col += uSkyAmbient * cat * 0.045 * fade;
 
           col = aerial(col, dist, vdir, (uLevel + cameraPosition.y) * 0.5, uSunDir);
           fragColor = outputColor(col, shore);
@@ -135,6 +168,10 @@ export function createLakes(heightfield, sky) {
         m.uniforms.uSunRadiance.value.copy(sunRadiance);
         m.uniforms.uSkyAmbient.value.copy(skyAmbient);
       }
+    },
+    /** @param {THREE.Vector3} wind the sampled wind over the water, m/s. */
+    setWind(wind) {
+      for (const m of materials) m.uniforms.uWind.value.set(wind.x, wind.z);
     },
   };
 }

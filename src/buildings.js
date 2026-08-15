@@ -13,7 +13,7 @@ import { loadPacked, readMagic } from './binary.js';
  *
  * Buildings are bucketed into a kilometre grid and each tile's geometry is
  * merged and built on demand, then thrown away when it falls out of range.
- * Chicago has 104,000 of them, so tiles past the first kilometre drop their
+ * Chicago has 145,000 of them, so tiles past the first kilometre drop their
  * smallest buildings and keep the towers: a bungalow at four kilometres is a
  * pixel, but the Loop skyline has to still be there.
  */
@@ -415,42 +415,50 @@ export class Buildings {
   /**
    * Structures no footprint conveys, modelled by hand. Their OSM outlines are
    * dropped at bake time so nothing is drawn twice.
+   *
+   * The region names the ones it wants; LANDMARKS below holds the builders.
+   * Every material is made whether or not this region uses it, so that
+   * setLighting has one list to walk — a ShaderMaterial that never reaches a
+   * mesh never gets compiled either.
    */
   #buildLandmarks(sky, places, which) {
     const concrete = makeLitMaterial(sky, { color: new THREE.Color(0.36, 0.36, 0.35), roughness: 0.72, fresnel: 0.15 });
     const glass = makeLitMaterial(sky, { color: new THREE.Color(0.06, 0.1, 0.13), roughness: 0.05, fresnel: 0.85 });
-    this.landmarkMaterials = [concrete, glass];
+    const steel = makeLitMaterial(sky, {
+      color: new THREE.Color(0.6, 0.62, 0.65),
+      roughness: 0.34,
+      metalness: 0.5,
+      fresnel: 0.4,
+    });
+    const limestone = makeLitMaterial(sky, { color: new THREE.Color(0.50, 0.47, 0.41), roughness: 0.85, fresnel: 0.1 });
+    const mirror = makeMirrorMaterial(sky);
+    this.landmarkMaterials = [concrete, glass, steel, limestone, mirror];
 
-    if (which.includes('sphinx')) {
-      const joch = places.find((p) => p.name === 'Jungfraujoch');
-      if (joch) {
-        const g = new THREE.Group();
-        const tower = new THREE.Mesh(new THREE.CylinderGeometry(5, 8, 26, 10), concrete);
-        tower.position.y = 13;
-        const deck = new THREE.Mesh(new THREE.CylinderGeometry(11, 9, 5, 12), concrete);
-        deck.position.y = 28;
-        const dome = new THREE.Mesh(new THREE.SphereGeometry(7.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), glass);
-        dome.position.y = 30;
-        g.add(tower, deck, dome);
-        g.position.set(joch.x, this.hf.heightAt(joch.x, joch.z) - 2, joch.z);
-        this.group.add(g);
-      }
-    }
+    const meta = this.hf.meta;
+    const mLon = 111320 * Math.cos((meta.centerLat * Math.PI) / 180);
+    const kit = {
+      hf: this.hf,
+      places,
+      // Landmarks are surveyed to the metre. PLACES is a table of labels, and
+      // a label may sit anywhere in the thing it names, so anything positioned
+      // this precisely carries its own coordinates instead.
+      local: (lat, lon) => ({ x: (lon - meta.centerLon) * mLon, z: (meta.centerLat - lat) * 111320 }),
+      topNear: (x, z) => this.topNear(x, z),
+      concrete,
+      glass,
+      steel,
+      limestone,
+      mirror,
+    };
 
-    if (which.includes('pizgloria')) {
-      const schilthorn = places.find((p) => p.name === 'Schilthorn');
-      if (schilthorn) {
-        const g = new THREE.Group();
-        const base = new THREE.Mesh(new THREE.CylinderGeometry(11, 13, 9, 16), concrete);
-        base.position.y = 2;
-        const drum = new THREE.Mesh(new THREE.CylinderGeometry(13, 11, 7, 16), glass);
-        drum.position.y = 8;
-        const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 14, 6), concrete);
-        mast.position.y = 18;
-        g.add(base, drum, mast);
-        g.position.set(schilthorn.x, this.hf.heightAt(schilthorn.x, schilthorn.z) - 3, schilthorn.z);
-        this.group.add(g);
+    for (const name of which) {
+      const build = LANDMARKS[name];
+      if (!build) {
+        console.warn(`buildings: no landmark builder called "${name}"`);
+        continue;
       }
+      const object = build(kit);
+      if (object) this.group.add(object);
     }
   }
 
@@ -471,6 +479,336 @@ function emptyMesh(cutoff) {
   m.visible = false;
   m.userData.cutoff = cutoff;
   return m;
+}
+
+// -------------------------------------------------------------- landmarks ---
+/**
+ * The hand-modelled structures, keyed by the name a region lists in
+ * buildings.landmarks. Adding one is adding an entry here and an entry in the
+ * baker's HAND_MODELLED, so the OSM footprint stops being extruded underneath
+ * it.
+ *
+ * A builder is handed the kit #buildLandmarks assembles and returns an object
+ * already placed in world space, or null when its anchor is missing.
+ *
+ * Nothing here is touched by the tile LOD: whatever a builder returns is drawn
+ * from anywhere in the region, at every distance, forever. So each one merges
+ * down to a couple of draw calls and stays inside a few thousand triangles.
+ */
+const LANDMARKS = {
+  sphinx: ({ hf, places, concrete, glass }) => {
+    const joch = places.find((p) => p.name === 'Jungfraujoch');
+    if (!joch) return null;
+    const g = new THREE.Group();
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(5, 8, 26, 10), concrete);
+    tower.position.y = 13;
+    const deck = new THREE.Mesh(new THREE.CylinderGeometry(11, 9, 5, 12), concrete);
+    deck.position.y = 28;
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(7.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), glass);
+    dome.position.y = 30;
+    g.add(tower, deck, dome);
+    g.position.set(joch.x, hf.heightAt(joch.x, joch.z) - 2, joch.z);
+    return g;
+  },
+
+  pizgloria: ({ hf, places, concrete, glass }) => {
+    const schilthorn = places.find((p) => p.name === 'Schilthorn');
+    if (!schilthorn) return null;
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(11, 13, 9, 16), concrete);
+    base.position.y = 2;
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(13, 11, 7, 16), glass);
+    drum.position.y = 8;
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 14, 6), concrete);
+    mast.position.y = 18;
+    g.add(base, drum, mast);
+    g.position.set(schilthorn.x, hf.heightAt(schilthorn.x, schilthorn.z) - 3, schilthorn.z);
+    return g;
+  },
+
+  /**
+   * Navy Pier's Centennial Wheel. OSM surveys it as a 4.4 by 58.9 m footprint
+   * 59.7 m tall, which is exactly true from directly overhead and a stone slab
+   * from anywhere else. Its plane runs north-south, so from the map's start
+   * position out on the lake it stands edge-on: a billboarded disc would be
+   * invisible and the spokes have to actually be there.
+   */
+  'centennial-wheel': ({ hf, local, steel }) => {
+    const { x, z } = local(41.891689, -87.607476);
+    const R = 27.4; // rim radius, which puts the top of the wheel at 59.7 m
+    const HUB = 32.3;
+    const GAP = 2.2; // half of the 4.4 m between the two rims
+
+    // The A-frames, which do not turn. They splay to the ends of the surveyed
+    // footprint, so the 58.9 m is the legs rather than the wheel.
+    const fixed = [];
+    for (const sx of [-1, 1]) {
+      const px = sx * (GAP + 1.5);
+      for (const sz of [-1, 1]) fixed.push(strut(px, 0, sz * 28.6, px, HUB, 0, 0.75));
+      fixed.push(strut(px, 3.2, -28.6, px, 3.2, 28.6, 0.35, 4));
+      fixed.push(new THREE.BoxGeometry(4.4, 2.2, 7.0).translate(px, 1.1, 0));
+    }
+
+    // Everything below is built about the hub, not the ground, so the spin
+    // group can turn it in place.
+    const turning = [new THREE.CylinderGeometry(1.75, 1.75, GAP * 2 + 3.4, 12).rotateZ(Math.PI / 2)];
+    for (const sx of [-GAP, GAP]) {
+      turning.push(new THREE.TorusGeometry(R, 0.45, 5, 44).rotateY(Math.PI / 2).translate(sx, 0, 0));
+    }
+    // Twenty-one bars straight through the hub rather than forty-two arms out
+    // of it: half the geometry for the same wheel.
+    for (let i = 0; i < 21; i++) {
+      const a = (i / 21) * Math.PI;
+      const cy = Math.cos(a) * R;
+      const cz = Math.sin(a) * R;
+      turning.push(strut(0, cy, cz, 0, -cy, -cz, 0.15, 4));
+    }
+    // Forty-two gondolas, drawn as pods turned about the wheel's own axis.
+    // Riding round with the rim then leaves them looking upright, which
+    // forty-two counter-rotating groups would also do at forty-two times the
+    // cost.
+    for (let i = 0; i < 42; i++) {
+      const a = (i / 42) * Math.PI * 2;
+      turning.push(
+        new THREE.CylinderGeometry(1.3, 1.3, 2.6, 7)
+          .rotateZ(Math.PI / 2)
+          .translate(0, Math.cos(a) * (R - 2.5), Math.sin(a) * (R - 2.5))
+      );
+    }
+
+    const spin = new THREE.Group();
+    spin.position.y = HUB;
+    const wheel = new THREE.Mesh(mergeParts(turning), steel);
+    // Nothing ticks a landmark, so the one landmark that moves drives itself
+    // off the render. Five minutes a turn, as the real one does.
+    wheel.onBeforeRender = () => {
+      spin.rotation.x = performance.now() * 2.1e-5;
+    };
+    spin.add(wheel);
+
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(mergeParts(fixed), steel), spin);
+    g.position.set(x, standOn(hf, x, z, 26), z);
+    return g;
+  },
+
+  /**
+   * Cloud Gate. OSM tags it building=yes with roof:shape=dome and height 10,
+   * which bakes into a brick lump with a hat. Its surveyed outline is a clean
+   * ellipse 19.6 m north-south by 14.8 east-west and the sculpture is 20 by 13
+   * by 10, so the two agree that the long axis runs north-south.
+   *
+   * The mirror is the entire point of the object and gets its own material.
+   */
+  'cloud-gate': ({ hf, local, mirror }) => {
+    // Baked into the geometry rather than set on the mesh: the lit shaders
+    // rotate normals by the model matrix alone, so a non-uniform mesh scale
+    // would shear every reflection across it.
+    const geom = new THREE.SphereGeometry(1, 34, 22).scale(6.6, 5.8, 9.8);
+    const bean = new THREE.Mesh(geom, mirror);
+    const { x, z } = local(41.882686, -87.623331);
+    // The underside curves up into the arch instead of meeting the plaza, so
+    // the ellipsoid is set into the ground: 10 m of sculpture standing on a
+    // footprint narrower than its waist.
+    bean.position.set(x, standOn(hf, x, z, 10) + 4.2, z);
+    return bean;
+  },
+
+  /**
+   * Soldier Field's two colonnades. OSM has them as 30 m slabs, which is the
+   * right envelope around the wrong building: what stands there is thirty-two
+   * Doric columns a side under an entablature, and the gaps between the
+   * columns are most of what makes the stadium recognisable from the air.
+   *
+   * Only these two parts are dropped in the bake. The bowl, the 60 m glass
+   * superstructure and the rest of the stadium's parts are good massing and
+   * are left exactly as OSM has them.
+   */
+  'soldier-field-colonnade': ({ hf, local, limestone }) => {
+    const o = local(41.8623, -87.6167);
+    const g = new THREE.Group();
+    // Ends taken off the surveyed footprints, as offsets from the stadium
+    // centre. The west run bows seven metres out over its length, which is why
+    // each is a line and not a box.
+    for (const [ax, az, bx, bz] of [
+      [104.0, -61.2, 104.0, 43.4],
+      [-101.9, -47.5, -94.9, 57.8],
+    ]) {
+      const len = Math.hypot(bx - ax, bz - az);
+      const angle = Math.atan2(bx - ax, bz - az);
+      // Stylobate and entablature, with the hundred-foot colonnade between.
+      const parts = [
+        new THREE.BoxGeometry(8.6, 2.6, len + 3).rotateY(angle).translate(0, 1.3, 0),
+        new THREE.BoxGeometry(9.2, 5.0, len + 3).rotateY(angle).translate(0, 27.5, 0),
+      ];
+      for (let i = 0; i < 32; i++) {
+        const t = (i + 0.5) / 32 - 0.5;
+        // Open-ended: both caps sit inside the stone above and below them.
+        parts.push(
+          new THREE.CylinderGeometry(0.92, 1.04, 22.4, 8, 1, true).translate(
+            Math.sin(angle) * len * t,
+            13.8,
+            Math.cos(angle) * len * t
+          )
+        );
+      }
+      const cx = o.x + (ax + bx) / 2;
+      const cz = o.z + (az + bz) / 2;
+      const run = new THREE.Mesh(mergeParts(parts), limestone);
+      run.position.set(cx, standOn(hf, cx, cz, 50), cz);
+      g.add(run);
+    }
+    return g;
+  },
+
+  /**
+   * The dome over the Aon Grand Ballroom, at the far end of Navy Pier. OSM has
+   * the hall but nothing about its roof, and the dome is half of what the pier
+   * reads as from out on the lake.
+   *
+   * This one adds to the OSM building rather than replacing it, so no footprint
+   * is dropped for it: it stands on whatever roof the bake gives the hall.
+   */
+  'grand-ballroom': ({ hf, local, topNear, steel }) => {
+    const { x, z } = local(41.891847, -87.599301);
+    const ground = standOn(hf, x, z, 18);
+    // topNear reaches across a couple of hundred metres of pier, so it is
+    // capped: a taller neighbour must not lift the dome off its own hall.
+    const roof = Math.min(topNear(x, z), ground + 22);
+    const dome = new THREE.Mesh(
+      mergeParts([
+        new THREE.CylinderGeometry(16.5, 16.5, 3.4, 22, 1, true).translate(0, 1.2, 0),
+        new THREE.SphereGeometry(16.5, 22, 9, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.64, 1).translate(0, 2.8, 0),
+        new THREE.CylinderGeometry(0.3, 0.3, 5.0, 5).translate(0, 15.0, 0),
+      ]),
+      steel
+    );
+    dome.position.set(x, Math.max(roof, ground + 8) - 1.6, z);
+    return dome;
+  },
+};
+
+/**
+ * The ground a landmark stands on: the highest of a ring of samples across its
+ * footprint, and never below the water.
+ *
+ * Both halves earn their keep in Chicago. The DEM carries the river bed and
+ * the lake floor, so a footprint that reaches over a bank samples 172.5 m
+ * against a 176.5 m surface, and anchoring on that wades the landmark four
+ * metres into the water it is meant to stand beside.
+ */
+function standOn(hf, x, z, radius) {
+  let y = hf.heightAt(x, z);
+  let wet = hf.isWater(x, z);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const sx = x + Math.cos(a) * radius;
+    const sz = z + Math.sin(a) * radius;
+    y = Math.max(y, hf.heightAt(sx, sz));
+    wet = wet || hf.isWater(sx, sz);
+  }
+  const level = hf.meta.lakes?.[0]?.level;
+  return wet && level !== undefined ? Math.max(y, level) : y;
+}
+
+const UP = new THREE.Vector3(0, 1, 0);
+
+/** A cylinder running from a to b, in the frame it was given, ready to merge. */
+function strut(ax, ay, az, bx, by, bz, radius, sides = 6) {
+  const dir = new THREE.Vector3(bx - ax, by - ay, bz - az);
+  const length = dir.length();
+  return new THREE.CylinderGeometry(radius, radius, length, sides, 1)
+    .applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, dir.normalize()))
+    .translate((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
+}
+
+/**
+ * Concatenate parts so a landmark costs one draw call rather than fifty. A
+ * ferris wheel is sixty-odd primitives and it is on screen from every corner
+ * of the map.
+ */
+function mergeParts(parts) {
+  const flat = parts.map((g) => (g.index ? g.toNonIndexed() : g));
+  let total = 0;
+  for (const g of flat) total += g.getAttribute('position').count;
+  const pos = new Float32Array(total * 3);
+  const nrm = new Float32Array(total * 3);
+  let at = 0;
+  for (const g of flat) {
+    pos.set(g.getAttribute('position').array, at * 3);
+    nrm.set(g.getAttribute('normal').array, at * 3);
+    at += g.getAttribute('position').count;
+  }
+  for (const g of new Set([...parts, ...flat])) g.dispose();
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  out.computeBoundingSphere();
+  return out;
+}
+
+/**
+ * A near-mirror, for Cloud Gate.
+ *
+ * makeLitMaterial reflects the sky at grazing angles only, which is right for
+ * a gelcoat wing and wrong for polished stainless: shaded that way the Bean is
+ * a black lump with a bright rim, and the reflection is the only thing anyone
+ * would know it by. There is no cube map to sample here, so what it returns is
+ * the analytic sky in the reflected direction and the plaza below the horizon.
+ */
+function makeMirrorMaterial(sky, { tint = new THREE.Color(0.87, 0.88, 0.89), roughness = 0.02 } = {}) {
+  return new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    uniforms: {
+      ...sky.uniforms,
+      uTint: { value: new THREE.Vector3(tint.r, tint.g, tint.b) },
+      uRoughness: { value: roughness },
+      uSunRadiance: { value: new THREE.Vector3(2.2, 2.0, 1.6) },
+      uSkyAmbient: { value: new THREE.Vector3(0.5, 0.7, 1.1) },
+    },
+    vertexShader: /* glsl */ `
+      out vec3 vWorld;
+      out vec3 vNormal;
+      void main(){
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorld = wp.xyz;
+        vNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      precision highp float;
+      ${NOISE}
+      ${SKY}
+      ${OUTPUT}
+      uniform vec3 uTint;
+      uniform float uRoughness;
+      uniform vec3 uSunRadiance;
+      uniform vec3 uSkyAmbient;
+      in vec3 vWorld;
+      in vec3 vNormal;
+      out vec4 fragColor;
+
+      void main(){
+        vec3 v = vWorld - cameraPosition;
+        float dist = length(v);
+        vec3 vdir = v / dist;
+        vec3 n = normalize(vNormal);
+        vec3 r = reflect(vdir, n);
+
+        vec3 col = skyRadiance(r, uSunDir) * uTint;
+        // Below the horizon the real thing shows the plaza and the crowd on
+        // it, which the sky model knows about only as a flat grey floor.
+        col = mix(col, uSkyAmbient * 0.16, smoothstep(0.02, -0.45, r.y));
+        // A polished surface returns the solar disc as a small, fierce spot.
+        float shine = mix(140.0, 4000.0, 1.0 - uRoughness);
+        col += uSunRadiance * pow(clamp(dot(r, uSunDir), 0.0, 1.0), shine) * 9.0;
+
+        col = aerial(col, dist, vdir, (vWorld.y + cameraPosition.y) * 0.5, uSunDir);
+        fragColor = outputColor(col, 1.0);
+      }
+    `,
+  });
 }
 
 // --------------------------------------------------------------- geometry ---

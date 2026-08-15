@@ -41,11 +41,16 @@ export class Trees {
         uSkyAmbient: { value: new THREE.Vector3(0.5, 0.7, 1.1) },
 
         uSway: { value: 0 },
+        // The wind the air model is actually running just above this ground,
+        // in m/s. A whole hillside leaning one way is the cheapest wind sock
+        // there is, and it costs one vec2.
+        uWind: { value: new THREE.Vector2(0, 0) },
       },
       vertexShader: /* glsl */ `
         in vec4 aTree;   // xyz = base, w = height
         in vec3 aTint;   // x = colour jitter, y = lean, z = distance it fades out at
         uniform float uSway;
+        uniform vec2 uWind;
         out vec3 vWorld;
         out vec3 vNormal;
         out float vTint;
@@ -63,6 +68,20 @@ export class Trees {
           float k = position.y * position.y;
           p.x += (aTint.y + sin(uSway + aTree.x * 0.05) * 0.06) * k * h;
           p.z += cos(uSway * 0.83 + aTree.z * 0.05) * 0.05 * k * h;
+
+          // Bent downwind by however hard it is blowing, with gusts running
+          // across the stand in the same direction — the wave has to travel
+          // with the wind or the hillside reads as breathing rather than blown.
+          float speed = length(uWind);
+          if (speed > 0.05) {
+            vec2 dir = uWind / speed;
+            // Two waves, both travelling at about the wind speed: a long swell
+            // that bends whole stands and a short shimmer across the crowns.
+            float along = dot(aTree.xz, dir);
+            float gust = 0.62 + 0.24 * sin(along * 0.012 - uSway * 0.107)
+                              + 0.14 * sin(along * 0.35 - uSway * 3.1);
+            p.xz += dir * (clamp(speed / 14.0, 0.0, 1.0) * 0.30 * gust) * k * h;
+          }
 
           vec3 world = aTree.xyz + p;
           vWorld = world;
@@ -246,6 +265,11 @@ export class Trees {
   setLighting(sunRadiance, skyAmbient) {
     this.material.uniforms.uSunRadiance.value.copy(sunRadiance);
     this.material.uniforms.uSkyAmbient.value.copy(skyAmbient);
+  }
+
+  /** @param {THREE.Vector3} wind the sampled wind near the ground, m/s. */
+  setWind(wind) {
+    this.material.uniforms.uWind.value.set(wind.x, wind.z);
   }
 }
 

@@ -1,6 +1,9 @@
 import * as THREE from '../vendor/three.module.js';
 import { Air, Glider } from './flight.js';
-import { createAircraft } from './aircraft.js';
+import { createAircraft, disposeAircraft } from './aircraft.js';
+import { FLEET, getAircraft, polar } from './fleet.js';
+import { AirViz } from './airviz.js';
+import { Wreck } from './wreck.js';
 import { World, createThermalClouds } from './world.js';
 import { Trees } from './trees.js';
 import { Buildings } from './buildings.js';
@@ -11,6 +14,7 @@ import { formatTime } from './hud.js';
 
 const CAMERA_MODES = ['chase', 'far', 'cockpit'];
 const STORE_KEY = 'windward.progress.v1';
+const SHIP_KEY = 'windward.aircraft';
 
 /**
  * Mode rules, scoring, camera and the frame loop. The glider physics live in
@@ -32,14 +36,26 @@ export class Game {
     this.region = region;
     this.air = new Air(heightfield, sky, region.air);
     this.air.seedThermals();
-    this.glider = new Glider(this.air);
+    this.spec = getAircraft(store.get(SHIP_KEY));
+    this.polar = polar(this.spec);
+    this.glider = new Glider(this.air, this.spec);
 
     this.world = new World(heightfield, sky, scene, region.id);
-    this.aircraft = createAircraft(sky);
+    this.aircraft = createAircraft(sky, this.spec);
     scene.add(this.aircraft);
 
     this.clouds = createThermalClouds(this.air, sky);
     scene.add(this.clouds);
+
+    // How much air to draw is a device question, and main.js owns the quality
+    // table this must not add a row to — so read the tier off what it already
+    // says about the machine.
+    const tier = quality?.trees === false ? 0 : quality?.pixelRatio >= 2 ? 2 : 1;
+    this.airviz = new AirViz(this.air, heightfield, sky, {
+      motes: [90, 170, 250][tier],
+      columns: [18, 30, 40][tier],
+    });
+    scene.add(this.airviz.mesh);
 
     if (quality?.trees !== false) {
       this.trees = new Trees(heightfield, sky, { ...quality?.treeOptions, ...region.trees });
@@ -60,6 +76,7 @@ export class Game {
     // After the buildings, which the collect tasks consult so that no pickup
     // ends up buried inside a tower.
     this.challenges = new Challenges(this.world, heightfield, sky, scene, region.id, this.buildings);
+    this.wreck = new Wreck(scene, sky, heightfield, this.buildings);
 
     this.state = 'menu';
     this.mode = 'free';
@@ -69,7 +86,6 @@ export class Game {
     this.streak = 1;
     this.maxAltitude = 0;
     this.gateIndex = 0;
-    this.respawnTimer = 0;
     this.lowTime = 0;
     this.progress = loadProgress();
 
@@ -79,8 +95,15 @@ export class Game {
     this._hit = {};
     this._v = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
+    this._camShake = new THREE.Vector3();
+    this._liftPos = new THREE.Vector3();
+    this._lift = null;
+    this._liftAge = 0;
+    this._crashCam = new THREE.Vector3();
+    this._crashAim = new THREE.Vector3();
     this.labels = new LabelLayer(document.getElementById('ui'), this.world.places);
 
+    this.hud.setFleet(FLEET, this.spec.id);
     // Park the ship somewhere sane so nothing sits at the world origin while
     // the menu camera drifts over the peaks.
     const start = this.spawnFor('free');
@@ -88,6 +111,28 @@ export class Game {
   }
 
   // ------------------------------------------------------------- setup ---
+  /**
+   * Swap aeroplanes from the menu. The spec is the whole aircraft — physics,
+   * mesh and the numbers the HUD quotes — so everything that reads it has to
+   * be handed the new one.
+   */
+  setAircraft(id) {
+    const spec = getAircraft(id);
+    if (spec === this.spec) return;
+    this.spec = spec;
+    this.polar = polar(spec);
+    this.glider.setAircraft(spec);
+    this.scene.remove(this.aircraft);
+    disposeAircraft(this.aircraft);
+    this.aircraft = createAircraft(this.sky, spec);
+    this.scene.add(this.aircraft);
+    if (this._sun) this.setLighting(this._sun, this._amb);
+    store.set(SHIP_KEY, spec.id);
+    this.hud.setFleet(FLEET, spec.id);
+    const start = this.spawnFor('free');
+    this.glider.reset(start.position, start.heading, start.speed);
+  }
+
   startMode(mode) {
     this.mode = mode;
     this.state = 'flying';
@@ -97,7 +142,7 @@ export class Game {
     this.maxAltitude = 0;
     this.gateIndex = 0;
     this.lowTime = 0;
-    this.respawnTimer = 0;
+    this.wreck.end();
     // Puts the circuit course back if a slalom had swapped it out, so the
     // gates below are the ones this mode expects.
     this.challenges.abort();
@@ -109,6 +154,7 @@ export class Game {
     this.glider.reset(spawn.position, spawn.heading, spawn.speed);
     this._prevPos.copy(this.glider.position);
     this.#placeCamera(true);
+    this.#surveyAir();
 
     this.hud.setMode(mode);
     this.hud.showMenu(false);
@@ -124,24 +170,35 @@ export class Game {
     this.hud.toast(intro);
   }
 
+  /**
+   * Spawn speeds are multiples of the ship's trim speed, not absolutes. A
+   * trainer launched at the sailplane's 40 m/s arrives at the first gate
+   * already past its never-exceed speed.
+   */
   spawnFor(mode) {
+    const trim = this.spec.trimSpeed;
     if (mode === 'circuit') {
       const g0 = this.world.gates[0];
       const back = this._v.copy(g0.normal).multiplyScalar(-950);
       const pos = new THREE.Vector3().copy(g0.position).add(back);
       pos.y = Math.max(pos.y, this.hf.heightAt(pos.x, pos.z) + 220);
       const heading = (THREE.MathUtils.radToDeg(Math.atan2(g0.normal.x, -g0.normal.z)) + 360) % 360;
-      return { position: pos, heading, speed: 40 };
+      return { position: pos, heading, speed: trim * 1.21 };
     }
     // Free flight and the climb task each open where the region says.
     const s = (mode === 'climb' ? this.region.climbStart : null) ?? this.region.start;
     const v = this.world.toLocal(s.lat, s.lon);
     const ground = this.hf.heightAt(v.x, v.z);
-    return { position: new THREE.Vector3(v.x, ground + s.agl, v.z), heading: s.heading, speed: mode === 'climb' ? 34 : 36 };
+    return {
+      position: new THREE.Vector3(v.x, ground + s.agl, v.z),
+      heading: s.heading,
+      speed: trim * (mode === 'climb' ? 1.03 : 1.09),
+    };
   }
 
   toMenu() {
     this.state = 'menu';
+    this.wreck.end();
     this.challenges.abort();
     this.challenges.setVisible(false);
     this.controls.setVisible(false);
@@ -184,12 +241,38 @@ export class Game {
     if (this.state === 'flying') this.#simulate(dt);
     if (this.state !== 'menu') this.#placeCamera(false, dt);
 
+    // The air layer follows the ship, not the camera: what has to be legible is
+    // the air the player is flying in.
+    this.airviz.mesh.visible = this.state !== 'menu';
+    if (this.state !== 'menu') {
+      this.airviz.update(dt, this.glider.position);
+      // One sampled vector, read by everything on the ground that shows wind.
+      const wind = this.airviz.field.surfaceWind;
+      this.trees?.setWind(wind);
+      this.lakes?.setWind(wind);
+      // Hunting for lift walks every thermal on the map; the answer changes far
+      // too slowly to be worth doing at the physics rate.
+      this._liftAge -= dt;
+      if (this._liftAge <= 0) {
+        this._liftAge = 0.25;
+        this._lift = this.airviz.field.bestLift(this.glider.position, {
+          sink: this.polar.minSink + 0.15,
+          glide: this.polar.bestLD * 0.75,
+        });
+      }
+    }
+
     this.trees?.update(dt, this.camera.position);
     this.buildings?.update(this.camera.position);
     this.network?.update(dt, this.camera.position);
+    this.wreck.tick(dt);
     this.aircraft.position.copy(this.glider.position);
     this.aircraft.quaternion.copy(this.glider.quaternion);
-    this.aircraft.visible = this.state !== 'menu' && CAMERA_MODES[this.cameraMode] !== 'cockpit';
+    this.aircraft.userData.animate?.(dt, this.glider);
+    // Watching your own wreck from inside the cockpit you are no longer in is
+    // not the shot; a crash always plays from outside.
+    this.aircraft.visible =
+      this.state !== 'menu' && (this.wreck.active || CAMERA_MODES[this.cameraMode] !== 'cockpit');
 
     if (this.state !== 'menu') {
       const ground = this.hf.heightAt(this.glider.position.x, this.glider.position.z);
@@ -219,9 +302,13 @@ export class Game {
     const g = this.glider;
     this._prevPos.copy(g.position);
 
-    if (this.respawnTimer > 0) {
-      this.respawnTimer -= dt;
-      if (this.respawnTimer <= 0) this.#respawn();
+    // A wreck flies itself: it tumbles, scrapes and slides to a halt, and only
+    // when it has stopped and been looked at for a beat does the game move on.
+    if (this.wreck.active) {
+      if (this.wreck.update(dt, g)) {
+        this.wreck.end();
+        this.#respawn();
+      }
       return;
     }
 
@@ -243,8 +330,13 @@ export class Game {
     if (this.buildings && this.state === 'flying') {
       const hit = this.buildings.hitSegment(this._prevPos, g.position, this._hit);
       if (hit) {
-        g.position.set(hit.x, hit.y, hit.z);
-        this.#crash('structure', hit);
+        // A roof taken from above is a flat surface; a wall is the edge normal
+        // hitSegment worked out from the footprint.
+        const overRoof = this._prevPos.y > hit.top - 0.4;
+        this.#crash('structure', {
+          normal: overRoof ? this._v.set(0, 1, 0) : this._v.set(hit.nx, 0, hit.nz).normalize(),
+          point: this._v2.set(hit.x, overRoof ? hit.top : hit.y, hit.z),
+        });
         return;
       }
     }
@@ -254,16 +346,20 @@ export class Game {
 
     // ---- terrain contact ---------------------------------------------------
     if (agl < 3.5) {
-      const slope = this.hf.normalAt(g.position.x, g.position.z, 30, this._v).y;
-      const gentle = slope > 0.93;
-      const slow = g.airspeed < 26 && Math.abs(g.vario) < 6;
-      if (gentle && slow && !this.hf.isWater(g.position.x, g.position.z)) this.#land();
-      else this.#crash();
+      const water = this.hf.isWater(g.position.x, g.position.z);
+      const normal = this.hf.normalAt(g.position.x, g.position.z, 30, this._v);
+      const gentle = normal.y > 0.93;
+      // Touching down is a speed relative to the ship: the trainer arrives at
+      // 20 m/s and the open-class ship cannot get below 26 without stalling.
+      const trim = this.spec.trimSpeed;
+      const slow = g.airspeed < trim * 0.79 && Math.abs(g.vario) < trim * 0.18;
+      if (gentle && slow && !water) this.#land();
+      else this.#crash(water ? 'water' : 'terrain', { normal, point: this._v2.set(g.position.x, ground, g.position.z) });
       return;
     }
 
     // ---- ridge running: reward flying close, but only while quick ----------
-    if (agl < 90 && g.airspeed > 24) {
+    if (agl < 90 && g.airspeed > this.spec.trimSpeed * 0.73) {
       const closeness = 1 - agl / 90;
       this.streak = Math.min(4, this.streak + closeness * dt * 0.55);
       this.score += closeness * this.streak * 26 * dt;
@@ -365,12 +461,13 @@ export class Game {
     if (!def) return this.resumeFree();
     this.hud.hideResults();
     this.state = 'flying';
-    this.respawnTimer = 0;
+    this.wreck.end();
     this.controls.setVisible(true);
     const spawn = this.challenges.spawnFor(def);
-    this.glider.reset(spawn.position, spawn.heading, 44);
+    this.glider.reset(spawn.position, spawn.heading, this.spec.trimSpeed * 1.33);
     this._prevPos.copy(this.glider.position);
     this.#placeCamera(true);
+    this.#surveyAir();
     this.challenges.arm(def);
     this.#announceChallenge(def);
   }
@@ -421,12 +518,15 @@ export class Game {
       task = this.challenges.objective(this.glider.position);
       if (task && !task.hint) return task;
     }
+    // Not the nearest thermal: the nearest lift this ship can reach and use.
+    // "Nearest thermal" pointed just as confidently at a column whose top was
+    // below you, or at one across four kilometres of lake you had no height to
+    // cross, and a readout that does that is worse than an empty one.
     const p = this.glider.position;
-    const near = this.air.nearestThermal(p.x, p.z);
-    if (!near) return task;
-    if (task && Math.hypot(task.position.x - p.x, task.position.z - p.z) < near.distance) return task;
-    const t = near.thermal;
-    return { name: 'Nearest lift', position: this._v2.set(t.x, t.ground + 400, t.z) };
+    const lift = this._lift;
+    if (!lift) return task ?? { name: 'No lift within glide', position: null };
+    if (task && Math.hypot(task.position.x - p.x, task.position.z - p.z) < lift.distance) return task;
+    return { name: `Lift ${lift.w.toFixed(1)} m/s`, position: this._liftPos.set(lift.x, lift.y, lift.z) };
   }
 
   #land() {
@@ -447,18 +547,37 @@ export class Game {
     ]);
   }
 
-  #crash(cause = 'terrain', hit = null) {
+  /**
+   * Hand the ship over to the wreck. Everything that follows — the tumble, the
+   * dust, the shaken camera, the pause before the game says anything — is the
+   * wreck's, and #simulate brings it back here through #respawn when it stops.
+   */
+  #crash(cause = 'terrain', impact = null) {
+    const g = this.glider;
+    const normal = impact?.normal ?? this._v.set(0, 1, 0);
+    const point = impact?.point ?? this._v2.copy(g.position);
+    const severity = this.wreck.begin(g, { cause, normal, point });
+    // The camera stops flying too: it keeps the frame it had at the moment of
+    // the bang and lets the wreck fall through it.
+    this._crashCam.copy(this.camera.position);
+    // Looking slightly down on the site from the off, so a crash on a hillside
+    // is not filmed from inside the hillside.
+    this._crashCam.y = Math.max(this._crashCam.y, point.y + 5);
+    this._crashAim.copy(g.position);
+
     this.streak = 1;
-    this.score = Math.max(0, this.score - 250);
-    this.respawnTimer = 1.4;
-    this.glider.velocity.multiplyScalar(0.1);
+    // A scrape costs less than arriving flat out into a tower. Severity is
+    // uncapped here on purpose: a redline dive into Willis Tower is the most
+    // expensive thing in the game, not a tie with a mediocre 45-degree arrival.
+    this.score = Math.max(0, this.score - Math.round(80 + 450 * severity));
     this.audio?.cue('crash');
     this.hud.setWarning('');
+    this.hud.impact(severity);
     // A running challenge has to die with the ship, not keep counting while
     // the wreck waits to respawn.
     const failed = this.challenges.crashed();
     if (failed) this.#failChallenge(failed);
-    else this.hud.toast(cause === 'structure' ? 'You hit a building. Resetting…' : 'Terrain! Resetting…', 'bad');
+    else this.hud.toast(crashLine(cause, severity), 'bad');
   }
 
   #respawn() {
@@ -481,9 +600,22 @@ export class Game {
       const skyline = this.buildings?.topNear(base.x, base.z) ?? -Infinity;
       base.y = Math.max(this.hf.heightAt(base.x, base.z) + 420, skyline + 150);
     }
-    g.reset(base, heading, 38);
+    g.reset(base, heading, this.spec.trimSpeed * 1.15);
     this._prevPos.copy(g.position);
     this.#placeCamera(true);
+    this.#surveyAir();
+  }
+
+  /**
+   * Sweep the air where the ship now is. The field fills itself in a cell at a
+   * time as you fly, which is right while you are flying and wrong the instant
+   * you are somewhere else: without this the first seconds after a launch or a
+   * respawn are flown over a survey of wherever the last one ended.
+   */
+  #surveyAir() {
+    this.airviz.prime(this.glider.position);
+    this._liftAge = 0;
+    this._lift = null;
   }
 
   #finishCircuit() {
@@ -534,6 +666,10 @@ export class Game {
   // ------------------------------------------------------------ camera ---
   #placeCamera(snap, dt = 0.016) {
     const g = this.glider;
+    if (this.wreck.active) {
+      this.#crashCamera(snap ? 1 : dt);
+      return;
+    }
     const mode = CAMERA_MODES[this.cameraMode];
 
     if (mode === 'cockpit') {
@@ -569,9 +705,52 @@ export class Game {
     const aim = this._camAim.copy(g.position).addScaledVector(fwd, 16).addScaledVector(g.velocity, 0.12);
     this.camera.lookAt(aim);
 
-    const target = THREE.MathUtils.clamp(this._baseFov + (g.airspeed - 32) * 0.24 + (g.boosting ? 5 : 0), this._baseFov - 3, this._baseFov + 12);
+    // Speed reads as speed relative to what this ship calls fast.
+    const rush = (g.airspeed - this.spec.trimSpeed) * (8 / this.spec.trimSpeed);
+    const target = THREE.MathUtils.clamp(this._baseFov + rush + (g.boosting ? 5 : 0), this._baseFov - 3, this._baseFov + 12);
     this.camera.fov = snap ? target : THREE.MathUtils.damp(this.camera.fov, target, 3, dt);
     this.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * A crash is the one time the camera is not a chase camera. It holds where
+   * it was, shakes, and only drifts if the wreck is about to leave the frame —
+   * the ship falls away from you instead of the world sliding calmly past.
+   */
+  #crashCamera(dt) {
+    const g = this.glider;
+    const cam = this.camera;
+    const base = this._crashCam;
+
+    const to = this._v.copy(g.position).sub(base);
+    const d = to.length() || 1;
+    const want = THREE.MathUtils.clamp(d, 19, 46);
+    // Give ground quickly to a wreck coming at the lens; only drift after one
+    // that is getting away.
+    base.addScaledVector(to.divideScalar(d), (d - want) * Math.min(1, dt * (d < want ? 12 : 2.2)));
+    // Clear of the ground, and never below the wreck: from underneath, a crash
+    // on a hillside is a view of the inside of the hillside.
+    const floor = Math.max(this.hf.heightAt(base.x, base.z) + 6, g.position.y + 1.5);
+    if (base.y < floor) base.y += (floor - base.y) * Math.min(1, dt * 5);
+
+    // Two frequencies so it reads as a knock rather than a vibration.
+    const s = this.wreck.shake;
+    const t = this.wreck.t;
+    this._camShake
+      .set(
+        Math.sin(t * 47.3) + 0.6 * Math.sin(t * 91.7),
+        Math.sin(t * 38.1 + 1.7) + 0.6 * Math.sin(t * 103.3),
+        Math.sin(t * 53.9 + 3.1) + 0.6 * Math.sin(t * 87.1)
+      )
+      .multiplyScalar(s * 1.1 * Math.min(1, d / 19));
+    cam.position.copy(base).add(this._camShake);
+
+    this._crashAim.lerp(g.position, 1 - Math.exp(-dt * 9));
+    cam.lookAt(this._crashAim);
+
+    const target = this._baseFov + s * 13;
+    cam.fov = THREE.MathUtils.damp(cam.fov, target, 9, dt);
+    cam.updateProjectionMatrix();
   }
 
   setBaseFov(fov) {
@@ -597,9 +776,14 @@ export class Game {
   }
 
   setLighting(sunRadiance, skyAmbient) {
+    // Kept so a ship swapped in from the menu can be lit like everything else.
+    this._sun = sunRadiance;
+    this._amb = skyAmbient;
     this.world.setLighting(sunRadiance, skyAmbient);
     this.challenges.setLighting(sunRadiance, skyAmbient);
+    this.wreck.setLighting(sunRadiance, skyAmbient);
     this.clouds.userData.setLighting(sunRadiance, skyAmbient);
+    this.airviz.setLighting(sunRadiance, skyAmbient);
     this.trees?.setLighting(sunRadiance, skyAmbient);
     this.buildings?.setLighting(sunRadiance, skyAmbient);
     this.network?.setLighting(sunRadiance, skyAmbient);
@@ -616,11 +800,24 @@ export class Game {
     this.clouds.geometry.dispose();
     this.clouds = createThermalClouds(this.air, this.sky);
     this.scene.add(this.clouds);
+    // The columns standing in the old sky belong to thermals that no longer
+    // exist; nothing may survive a re-seed but the sampler itself.
+    this.#surveyAir();
   }
 }
 
 function modeName(mode) {
   return { free: 'Free Flight', circuit: 'Circuit', climb: 'Height Hunt' }[mode] ?? mode;
+}
+
+/** What the toast says depends on how hard you arrived. */
+function crashLine(cause, severity) {
+  const where = { structure: 'the building', water: 'the water', terrain: 'the ground' }[cause] ?? 'the ground';
+  if (severity < 0.14) return `Clipped ${where}. Resetting…`;
+  if (severity < 0.5) return `You went into ${where}. Resetting…`;
+  // Only reachable near the redline, which is the point of having it.
+  if (severity < 0.95) return `You arrived at ${where} all at once. Resetting…`;
+  return `You put the ship into ${where} at redline. Resetting…`;
 }
 
 /** Floating place names, so the region reads as somewhere rather than terrain. */

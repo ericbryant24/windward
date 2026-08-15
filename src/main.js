@@ -11,6 +11,7 @@ import { loadNetwork } from './network.js';
 import { getRegion, DEFAULT_REGION } from './regions.js';
 import { store } from './store.js';
 import { Audio } from './audio.js';
+import { Offline, formatBytes } from './offline.js';
 
 const canvas = document.getElementById('view');
 const uiRoot = document.getElementById('ui');
@@ -48,6 +49,7 @@ const state = { ready: false };
 window.WINDWARD = state;
 
 const hud = new Hud(uiRoot);
+const offline = new Offline();
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: !isMobile,
@@ -86,7 +88,27 @@ async function boot() {
   // last choice decides.
   const embeddedRegion = window.WINDWARD_REGION ?? null;
   const wantRegion = embeddedRegion ?? params.get('map') ?? store.get('windward.region') ?? DEFAULT_REGION;
-  const region = getRegion(wantRegion);
+  let region = getRegion(wantRegion);
+
+  // A map that is neither downloaded nor reachable cannot be flown, and finding
+  // that out four megabytes into the loading bar is the worst way to learn it.
+  // The probe is the region's own metadata file — a kilobyte, and the very next
+  // thing the heightfield asks for anyway.
+  // Offline play is an enhancement; nothing in it gets to stop the game booting.
+  const attached = await offline.attach().catch(() => false);
+  let offlineNote = null;
+  if (!embeddedRegion && !(await offline.available(region.id))) {
+    const spare = offline.cachedRegions().filter((id) => id !== region.id);
+    if (!spare.length) {
+      blockOffline(region);
+      return;
+    }
+    // Do not persist the fallback: the choice they made still stands for the
+    // next time there is a network.
+    offlineNote = `No connection — flying ${getRegion(spare[0]).name}, the map on this device`;
+    region = getRegion(spare[0]);
+  }
+
   state.region = region;
   document.title = `Windward — ${region.name}`;
 
@@ -178,7 +200,12 @@ async function boot() {
       movers: game.network?.moverCount ?? 0,
       calls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
+      aircraft: game.spec.id,
+      crashing: game.wreck.active ? +game.wreck.severity.toFixed(2) : 0,
+      build: offline.state.buildId ?? 'none',
+      offlineMaps: offline.cachedRegions().join('+') || 'none',
     }),
+    offline,
   });
 
   // ------------------------------------------------------------- input ---
@@ -255,6 +282,28 @@ async function boot() {
         selectSegment(btn);
         controls.invertPitch = value === '1';
         break;
+      case 'aircraft':
+        // The mesh, the physics and the numbers on the card are all the one
+        // spec, so the game swaps the whole aeroplane and re-parks it.
+        game.setAircraft(value);
+        break;
+      case 'offline-download':
+        try {
+          await offline.download(value);
+          hud.toast(`${getRegion(value).name} will fly with no network`);
+        } catch (err) {
+          hud.toast(`Could not store ${getRegion(value).name}: ${err.message}`, 'bad');
+        }
+        drawOffline();
+        break;
+      case 'offline-remove':
+        await offline.remove(value);
+        hud.toast(`${getRegion(value).name} removed from this device`);
+        drawOffline();
+        break;
+      case 'offline-update':
+        await offline.applyUpdate();
+        break;
     }
   };
 
@@ -283,9 +332,26 @@ async function boot() {
 
   hud.setProgress(1, 'ready');
   hud.hideLoading();
+  if (offlineNote) hud.toast(offlineNote);
   const autostart = params.get('start');
   if (autostart) game.startMode(autostart);
   else game.toMenu();
+
+  // Only now. Precaching the 2.4 MB shell while the player is still waiting on
+  // four megabytes of terrain would make the thing they asked for slower to
+  // buy them something they have not asked for yet.
+  offline.onChange = drawOffline;
+  drawOffline();
+  if (offline.supported) {
+    offline
+      .install()
+      .then(() => drawOffline())
+      // A shell that installed one second ago cannot be out of date, so the
+      // update check only runs for a visit that arrived already installed.
+      .then(() => attached && offline.checkForUpdate())
+      .then((changed) => changed && hud.toast('A new version is ready — <b>reload</b> to take it'))
+      .catch((err) => console.warn('offline unavailable:', err.message));
+  }
 
   // -------------------------------------------------------------- loop ---
   let last = performance.now();
@@ -318,6 +384,64 @@ async function boot() {
   }
   requestAnimationFrame(tick);
   state.ready = true;
+}
+
+/**
+ * There is no map and no network, which is a dead end rather than an error.
+ * Say so on the loading screen — there is no world behind it yet to show a
+ * menu over — and wire up the one button it needs, since the main action
+ * handler is installed much later in boot.
+ */
+function blockOffline(region) {
+  state.blocked = 'offline';
+  state.ready = true;
+  hud.showOfflineBlock(
+    `${region.name} is not stored on this device and there is no network to fetch it from. ` +
+      'Connect once, then keep a map with Offline play in the menu.',
+    [{ action: 'offline-retry', label: 'Try again', primary: true }]
+  );
+  hud.onAction = (action) => {
+    if (action === 'offline-retry') location.reload();
+  };
+}
+
+let offlineFrame = 0;
+let offlineSpace = null;
+
+/** Repaint the offline shelf. Coalesced, because download progress fires per chunk. */
+function drawOffline() {
+  if (offlineFrame) return;
+  offlineFrame = requestAnimationFrame(async () => {
+    offlineFrame = 0;
+    if (!offline.supported) {
+      hud.setOffline({ note: 'This browser will not store the game for offline play.', maps: [] });
+      return;
+    }
+    // estimate() is not free, and nothing it reports moves mid-download.
+    if (!offline.busy) offlineSpace = await offline.storage();
+    const maps = [];
+    for (const { id, name } of offline.regions()) {
+      const cached = offline.cached(id);
+      const busy = offline.busy === id;
+      const size = await offline.sizeOf(id);
+      maps.push({
+        id,
+        name,
+        cached,
+        busy,
+        progress: offline.progress,
+        label: busy ? 'downloading…' : cached ? `${formatBytes(size)} · on this device` : formatBytes(size),
+      });
+    }
+    hud.setOffline({
+      note: offline.state.buildId
+        ? 'The game itself is kept automatically. Download a map and it flies with no network at all.'
+        : 'Storing the game on this device…',
+      space: offlineSpace?.usage ? `${formatBytes(offlineSpace.usage)} used` : '',
+      maps,
+      updateReady: offline.updateReady,
+    });
+  });
 }
 
 function selectByValue(group, value) {

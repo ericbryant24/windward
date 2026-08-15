@@ -53,7 +53,7 @@ export const REGIONS = {
     name: 'Chicago',
     subtitle: 'Illinois',
     blurb: 'No hills to lean on. Thermals off hot roofs, and the lake kills you.',
-    tagline: '145,396 real buildings · 14 × 14 km of the lakefront',
+    tagline: '145,386 real buildings · 14 × 14 km of the lakefront',
     loadingTagline: 'Soaring the Chicago lakefront',
     mapSub: '14 × 14 km · Illinois',
     circuitName: 'The Loop Circuit',
@@ -105,7 +105,9 @@ export const REGIONS = {
         { from: 3800, minHeight: 95 },
       ],
       roofClutter: true,
-      landmarks: null,
+      // Things a plan-view footprint cannot describe: a ferris wheel, a
+      // mirrored ellipsoid and a row of columns all bake into slabs.
+      landmarks: ['centennial-wheel', 'cloud-gate', 'soldier-field-colonnade', 'grand-ballroom'],
     },
     palette: 'city',
   },
@@ -140,7 +142,10 @@ export const PLACES = {
     { name: 'Trump Tower', lat: 41.8892, lon: -87.6266, kind: 'landmark', height: 423 },
     { name: 'St. Regis Chicago', lat: 41.8869, lon: -87.6199, kind: 'landmark', height: 365 },
     { name: 'Aon Center', lat: 41.8858, lon: -87.6215, kind: 'landmark', height: 346 },
-    { name: 'Marina City', lat: 41.8885, lon: -87.6345, kind: 'landmark', height: 179 },
+    // The towers themselves. This used to carry the Merchandise Mart's
+    // coordinates, which put the label 470 m west of the corncobs and on top
+    // of the Mart's own.
+    { name: 'Marina City', lat: 41.8881, lon: -87.6288, kind: 'landmark', height: 179 },
     { name: 'Merchandise Mart', lat: 41.8885, lon: -87.6354, kind: 'landmark', height: 99 },
     { name: 'Navy Pier', lat: 41.8917, lon: -87.6086, kind: 'landmark', height: 55 },
     { name: 'Soldier Field', lat: 41.8623, lon: -87.6167, kind: 'landmark', height: 55 },
@@ -156,6 +161,7 @@ export const PLACES = {
     { name: 'Lincoln Park', lat: 41.925, lon: -87.637, kind: 'landmark', height: 180 },
     { name: 'Lake Michigan', lat: 41.888, lon: -87.575, kind: 'water', height: 176 },
     { name: 'Chicago River', lat: 41.8887, lon: -87.6386, kind: 'water', height: 176 },
+    { name: 'Cloud Gate', lat: 41.8827, lon: -87.6233, kind: 'landmark', height: 10 },
   ],
 };
 

@@ -34,7 +34,7 @@ an error in placement.
 
 **Chicago** — 14 × 14 km centred on 41.888 N, 87.635 W at a 9 m grid, reaching
 from Bronzeville to Wrigley Field and four kilometres out into the lake. The
-terrain is almost beside the point here; the map is its 145,396 buildings. Half
+terrain is almost beside the point here; the map is its 145,386 buildings. Half
 of them carry a surveyed height, and the towers are built from their
 `building:part` records, so Willis Tower has its real setbacks at 355 m under a
 442 m roof, with its antennas carrying on to 527 m, rather than being a single
@@ -125,8 +125,12 @@ principal axis, with the floor set at the uphill ground so nothing perches on
 stilts. They are bucketed into a kilometre grid and merged one tile per frame
 as you approach, then discarded behind you — building all of them at once
 would be tens of megabytes of vertex data for a view that only ever shows one
-valley. The Sphinx observatory and Piz Gloria are modelled by hand, since no
-footprint conveys a dome.
+valley. A handful of structures are modelled by hand, because a plan-view
+footprint cannot describe them however good the survey is: the Sphinx
+observatory and Piz Gloria in the Alps, and in Chicago the Centennial Wheel on
+Navy Pier, Cloud Gate, Soldier Field's colonnades and the Grand Ballroom dome.
+Chicago also drops six buildings that are entirely underground, which OSM
+records but which were being extruded into the air.
 
 **The transport network** is real too: roads, farm tracks, hiking paths,
 railways and aerialways, all from OSM. Surfaces are ribbons draped on the

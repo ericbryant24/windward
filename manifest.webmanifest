@@ -1,0 +1,22 @@
+{
+  "name": "Windward",
+  "short_name": "Windward",
+  "description": "Soar a glider over the real Jungfrau Alps, or over Chicago and its real buildings.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0b1a2a",
+  "theme_color": "#0b1622",
+  "categories": ["games", "simulation"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Jungfrau", "url": "./?map=jungfrau", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Chicago", "url": "./?map=chicago", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

@@ -25,7 +25,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # An offline app that ships with a module missing from its precache is broken
+  # in the one place nobody looks: on a phone, in a tunnel, a week later. This
+  # runs the worker's own crawler over the tree and fails the deploy if a file
+  # on disk is not reachable from index.html. No browser, so it costs seconds;
+  # the full offline flight test needs Chromium and is run by hand.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/verify-sw.mjs --no-browser
+
   deploy:
+    needs: verify
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -38,11 +53,14 @@ jobs:
       # Publish only what the browser actually loads — the baking and test
       # tooling has no business on the public site, and leaving it out keeps
       # the upload to the game itself.
+      # sw.js goes at the root of the published site and nowhere else: a service
+      # worker can only control the directory it is served from, and the site
+      # root is /windward/ here.
       - name: Stage the runtime files
         run: |
           mkdir -p _site
-          cp index.html .nojekyll _site/
-          cp -r src vendor data _site/
+          cp index.html .nojekyll sw.js manifest.webmanifest _site/
+          cp -r src vendor data icons _site/
 
       - uses: actions/upload-pages-artifact@v3
         with:

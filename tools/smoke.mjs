@@ -45,7 +45,7 @@ await step('boot without error', async () => {
 });
 
 await step('menu is showing', async () => {
-  // Generous: Chicago buckets 104,000 buildings before the first frame, and
+  // Generous: Chicago buckets 145,000 buildings before the first frame, and
   // the software renderer here needs a while to produce one.
   await page.waitForSelector('.menu.open', { timeout: 30000 });
 });
@@ -93,21 +93,21 @@ await step('back to menu and into the circuit', async () => {
 
 await step('gates can be passed', async () => {
   // Line the ship up on the gate's own axis and let it fly through under its
-  // own power. Two things this has to respect. Nudging the velocity alone is
-  // not enough — the flight model pulls velocity back towards where the nose
-  // is pointing, so an unturned glider stalls short of the plane. And software
-  // rendering here runs at about a frame a second, so the run-in has to be
-  // short and the wait long, or the glider simply never arrives.
-  const passed = await page.evaluate(async () => {
+  // own power. Nudging the velocity alone is not enough — the flight model
+  // pulls velocity back towards where the nose is pointing, so an unturned
+  // glider stalls short of the plane.
+  const passed = await page.evaluate(() => {
     const g = window.WINDWARD.game;
     const gate = g.world.gates[g.gateIndex];
     const before = g.gateIndex;
     const heading = (Math.atan2(gate.normal.x, -gate.normal.z) * 180) / Math.PI;
     const start = gate.position.clone().addScaledVector(gate.normal, -50);
     g.glider.reset(start, heading, 55);
-    for (let i = 0; i < 100 && g.gateIndex === before; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
+    // Step the simulation directly instead of sleeping. Software rendering
+    // manages about a frame a second and main.js advances the sim by at most
+    // 0.2 s per frame, so a wall-clock wait buys a fraction of the flight time
+    // this needs — the test would be measuring the renderer, not the game.
+    for (let i = 0; i < 720 && g.gateIndex === before; i++) g.update(1 / 120);
     return g.gateIndex > before;
   });
   if (!passed) throw new Error('gate was not registered');

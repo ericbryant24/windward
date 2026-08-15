@@ -1,4 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
+import { getAircraft, DEFAULT_AIRCRAFT } from './fleet.js';
 
 /**
  * Air mass and glider dynamics.
@@ -81,11 +82,35 @@ export class Air {
         phase: rng() * 100,
       });
     }
-    this.thermals = out;
-    return out;
+    // A breakwater is not a heat island. The water mask calls the stone walls
+    // out in Lake Michigan dry ground — they are — and a candidate can land on
+    // one, which puts a 5 m/s climb three kilometres offshore on a map whose
+    // whole premise is that the lake will kill you. Filtering here rather than
+    // inside the loop leaves every other site exactly where it was.
+    this.thermals = out.filter((t) => this.#hasGround(t.x, t.z));
+    return this.thermals;
   }
 
-  /** Nearest thermal to a point, for HUD hints. */
+  /**
+   * Is there warm ground around this point, or only a wall in the water? Sun on
+   * a hundred-metre strip of rock does not make a column; sun on a city block
+   * does. Sites either have most of the compass dry or almost none of it, so
+   * the threshold has room on both sides of every real one.
+   */
+  #hasGround(x, z) {
+    let land = 0;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      if (!this.hf.isWater(x + Math.cos(a) * 260, z + Math.sin(a) * 260)) land++;
+    }
+    return land >= 3;
+  }
+
+  /**
+   * Nearest thermal to a point, by plan distance alone. Deliberately not what
+   * the HUD points at any more — nearest is not the same as reachable, or as
+   * still working at the height you would arrive. See AirField.bestLift.
+   */
   nearestThermal(x, z) {
     let best = null;
     let bestD = Infinity;
@@ -186,33 +211,13 @@ export class Air {
   }
 }
 
-/** Configuration of the ship the player flies. */
-export const GLIDER = {
-  mass: 330, // kg, ballasted two-seater with pilot
-  wingArea: 12.4, // m^2
-  aspectRatio: 19.5,
-  cd0: 0.0112,
-  oswald: 0.9,
-  clSlope: 5.1, // per radian
-  alphaStallDeg: 14.5,
-  alphaMaxDeg: 17.5,
-  alphaMinDeg: -7,
-  trimAlphaDeg: 4.6,
-  trimSpeed: 33, // m/s the ship settles at hands-off
-  speedStability: 0.34, // extra degrees of alpha per m/s above trim
-  maxRollRate: 2.2, // rad/s
-  maxBankDeg: 72, // full stick deflection
-  brakeDragFactor: 7.0,
-  brakeLiftLoss: 0.28,
-  boostThrust: 1750, // N — a motorglider's get-out-of-jail card
-  boostBurn: 1 / 7, // full tank lasts 7 s
-  boostRecharge: 1 / 26,
-  vne: 74, // m/s
-};
+/** The ship flown when nobody has chosen one. See fleet.js for the roster. */
+export const GLIDER = getAircraft(DEFAULT_AIRCRAFT);
 
 export class Glider {
-  constructor(air) {
+  constructor(air, spec = GLIDER) {
     this.air = air;
+    this.spec = spec;
     this.position = new THREE.Vector3();
     this.velocity = new THREE.Vector3();
     this.quaternion = new THREE.Quaternion();
@@ -229,6 +234,8 @@ export class Glider {
     this.brake = 0;
     this.vario = 0;
     this.varioSmooth = 0;
+    this.netto = 0;
+    this.nettoSmooth = 0;
     this.gForce = 1;
 
     this._f = new THREE.Vector3();
@@ -239,8 +246,20 @@ export class Glider {
     this._prevY = 0;
   }
 
+  /**
+   * Swap the airframe. Everything the model knows about the ship lives in the
+   * spec, so there is nothing else to reset but the state that describes how
+   * this particular one is flying right now.
+   */
+  setAircraft(spec) {
+    this.spec = spec;
+    this.boost = 1;
+    this.brake = 0;
+    this.stalled = false;
+  }
+
   /** Place the glider heading in a compass direction, trimmed and flying. */
-  reset(position, headingDeg = 0, speed = 32) {
+  reset(position, headingDeg = 0, speed = this.spec.trimSpeed) {
     this.position.copy(position);
     // Yaw about +Y runs anticlockwise seen from above; compass bearings run
     // clockwise. Without the sign the ship ends up on the reciprocal.
@@ -253,6 +272,8 @@ export class Glider {
     this.stalled = false;
     this.vario = 0;
     this.varioSmooth = 0;
+    this.netto = 0;
+    this.nettoSmooth = 0;
     this._prevY = position.y;
   }
 
@@ -288,7 +309,7 @@ export class Glider {
    * @param {{roll:number, pitch:number, brake:number, boost:boolean}} input
    */
   update(dt, input) {
-    const cfg = GLIDER;
+    const cfg = this.spec;
 
     this.air.sample(this.position, this.wind);
     this.airVelocity.copy(this.velocity).sub(this.wind);
@@ -310,7 +331,9 @@ export class Glider {
     // The stick asks for a bank angle rather than a roll rate. On a phone that
     // is the difference between carving a turn around a ridge and ending up
     // inverted in a valley wondering which way is up.
-    const speedAuthority = THREE.MathUtils.clamp((V - 8) / 26, 0.12, 1);
+    // Authority comes from dynamic pressure, so it is read against the ship's
+    // own trim speed: 30 m/s is a wallowing trainer and a brisk open-class ship.
+    const speedAuthority = THREE.MathUtils.clamp((V - cfg.trimSpeed * 0.24) / (cfg.trimSpeed * 0.79), 0.12, 1);
     const bankTarget = input.roll * THREE.MathUtils.degToRad(cfg.maxBankDeg);
     const rollRate =
       THREE.MathUtils.clamp((bankTarget - this.bankRad) * 2.3, -cfg.maxRollRate, cfg.maxRollRate) *
@@ -347,7 +370,7 @@ export class Glider {
       cl = -cfg.clSlope * stallA;
     }
     cl *= 1 - cfg.brakeLiftLoss * this.brake;
-    this.stalled = alpha > stallA * 0.97 && V < 45;
+    this.stalled = alpha > stallA * 0.97 && V < cfg.trimSpeed * 1.36;
 
     const k = 1 / (Math.PI * cfg.aspectRatio * cfg.oswald);
     const cd = cfg.cd0 * (1 + cfg.brakeDragFactor * this.brake) + k * cl * cl + 0.09 * beta * beta;
@@ -391,6 +414,11 @@ export class Glider {
     this.vario = (this.position.y - this._prevY) / Math.max(dt, 1e-4);
     this._prevY = this.position.y;
     this.varioSmooth = THREE.MathUtils.damp(this.varioSmooth, this.vario, 3.2, dt);
+    // Netto: what the air was doing where the ship was, with the airframe's own
+    // sink taken out of it. The vario says whether you are going up; this says
+    // whether it is worth turning round to stay here.
+    this.netto = this.wind.y;
+    this.nettoSmooth = THREE.MathUtils.damp(this.nettoSmooth, this.netto, 3.2, dt);
     this.gForce = THREE.MathUtils.damp(this.gForce, this.loadFactor, 8, dt);
   }
 

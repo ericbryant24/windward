@@ -24,13 +24,37 @@ const META = JSON.parse(await readFile(OUT.meta, 'utf8'));
 const HALF = META.halfSize;
 const project = projector(R);
 
-/** Structures modelled by hand; drop the OSM footprint so they do not double up. */
+/**
+ * Structures modelled by hand in src/buildings.js; drop the OSM footprint so
+ * they do not double up. A radius clears a whole site — the alpine summit
+ * stations are half a dozen ways apiece and nothing else is within a hundred
+ * metres of either.
+ */
 const HAND_MODELLED = {
   jungfrau: [
     { lat: 46.5474, lon: 7.9806, radius: 90 }, // Jungfraujoch / Sphinx
     { lat: 46.5556, lon: 7.8347, radius: 70 }, // Schilthorn / Piz Gloria
   ],
   chicago: [],
+};
+
+/**
+ * The same, named by OSM id instead.
+ *
+ * Downtown has no room for a radius. Soldier Field's colonnades stand inside
+ * the stadium's own outline, so no circle reaches them without taking the bowl
+ * as well; Navy Pier's wheel has a carousel 34 m away and a footprint whose
+ * far corner is 31 m out. Naming the way is exact, and it fails loudly — an id
+ * that matches nothing is reported below, where a radius that has drifted off
+ * its target silently leaves the slab standing.
+ */
+const HAND_MODELLED_IDS = {
+  chicago: [
+    'way/686996484', // Centennial Wheel
+    'way/137060274', // Cloud Gate
+    'way/766776875', // Soldier Field, east colonnade
+    'way/766776876', // Soldier Field, west colonnade
+  ],
 };
 
 export const ROOF = {
@@ -200,6 +224,13 @@ function inferMaterial(tags, totalHeight, typeName, rand) {
   return MATERIAL.BRICK;
 }
 
+/** Does anything in these tags claim a height above the street? */
+function aboveGround(tags) {
+  return Boolean(
+    tags.height ?? tags['building:height'] ?? tags['building:levels'] ?? tags['building:levels:aboveground']
+  );
+}
+
 /** Deterministic per-building jitter, so a re-bake does not reshuffle the city. */
 function hashRand(x, z) {
   let h = (Math.round(x * 7.3) * 374761393 + Math.round(z * 11.7) * 668265263) | 0;
@@ -244,7 +275,7 @@ for (const el of raw) {
   if (!isPart && !isBuilding) continue;
   for (const ring of ringsOf(el)) {
     if (ring.length < 3) continue;
-    (isPart ? parts : outlines).push({ tags, ring, id: el.id });
+    (isPart ? parts : outlines).push({ tags, ring, id: el.id, osm: `${el.type}/${el.id}` });
   }
 }
 console.log(`  ${outlines.length} outlines, ${parts.length} parts`);
@@ -290,15 +321,23 @@ console.log(`  ${parts.length} parts replace ${replaced} outlines (${orphanParts
 
 // ------------------------------------------------------------------ bake ---
 const handModelled = HAND_MODELLED[R.id] ?? [];
+const handModelledIds = new Set(HAND_MODELLED_IDS[R.id] ?? []);
+const handMatched = new Set();
 const minArea = R.buildings?.minArea ?? 24;
 const maxCorners = R.buildings?.simplifyTo ?? 24;
 
 const buildings = [];
-const stats = { tiny: 0, outside: 0, hand: 0, tagged: 0, levels: 0, inferred: 0, parts: 0, tallest: [] };
+const stats = { tiny: 0, outside: 0, hand: 0, underground: 0, tagged: 0, levels: 0, inferred: 0, parts: 0, tallest: [] };
 
 for (const item of [...outlines.filter((o) => !o.replaced), ...parts]) {
   const tags = item.tags;
   let ring = item.ring;
+
+  if (handModelledIds.has(item.osm)) {
+    handMatched.add(item.osm);
+    stats.hand++;
+    continue;
+  }
 
   if (
     handModelled.some((h) => {
@@ -307,6 +346,13 @@ for (const item of [...outlines.filter((o) => !o.replaced), ...parts]) {
     })
   ) {
     stats.hand++;
+    continue;
+  }
+
+  // A building wholly below the street is not a building from the air, and
+  // extruding it puts a 16 m brick block on the plaza next to Cloud Gate.
+  if (tags.location === 'underground' || (tags['building:levels:underground'] && !aboveGround(tags))) {
+    stats.underground++;
     continue;
   }
 
@@ -349,10 +395,15 @@ for (const item of [...outlines.filter((o) => !o.replaced), ...parts]) {
   }
 
   const typeName = tags.building && tags.building !== 'yes' ? tags.building : tags['building:part'];
-  const spec =
-    TYPES[typeName] ?? TYPES[tags.building] ?? (tags.amenity === 'place_of_worship' ? TYPES.church : DEFAULT_TYPE);
+  const known = TYPES[typeName] ?? TYPES[tags.building] ?? (tags.amenity === 'place_of_worship' ? TYPES.church : null);
+  const spec = known ?? DEFAULT_TYPE;
   const [typeId, storeys, floorH, specRoof, defaultPitch] = spec;
-  const defaultRoof = ROOF_OVERRIDE[typeName] ?? ROOF_OVERRIDE[tags.building] ?? specRoof;
+  // An unrecognised building=* value is no more a chalet than an untagged one,
+  // so where a region overrides the untagged default it overrides the unknown
+  // one too. Six hundred Chicago buildings turn on this, Wrigley Field among
+  // them: building=historic was landing a 14 m gable across a 176 m grandstand.
+  const defaultRoof =
+    ROOF_OVERRIDE[typeName] ?? ROOF_OVERRIDE[tags.building] ?? (known ? specRoof : ROOF_OVERRIDE.yes ?? specRoof);
   const rand = hashRand(cx, cz);
 
   // ---- roof shape first: it decides how much of the total is roof --------
@@ -406,8 +457,12 @@ for (const item of [...outlines.filter((o) => !o.replaced), ...parts]) {
 
 buildings.sort((a, b) => a.cz - b.cz || a.cx - b.cx);
 console.log(
-  `kept ${buildings.length} (dropped ${stats.tiny} under ${minArea} m2, ${stats.outside} outside, ${stats.hand} hand-modelled)`
+  `kept ${buildings.length} (dropped ${stats.tiny} under ${minArea} m2, ${stats.outside} outside, ` +
+    `${stats.hand} hand-modelled, ${stats.underground} underground)`
 );
+for (const id of handModelledIds) {
+  if (!handMatched.has(id)) console.warn(`  WARNING ${id} is listed as hand-modelled but is not in the OSM dump`);
+}
 console.log(
   `  heights: ${stats.tagged} from a height tag, ${stats.levels} from levels, ${stats.inferred} inferred ` +
     `(${((100 * (stats.tagged + stats.levels)) / buildings.length).toFixed(0)}% surveyed)`
