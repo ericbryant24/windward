@@ -88,14 +88,22 @@ await step('back to menu and into the circuit', async () => {
 });
 
 await step('gates can be passed', async () => {
-  // fly the ship through the next gate directly, exercising the crossing test
+  // Line the ship up on the gate's own axis and let it fly through under its
+  // own power. Two things this has to respect. Nudging the velocity alone is
+  // not enough — the flight model pulls velocity back towards where the nose
+  // is pointing, so an unturned glider stalls short of the plane. And software
+  // rendering here runs at about a frame a second, so the run-in has to be
+  // short and the wait long, or the glider simply never arrives.
   const passed = await page.evaluate(async () => {
     const g = window.WINDWARD.game;
     const gate = g.world.gates[g.gateIndex];
     const before = g.gateIndex;
-    g.glider.position.copy(gate.position).addScaledVector(gate.normal, -30);
-    g.glider.velocity.copy(gate.normal).multiplyScalar(60);
-    await new Promise((r) => setTimeout(r, 4000));
+    const heading = (Math.atan2(-gate.normal.x, -gate.normal.z) * 180) / Math.PI;
+    const start = gate.position.clone().addScaledVector(gate.normal, -50);
+    g.glider.reset(start, heading, 55);
+    for (let i = 0; i < 100 && g.gateIndex === before; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
     return g.gateIndex > before;
   });
   if (!passed) throw new Error('gate was not registered');
