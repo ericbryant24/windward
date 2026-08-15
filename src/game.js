@@ -359,7 +359,11 @@ export class Game {
       heading = s.heading;
     } else {
       base = this._v.copy(g.position);
-      base.y = this.hf.heightAt(base.x, base.z) + 420;
+      // Clear of the terrain AND of whatever is standing on it. A fixed height
+      // above the ground drops you back inside Willis Tower, which crashes you
+      // again on the next step, which respawns you inside it again.
+      const skyline = this.buildings?.topNear(base.x, base.z) ?? -Infinity;
+      base.y = Math.max(this.hf.heightAt(base.x, base.z) + 420, skyline + 150);
     }
     g.reset(base, heading, 38);
     this._prevPos.copy(g.position);

@@ -174,26 +174,71 @@ export class Buildings {
    * rare enough to accept.
    */
   #buildCollisionGrid() {
-    const { count, origin } = this.data;
+    const d = this.data;
+    const { count, origin } = d;
     this.hitGrid = new Map();
+    this.colBase = new Float32Array(count);
+    this.colTop = new Float32Array(count);
+    this.maxTop = -Infinity;
+
     for (let i = 0; i < count; i++) {
-      const key = hitKey(origin[i * 2], origin[i * 2 + 1]);
+      const ox = origin[i * 2];
+      const oz = origin[i * 2 + 1];
+      const key = hitKey(ox, oz);
       let list = this.hitGrid.get(key);
       if (!list) this.hitGrid.set(key, (list = []));
       list.push(i);
+
+      // The renderer stands a building on the HIGHEST ground under its
+      // footprint, not on its centroid. On an alpine slope those differ by
+      // several metres, and taking the centroid would put the collider below
+      // the roof you can see.
+      const start = d.first[i];
+      const n = d.first[i + 1] - start;
+      let ground = -Infinity;
+      for (let k = 0; k < n; k++) {
+        const g = this.hf.heightAt(ox + d.corners[(start + k) * 2], oz + d.corners[(start + k) * 2 + 1]);
+        if (g > ground) ground = g;
+      }
+      // A part with a min_height floats, and flying under one is allowed.
+      this.colBase[i] = d.baseH[i] > 0.05 ? ground + d.baseH[i] : ground - 4;
+      this.colTop[i] = ground + d.baseH[i] + d.wallH[i] + d.roofH[i];
+      if (this.colTop[i] > this.maxTop) this.maxTop = this.colTop[i];
     }
+  }
+
+  /**
+   * The highest roof near a point. Respawning has to clear it: dropping the
+   * player back in at a fixed height above the terrain puts them inside Willis
+   * Tower, where they crash again, forever.
+   */
+  topNear(x, z) {
+    let top = -Infinity;
+    for (let gx = -1; gx <= 1; gx++) {
+      for (let gz = -1; gz <= 1; gz++) {
+        const list = this.hitGrid?.get(hitKey(x + gx * HIT_CELL, z + gz * HIT_CELL));
+        if (!list) continue;
+        for (const i of list) if (this.colTop[i] > top) top = this.colTop[i];
+      }
+    }
+    return top;
   }
 
   /**
    * Does the path from a to b run into a building?
    *
-   * Swept, not instantaneous: at 74 m/s with dt clamped to a fifth of a second
-   * the ship covers fifteen metres between frames, which is wider than most of
-   * what it could hit. Walking the segment in short steps costs a few hundred
-   * arithmetic operations and means you cannot tunnel through the Loop.
+   * Swept rather than instantaneous. The simulation runs at a fixed 1/120 s
+   * step, so a single call only ever spans about 0.6 m even at VNE and
+   * tunnelling is not the live risk — but the loop runs up to 24 times per
+   * rendered frame, which is the real budget, and a swept test costs nothing
+   * over a point test at that length. It stays swept so that raising the
+   * timestep later cannot silently reintroduce the hole.
    */
   hitSegment(a, b, out = {}) {
     if (!this.hitGrid) return null;
+    // Above everything in the region there is nothing to test, and a glider
+    // spends most of its life there. One compare beats 216 map lookups.
+    if (a.y > this.maxTop && b.y > this.maxTop) return null;
     const d = this.data;
     const dx = b.x - a.x;
     const dy = b.y - a.y;
@@ -219,12 +264,7 @@ export class Buildings {
             const r = d.radius[i];
             if (rx * rx + rz * rz > r * r) continue;
 
-            // Heights are relative to the ground the building stands on, and
-            // a part with a base floats: you can legitimately fly under one.
-            const ground = this.hf.heightAt(ox, oz);
-            const base = ground + d.baseH[i] - (d.baseH[i] > 0.05 ? 0 : 4);
-            const top = ground + d.baseH[i] + d.wallH[i] + d.roofH[i];
-            if (py < base || py > top) continue;
+            if (py < this.colBase[i] || py > this.colTop[i]) continue;
 
             const start = d.first[i];
             const n = d.first[i + 1] - start;
@@ -234,7 +274,7 @@ export class Buildings {
             out.y = py;
             out.z = pz;
             out.index = i;
-            out.top = top;
+            out.top = this.colTop[i];
             out.t = t;
             edgeNormal(d.corners, start, n, rx, rz, out);
             return out;

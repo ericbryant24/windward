@@ -88,6 +88,34 @@ const report = await page.evaluate(() => {
   }
   out.cases.push({ name: 'hit carries a unit wall normal', got: normals, want: sample.length });
 
+  // Respawning after hitting a tower must not put you back inside it. This is
+  // the bug that turns one crash into an infinite loop.
+  let cleared = 0;
+  for (const { i } of sample) {
+    const ox = d.origin[i * 2];
+    const oz = d.origin[i * 2 + 1];
+    const top = B.topNear(ox, oz);
+    const respawnY = Math.max(g.hf.heightAt(ox, oz) + 420, top + 150);
+    if (respawnY > top && !B.hitSegment(V(ox, respawnY, oz), V(ox, respawnY, oz + 1))) cleared++;
+  }
+  out.cases.push({ name: 'respawn clears the local skyline', got: cleared, want: sample.length });
+
+  // topNear must never understate what is actually there
+  let consistent = 0;
+  for (const { i } of sample) {
+    const ox = d.origin[i * 2];
+    const oz = d.origin[i * 2 + 1];
+    if (B.topNear(ox, oz) >= B.colTop[i] - 0.01) consistent++;
+  }
+  out.cases.push({ name: 'topNear covers the building under it', got: consistent, want: sample.length });
+
+  // the early-out must not be able to skip a real hit
+  out.cases.push({
+    name: 'maxTop is at or above every roof',
+    got: B.colTop.every((t) => t <= B.maxTop + 1e-6) ? 1 : 0,
+    want: 1,
+  });
+
   // 5. cost: this runs every frame, so it has to be cheap
   const t0 = performance.now();
   const N = 400;
