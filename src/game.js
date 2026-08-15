@@ -70,6 +70,7 @@ export class Game {
     this._camPos = new THREE.Vector3();
     this._camAim = new THREE.Vector3();
     this._prevPos = new THREE.Vector3();
+    this._hit = {};
     this._v = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
     this.labels = new LabelLayer(document.getElementById('ui'), this.world.places);
@@ -222,6 +223,18 @@ export class Game {
       this.hud.setWarning(g.stalled ? 'STALL' : '');
     }
 
+    // ---- structures --------------------------------------------------------
+    // Tested against the swept path, before the terrain, because in Chicago
+    // the thing you hit is almost never the ground.
+    if (this.buildings && this.state === 'flying') {
+      const hit = this.buildings.hitSegment(this._prevPos, g.position, this._hit);
+      if (hit) {
+        g.position.set(hit.x, hit.y, hit.z);
+        this.#crash('structure', hit);
+        return;
+      }
+    }
+
     const ground = this.hf.heightAt(g.position.x, g.position.z);
     const agl = g.position.y - ground;
 
@@ -322,12 +335,12 @@ export class Game {
     ]);
   }
 
-  #crash() {
+  #crash(cause = 'terrain', hit = null) {
     this.streak = 1;
     this.score = Math.max(0, this.score - 250);
     this.respawnTimer = 1.4;
     this.glider.velocity.multiplyScalar(0.1);
-    this.hud.toast('Terrain! Resetting…', 'bad');
+    this.hud.toast(cause === 'structure' ? 'You hit a building. Resetting…' : 'Terrain! Resetting…', 'bad');
     this.audio?.cue('crash');
     this.hud.setWarning('');
   }

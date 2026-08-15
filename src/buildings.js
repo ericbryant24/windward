@@ -19,6 +19,8 @@ import { loadPacked, readMagic } from './binary.js';
  */
 
 const TILE = 1000;
+const HIT_CELL = 128;
+const hitKey = (x, z) => Math.floor(x / HIT_CELL) * 4096 + Math.floor(z / HIT_CELL);
 
 /** Facade classes, matching the baker's MATERIAL table. */
 const MATERIAL = { RENDER: 0, GLASS: 1, STONE: 2, BRICK: 3, CONCRETE: 4, METAL: 5, TIMBER: 6 };
@@ -88,6 +90,7 @@ export async function loadBuildings(url, embedded = null) {
   const material = new Uint8Array(count);
   const first = new Uint32Array(count + 1);
   const corners = new Float32Array(vertexTotal * 2);
+  const radius = new Float32Array(count);
 
   let o = 16;
   let c = 0;
@@ -104,16 +107,22 @@ export async function loadBuildings(url, embedded = null) {
     material[i] = view.getUint8(o + 15);
     o += 16;
     first[i] = c;
+    let r2 = 0;
     for (let k = 0; k < n; k++) {
-      corners[c * 2] = view.getInt16(o, true) / 20;
-      corners[c * 2 + 1] = view.getInt16(o + 2, true) / 20;
+      const px = view.getInt16(o, true) / 20;
+      const pz = view.getInt16(o + 2, true) / 20;
+      corners[c * 2] = px;
+      corners[c * 2 + 1] = pz;
+      const d = px * px + pz * pz;
+      if (d > r2) r2 = d;
       o += 4;
       c++;
     }
+    radius[i] = Math.sqrt(r2);
   }
   first[count] = c;
 
-  return { count, origin, baseH, wallH, roofH, angle, typeId, roofKind, material, first, corners };
+  return { count, origin, baseH, wallH, roofH, angle, typeId, roofKind, material, first, corners, radius };
 }
 
 export class Buildings {
@@ -141,6 +150,7 @@ export class Buildings {
     this.built = new Map();
 
     this.#bucket();
+    this.#buildCollisionGrid();
     if (landmarks) this.#buildLandmarks(sky, places, landmarks);
   }
 
@@ -152,6 +162,87 @@ export class Buildings {
       if (!list) this.tiles.set(key, (list = []));
       list.push(i);
     }
+  }
+
+  /**
+   * A second, much finer grid, for hit tests rather than for drawing.
+   *
+   * The draw grid is a kilometre across, which in Chicago is five hundred
+   * buildings — far too many to test every frame. At 128 m a lookup returns a
+   * handful, and since a query checks the 3x3 block around a point, anything
+   * whose centre is within 128 m is still found. Buildings wider than that are
+   * rare enough to accept.
+   */
+  #buildCollisionGrid() {
+    const { count, origin } = this.data;
+    this.hitGrid = new Map();
+    for (let i = 0; i < count; i++) {
+      const key = hitKey(origin[i * 2], origin[i * 2 + 1]);
+      let list = this.hitGrid.get(key);
+      if (!list) this.hitGrid.set(key, (list = []));
+      list.push(i);
+    }
+  }
+
+  /**
+   * Does the path from a to b run into a building?
+   *
+   * Swept, not instantaneous: at 74 m/s with dt clamped to a fifth of a second
+   * the ship covers fifteen metres between frames, which is wider than most of
+   * what it could hit. Walking the segment in short steps costs a few hundred
+   * arithmetic operations and means you cannot tunnel through the Loop.
+   */
+  hitSegment(a, b, out = {}) {
+    if (!this.hitGrid) return null;
+    const d = this.data;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dz = b.z - a.z;
+    const span = Math.hypot(dx, dz);
+    const steps = Math.max(1, Math.min(24, Math.ceil(span / 2.5)));
+
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      const px = a.x + dx * t;
+      const py = a.y + dy * t;
+      const pz = a.z + dz * t;
+
+      for (let gx = -1; gx <= 1; gx++) {
+        for (let gz = -1; gz <= 1; gz++) {
+          const list = this.hitGrid.get(hitKey(px + gx * HIT_CELL, pz + gz * HIT_CELL));
+          if (!list) continue;
+          for (const i of list) {
+            const ox = d.origin[i * 2];
+            const oz = d.origin[i * 2 + 1];
+            const rx = px - ox;
+            const rz = pz - oz;
+            const r = d.radius[i];
+            if (rx * rx + rz * rz > r * r) continue;
+
+            // Heights are relative to the ground the building stands on, and
+            // a part with a base floats: you can legitimately fly under one.
+            const ground = this.hf.heightAt(ox, oz);
+            const base = ground + d.baseH[i] - (d.baseH[i] > 0.05 ? 0 : 4);
+            const top = ground + d.baseH[i] + d.wallH[i] + d.roofH[i];
+            if (py < base || py > top) continue;
+
+            const start = d.first[i];
+            const n = d.first[i + 1] - start;
+            if (n < 3 || !pointInFootprint(d.corners, start, n, rx, rz)) continue;
+
+            out.x = px;
+            out.y = py;
+            out.z = pz;
+            out.index = i;
+            out.top = top;
+            out.t = t;
+            edgeNormal(d.corners, start, n, rx, rz, out);
+            return out;
+          }
+        }
+      }
+    }
+    return null;
   }
 
   /** The shortest building worth drawing at this distance. */
@@ -666,6 +757,50 @@ export function earcut(ring, n) {
   }
   if (idx.length === 3) tris.push([idx[0], idx[1], idx[2]]);
   return tris;
+}
+
+/** Point-in-polygon against a footprint stored as origin-relative corners. */
+function pointInFootprint(corners, start, n, px, pz) {
+  let inside = false;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = corners[(start + i) * 2];
+    const zi = corners[(start + i) * 2 + 1];
+    const xj = corners[(start + j) * 2];
+    const zj = corners[(start + j) * 2 + 1];
+    if (zi > pz !== zj > pz && px < ((xj - xi) * (pz - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Outward normal of the wall nearest the impact, so a crash can slide along
+ * the face it hit rather than stopping dead in the air.
+ */
+function edgeNormal(corners, start, n, px, pz, out) {
+  let bestD = Infinity;
+  out.nx = 0;
+  out.nz = 1;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = corners[(start + i) * 2];
+    const zi = corners[(start + i) * 2 + 1];
+    const xj = corners[(start + j) * 2];
+    const zj = corners[(start + j) * 2 + 1];
+    const ex = xi - xj;
+    const ez = zi - zj;
+    const l2 = ex * ex + ez * ez;
+    if (l2 < 1e-6) continue;
+    let t = ((px - xj) * ex + (pz - zj) * ez) / l2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const cx = xj + ex * t - px;
+    const cz = zj + ez * t - pz;
+    const d = cx * cx + cz * cz;
+    if (d < bestD) {
+      bestD = d;
+      const l = Math.sqrt(l2);
+      out.nx = ez / l;
+      out.nz = -ex / l;
+    }
+  }
 }
 
 function pointInTriangle(px, pz, ax, az, bx, bz, cx, cz) {
