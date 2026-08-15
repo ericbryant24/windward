@@ -1,6 +1,8 @@
 {
   "generator": "tools/bake-terrain.mjs",
-  "source": "AWS Terrain Tiles (terrarium) — SwissALTI3D/SRTM et al, see ATTRIBUTION.md",
+  "region": "jungfrau",
+  "name": "Jungfrau",
+  "source": "AWS Terrain Tiles (terrarium) — see ATTRIBUTION.md",
   "sourceZoom": 13,
   "centerLat": 46.6,
   "centerLon": 7.93,
@@ -10,7 +12,8 @@
   "encoding": {
     "bias": 512,
     "scale": 2,
-    "waterChannel": "b"
+    "waterChannel": "b",
+    "vegetationChannel": null
   },
   "minHeight": 545.5,
   "maxHeight": 4128.9,
@@ -38,5 +41,6 @@
       }
     }
   ],
+  "vegetation": null,
   "sha256": "5340897cda016bf0"
 }

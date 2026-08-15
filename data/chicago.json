@@ -1,0 +1,49 @@
+{
+  "generator": "tools/bake-terrain.mjs",
+  "region": "chicago",
+  "name": "Chicago",
+  "source": "AWS Terrain Tiles (terrarium) — see ATTRIBUTION.md",
+  "sourceZoom": 14,
+  "centerLat": 41.888,
+  "centerLon": -87.635,
+  "halfSize": 7000,
+  "size": 1536,
+  "step": 9.120521172638437,
+  "encoding": {
+    "bias": 512,
+    "scale": 2,
+    "waterChannel": "b",
+    "vegetationChannel": "a"
+  },
+  "minHeight": 160,
+  "maxHeight": 194.7,
+  "lakes": [
+    {
+      "name": "Lake Michigan",
+      "level": 176.5,
+      "cells": 979485,
+      "bounds": {
+        "minX": -7000,
+        "maxX": 7000,
+        "minZ": -7000,
+        "maxZ": 7000
+      }
+    }
+  ],
+  "vegetation": {
+    "mode": "osm",
+    "cells": 173686,
+    "tags": [
+      "leisure=park",
+      "leisure=garden",
+      "leisure=nature_reserve",
+      "landuse=forest",
+      "landuse=grass",
+      "landuse=cemetery",
+      "landuse=recreation_ground",
+      "natural=wood",
+      "natural=scrub"
+    ]
+  },
+  "sha256": "0976adeb738025f6"
+}
