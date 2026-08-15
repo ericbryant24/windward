@@ -35,7 +35,12 @@ export const FLEET = [
     trimSpeed: 33, // m/s the ship settles at hands-off
     speedStability: 0.34, // extra degrees of alpha per m/s above trim
     maxRollRate: 2.2, // rad/s
-    maxBankDeg: 72, // full stick deflection
+    // How briskly the airframe picks itself up when the stick is centred, in
+    // rad/s per radian of bank — about five seconds from forty-five degrees.
+    // Slower than it wants to be on purpose: any quicker and it argues with
+    // you every second you are trying to hold a thermalling turn.
+    rollStability: 0.30,
+    maxPitchRate: 1.5, // rad/s at full elevator
     brakeDragFactor: 7.0,
     brakeLiftLoss: 0.28,
     boostThrust: 1750, // N — a motorglider's get-out-of-jail card
@@ -78,7 +83,8 @@ export const FLEET = [
     trimSpeed: 24,
     speedStability: 0.42,
     maxRollRate: 2.6,
-    maxBankDeg: 60,
+    rollStability: 0.44, // a trainer is built to right itself
+    maxPitchRate: 1.6,
     brakeDragFactor: 5.5,
     brakeLiftLoss: 0.24,
     boostThrust: 1200,
@@ -121,7 +127,8 @@ export const FLEET = [
     speedStability: 0.3,
     // All that span and all that water does not snap from bank to bank.
     maxRollRate: 1.45,
-    maxBankDeg: 68,
+    rollStability: 0.20, // nineteen metres of wing takes its time
+    maxPitchRate: 1.15,
     brakeDragFactor: 6.0,
     brakeLiftLoss: 0.3,
     boostThrust: 2600,
@@ -165,7 +172,8 @@ export const FLEET = [
     trimSpeed: 22,
     speedStability: 0.5,
     maxRollRate: 2.0,
-    maxBankDeg: 55,
+    rollStability: 0.48, // light, short-span, very stable
+    maxPitchRate: 1.8,
     brakeDragFactor: 4.0,
     brakeLiftLoss: 0.2,
     // Not a boost at all but an engine: less shove than the gliders get, and

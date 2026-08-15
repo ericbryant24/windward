@@ -324,35 +324,73 @@ export class Glider {
     this.alpha = alpha;
     this.beta = beta;
 
-    // ---- controls: roll is a rate, pitch commands angle of attack --------
-    // Commanding alpha rather than pitch rate is what makes this flyable with
-    // one thumb: the stick asks for an attitude relative to the air, and the
-    // ship sorts out the rest.
-    // The stick asks for a bank angle rather than a roll rate. On a phone that
-    // is the difference between carving a turn around a ridge and ending up
-    // inverted in a valley wondering which way is up.
+    // ---- controls: the stick moves surfaces, the airframe does the rest ---
+    // The stick commands rates, not attitudes. An earlier version asked for a
+    // bank ANGLE, clamped to maxBankDeg, which flew beautifully with one thumb
+    // and was a lie in two ways: you could not roll past the clamp however
+    // long you held it, and banking without pulling produced almost no turn
+    // because nothing ever loaded the wing.
+    //
+    // What makes a rate command flyable on a phone is not an autopilot, it is
+    // that a glider is genuinely stable. Left alone it rolls back towards level
+    // and returns to its trim speed. Those two effects are modelled below, so
+    // hands off still flies straight while a held stick rolls all the way round.
+    //
     // Authority comes from dynamic pressure, so it is read against the ship's
     // own trim speed: 30 m/s is a wallowing trainer and a brisk open-class ship.
     const speedAuthority = THREE.MathUtils.clamp((V - cfg.trimSpeed * 0.24) / (cfg.trimSpeed * 0.79), 0.12, 1);
-    const bankTarget = input.roll * THREE.MathUtils.degToRad(cfg.maxBankDeg);
-    const rollRate =
-      THREE.MathUtils.clamp((bankTarget - this.bankRad) * 2.3, -cfg.maxRollRate, cfg.maxRollRate) *
-      speedAuthority;
+
+    // Ailerons. No clamp on bank: hold full stick and the ship keeps rolling.
+    let rollRate = input.roll * cfg.maxRollRate * speedAuthority;
+
+    // Dihedral and the spiral mode. A glider banked and left alone slips, and
+    // the slip rolls it back upright. Modelling the whole chain would fight the
+    // yaw damper below, which kills the slip before it can act, so the roll-back
+    // is applied directly: about five seconds from forty-five degrees to level,
+    // which is what the real thing does. It fades out as the stick goes over so
+    // it never argues with a deliberate roll.
+    const held = Math.abs(input.roll);
+    if (held < 0.98) {
+      // -sin(bank) already takes the short way round: past ninety degrees it
+      // keeps pushing the same way, so an abandoned roll finishes rather than
+      // reversing. Inverted is a knife-edge the first disturbance breaks, which
+      // is what a cambered wing does anyway.
+      rollRate += -Math.sin(this.bankRad) * cfg.rollStability * (1 - held) * speedAuthority;
+    }
     this.#rotate(this._f.set(0, 0, -1), rollRate * dt);
 
-    // Trim holds a speed, not an attitude: fly faster than trim and the wing
-    // asks for a little more alpha, which is what damps the phugoid instead of
-    // leaving the player porpoising across the valley.
-    const speedTrim = THREE.MathUtils.clamp((V - cfg.trimSpeed) * cfg.speedStability, -3.5, 5.0);
-    const span = input.pitch > 0 ? cfg.alphaMaxDeg - cfg.trimAlphaDeg : cfg.trimAlphaDeg - cfg.alphaMinDeg;
-    const alphaTarget = THREE.MathUtils.degToRad(
-      THREE.MathUtils.clamp(cfg.trimAlphaDeg + speedTrim + input.pitch * span, cfg.alphaMinDeg, cfg.alphaMaxDeg)
-    );
-    const pitchRate = THREE.MathUtils.clamp((alphaTarget - alpha) * 3.4, -1.6, 1.6) * speedAuthority;
+    // Elevator. Also a rate, which is what lets the ship go over the top of a
+    // loop instead of levelling out at whatever angle of attack was asked for.
+    const elevator = input.pitch * cfg.maxPitchRate * speedAuthority;
+
+    // Static longitudinal stability, in two parts.
+    //
+    // The wing wants its trim angle of attack whichever way up the ship is, and
+    // that term is never switched off — it is what recovers an abandoned roll.
+    // Left inverted with the stick centred the wing sits at a large negative
+    // alpha, pushes hard, and the nose drops into a split-S, which is exactly
+    // what a cambered wing does and why a glider cannot loiter upside down.
+    // Killing this term when inverted made inverted a stable attitude to fly
+    // hands-off, which is the opposite of the truth.
+    //
+    // The speed term — fly faster than trim and the nose rises — damps the
+    // phugoid, but its sign only makes sense the right way up, so that half
+    // fades out as the ship rolls over. Both relax under a deliberate pull so
+    // they cannot flatten a manoeuvre.
+    const speedError = THREE.MathUtils.clamp((V - cfg.trimSpeed) / cfg.trimSpeed, -0.6, 1.2);
+    const alphaError = THREE.MathUtils.degToRad(cfg.trimAlphaDeg) - alpha;
+    const upright = THREE.MathUtils.clamp(this.up(this._up).y, 0, 1);
+    const stability =
+      (alphaError * 2.6 + speedError * cfg.speedStability * 0.9 * upright) * (1 - 0.7 * Math.abs(input.pitch));
+
+    const pitchRate = THREE.MathUtils.clamp(elevator + stability * speedAuthority, -2.4, 2.4);
     this.#rotate(this._f.set(1, 0, 0), pitchRate * dt);
 
-    // yaw weathervane: kill sideslip so turns coordinate themselves
-    const yawRate = THREE.MathUtils.clamp(-beta * 2.6, -1.2, 1.2) * speedAuthority;
+    // yaw weathervane: kill sideslip so turns coordinate themselves. It backs
+    // off while rolling hard, where a fin fighting the manoeuvre is exactly
+    // what stops a roll going round.
+    const yawDamp = 2.6 * (1 - 0.55 * Math.min(1, Math.abs(rollRate) / cfg.maxRollRate));
+    const yawRate = THREE.MathUtils.clamp(-beta * yawDamp, -1.2, 1.2) * speedAuthority;
     this.#rotate(this._f.set(0, 1, 0), yawRate * dt);
 
     // ---- aerodynamics ----------------------------------------------------

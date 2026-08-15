@@ -101,15 +101,32 @@ function trimSpeedAt(spec, rho) {
 }
 
 /** Time and radius of a full circle at the stop, pulling to hold the turn. */
+/**
+ * A full circle, flown the way a pilot flies one.
+ *
+ * The stick commands a roll RATE, so holding it over does not hold a bank — it
+ * keeps rolling, right past inverted. A turn is entered with aileron, held with
+ * small corrections, and paid for with back pressure. Measuring it any other
+ * way measures a barrel roll.
+ */
+const BANK = (45 * Math.PI) / 180;
+
 function turn360(g) {
   g.reset(new THREE.Vector3(0, START, 0), 0, g.spec.trimSpeed);
   sim(g, {}, 4);
+  // roll in
+  for (let i = 0; i < 600; i++) {
+    const err = BANK - g.bankRad;
+    if (Math.abs(err) < 0.02) break;
+    sim(g, { roll: Math.max(-1, Math.min(1, err * 3)), pitch: 0.28 }, dt);
+  }
   const y0 = g.position.y;
   let t = 0;
   let turned = 0;
   let prev = g.headingDeg;
   while (t < 120) {
-    sim(g, { roll: 1, pitch: 0.3 }, dt);
+    const err = BANK - g.bankRad;
+    sim(g, { roll: Math.max(-0.4, Math.min(0.4, err * 2)), pitch: 0.28 }, dt);
     t += dt;
     let d = g.headingDeg - prev;
     if (d > 180) d -= 360;
@@ -165,7 +182,7 @@ for (const spec of FLEET) {
     `  min sink       ${f1(least.sink)} m/s at ${f1(least.speed)} m/s   book ${f1(book.minSink)} at ${f1(book.minSinkSpeed)}`
   );
   console.log(
-    `  360 at full stick  ${f1(circle.time)} s   radius ${f0(circle.radius)} m   bank ${f0(circle.bank)}   height lost ${f0(circle.lost)} m`
+    `  360 at 45 deg bank ${f1(circle.time)} s   radius ${f0(circle.radius)} m   bank ${f0(circle.bank)}   height lost ${f0(circle.lost)} m`
   );
   console.log(
     `  speed range    ${f1(points[20].speed)} .. ${f1(points[0].speed)} m/s   vne ${spec.vne}   stall ${f1(book.stallSpeed)}`
@@ -239,9 +256,17 @@ sim(g, { roll: -1 }, 10);
 show('full LEFT stick 10 s');
 g.reset(new THREE.Vector3(0, 3000, 0), 90, 45);
 sim(g, {}, 3);
-sim(g, { roll: 0.55, pitch: 0.25 }, 14);
-show('coordinated turn 14 s');
-if (g.bankDeg < 20) problems.push('Vela 20: right stick did not produce a right bank');
+// Roll in and hold, rather than pinning the stick — see turn360.
+for (let i = 0; i < 600; i++) {
+  const err = BANK - g.bankRad;
+  if (Math.abs(err) < 0.02) break;
+  sim(g, { roll: Math.max(-1, Math.min(1, err * 3)), pitch: 0.25 }, dt);
+}
+for (let i = 0; i < 14 / dt; i++) {
+  sim(g, { roll: Math.max(-0.4, Math.min(0.4, (BANK - g.bankRad) * 2)), pitch: 0.25 }, dt);
+}
+show('45 deg turn, held 14 s');
+if (g.bankDeg < 20) problems.push('right stick did not produce a right bank');
 
 if (problems.length) {
   console.log('\nFAILURES:\n' + problems.map((p) => ' - ' + p).join('\n'));
