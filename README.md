@@ -102,12 +102,17 @@ rebuilt disc with room to fly on before the next rebuild, or trees wink into
 existence at the rim. Beyond the near field they thin onto a fixed lattice
 rather than by distance, so approaching a forest never makes trees pop in.
 
-**Villages** — Interlaken, Grindelwald, Lauterbrunnen, Wengen, Mürren, and the
-stations at Kleine Scheidegg and Jungfraujoch — are placed once at load, one
-instanced draw each so the frustum can discard the ones behind you. Chalets sit
-with their ridge along the contour and their uphill side buried in the slope,
-which is most of what makes a scatter of boxes read as Swiss rather than
-suburban. The Sphinx observatory and Piz Gloria are modelled separately.
+**Buildings** are the real ones: 42,372 OpenStreetMap footprints, so Interlaken
+has its actual street grid and the barns above Grindelwald stand in their
+actual fields. Outlines, positions and orientations are surveyed data; heights
+are inferred, because OSM carries a height for 46 of them. Each building gets
+walls extruded from its real outline and a gabled roof along the footprint's
+principal axis, with the floor set at the uphill ground so nothing perches on
+stilts. They are bucketed into a kilometre grid and merged one tile per frame
+as you approach, then discarded behind you — building all of them at once
+would be tens of megabytes of vertex data for a view that only ever shows one
+valley. The Sphinx observatory and Piz Gloria are modelled by hand, since no
+footprint conveys a dome.
 
 **Shading normals** come from a mipmapped gradient map baked from the
 heightfield, not from per-fragment height derivatives — the derivative of a
@@ -135,7 +140,7 @@ src/
   water.js            the two lakes
   world.js            landmarks, race gates, thermal cumulus
   trees.js            near-field instanced conifers
-  buildings.js        villages, mountain stations, landmark structures
+  buildings.js        OSM footprints, tiled and extruded on demand
   flight.js           air mass and glider dynamics
   aircraft.js         the sailplane, built procedurally
   game.js             modes, scoring, camera, progression
@@ -146,6 +151,8 @@ src/
   shaders/            GLSL shared between modules
 tools/
   bake-terrain.mjs    regenerate the heightfield from source tiles
+  fetch-buildings.mjs download OSM footprints for the region
+  bake-buildings.mjs  turn those into the game's compact format
   flight-test.mjs     headless flight model checks
   smoke.mjs           end-to-end browser test
   shot.mjs, crop.mjs  screenshot helpers

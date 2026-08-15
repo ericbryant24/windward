@@ -25,6 +25,7 @@ const js = bundle.outputFiles[0].text;
 const css = await readFile('src/ui/style.css', 'utf8');
 const meta = JSON.parse(await readFile('data/jungfrau.json', 'utf8'));
 const png = (await readFile('data/jungfrau.png')).toString('base64');
+const buildings = (await readFile('data/buildings.bin.gz')).toString('base64');
 
 // The artifact host wraps this in its own document skeleton, so emit page
 // content only — no doctype, html, head or body tags.
@@ -43,6 +44,7 @@ window.WINDWARD_EMBED = {
   meta: ${JSON.stringify(meta)},
   png: "${png}"
 };
+window.WINDWARD_BUILDINGS = "${buildings}";
 </script>
 <script>
 ${js}
@@ -54,4 +56,5 @@ const mb = (s) => (Buffer.byteLength(s) / 1048576).toFixed(2);
 console.log(`wrote ${out}`);
 console.log(`  script  ${mb(js)} MB`);
 console.log(`  terrain ${mb(png)} MB (base64)`);
+console.log(`  buildings ${mb(buildings)} MB (base64)`);
 console.log(`  total   ${mb(html)} MB`);

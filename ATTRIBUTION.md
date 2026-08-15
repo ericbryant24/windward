@@ -22,6 +22,26 @@ The full source list and terms are published by the Terrain Tiles project at
 No tile imagery, textures or photographs are used — every surface in the game
 is generated procedurally from the heightfield at runtime.
 
+## Buildings
+
+`data/buildings.bin.gz` is derived from **OpenStreetMap**, © OpenStreetMap
+contributors, made available under the Open Database Licence (ODbL).
+
+<https://www.openstreetmap.org/copyright>
+
+42,372 building footprints inside the play area were downloaded from the
+Overpass API by `tools/fetch-buildings.mjs` and baked into the game's format by
+`tools/bake-buildings.mjs`. Footprint outlines, positions and orientations are
+the surveyed data, simplified to at most 24 corners each. **Heights are not
+from OSM** — only 46 of these buildings carry a `height` tag and 551 carry
+`building:levels`, so every other height is inferred from the building's type
+and the area of its footprint, and roof pitch likewise except where
+`roof:shape` is tagged. Treat the skyline as characteristic rather than
+surveyed.
+
+The ODbL requires that this attribution travel with the data and with any
+work produced from it. It is also shown in the game's menu.
+
 ## Software
 
 - **three.js** — MIT licence, © 2010–present three.js authors. A copy of the

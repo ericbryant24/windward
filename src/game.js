@@ -14,7 +14,7 @@ const STORE_KEY = 'windward.progress.v1';
  * flight.js; this is everything that turns flying into a game.
  */
 export class Game {
-  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio, quality }) {
+  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio, quality, buildingData }) {
     this.audio = audio;
     this.renderer = renderer;
     this.scene = scene;
@@ -41,8 +41,8 @@ export class Game {
       this.trees = new Trees(heightfield, sky, quality?.treeOptions);
       scene.add(this.trees.mesh);
     }
-    if (quality?.buildings !== false) {
-      this.buildings = new Buildings(heightfield, sky, this.world.places);
+    if (buildingData) {
+      this.buildings = new Buildings(heightfield, sky, buildingData, this.world.places, quality?.buildingOptions);
       scene.add(this.buildings.group);
     }
 

@@ -6,6 +6,7 @@ import { createLakes } from './water.js';
 import { Hud } from './hud.js';
 import { Controls } from './controls.js';
 import { Game } from './game.js';
+import { loadBuildings } from './buildings.js';
 import { Audio } from './audio.js';
 
 const canvas = document.getElementById('view');
@@ -24,6 +25,7 @@ const QUALITY = {
     detail: 1,
     pixelRatio: 1.5,
     treeOptions: { radius: 850, spacing: 17, maxInstances: 3000 },
+    buildingOptions: { maxDistance: 1900 },
   },
   high: {
     gridN: 20,
@@ -33,6 +35,7 @@ const QUALITY = {
     detail: 1,
     pixelRatio: 2,
     treeOptions: { radius: 1150, spacing: 15, maxInstances: 5200 },
+    buildingOptions: { maxDistance: 2800 },
   },
 };
 
@@ -123,11 +126,22 @@ async function boot() {
   hud.setProgress(0.66, 'tracing the shadows…');
   await bakeLight(terrain, 0.66, 0.92);
 
-  hud.setProgress(0.94, 'checking the wind…');
+  hud.setProgress(0.94, 'surveying the villages…');
+  let buildingData = null;
+  if (QUALITY[qualityName].buildings !== false) {
+    try {
+      buildingData = await loadBuildings('data/buildings.bin.gz', window.WINDWARD_BUILDINGS ?? null);
+    } catch (err) {
+      // A browser without DecompressionStream still gets a playable game.
+      console.warn('buildings unavailable:', err.message);
+    }
+  }
+
+  hud.setProgress(0.96, 'checking the wind…');
   const controls = new Controls(uiRoot);
   controls.setVisible(false);
   const audio = new Audio();
-  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes, audio, quality: QUALITY[qualityName] });
+  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes, audio, quality: QUALITY[qualityName], buildingData });
   game.setBaseFov(baseFov);
 
   const applyLighting = () => {
@@ -154,7 +168,7 @@ async function boot() {
       vario: +game.glider.varioSmooth.toFixed(2),
       score: Math.round(game.score),
       trees: game.trees?.count ?? 0,
-      settlements: game.buildings?.chunks.length ?? 0,
+      buildingTiles: game.buildings?.built.size ?? 0,
       calls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
     }),

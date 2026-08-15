@@ -254,6 +254,11 @@ const TEMPLATE = /* html */ `
     </div>
 
     <p class="hint">Keyboard: arrows or WASD to fly · Space boost · B airbrakes · C camera · R respawn</p>
+    <p class="credit">
+      Terrain from public elevation data · buildings ©
+      <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+      contributors, ODbL
+    </p>
   </div>
 </div>
 
