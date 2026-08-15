@@ -10,14 +10,28 @@ import * as THREE from '../vendor/three.module.js';
 
 const G = 9.80665;
 const RHO0 = 1.225;
-const CLOUD_BASE = 2950;
+
+/** Alpine defaults; a region overrides what differs. */
+const AIR_DEFAULTS = {
+  cloudBase: 2950,
+  thermalCount: 46,
+  groundMin: 570,
+  groundMax: 2750,
+  radius: [250, 490],
+  strength: [2.6, 4.4],
+  ridgeLift: true,
+  waterSink: 0,
+  shoreLift: null,
+  wind: { x: 0.55, z: 0.84, speed: 6.5 },
+};
 
 export class Air {
-  constructor(heightfield, sky) {
+  constructor(heightfield, sky, options = {}) {
     this.hf = heightfield;
     this.sky = sky;
-    this.windDir = new THREE.Vector2(0.55, 0.84).normalize(); // blowing toward
-    this.windSpeed = 6.5;
+    this.opt = { ...AIR_DEFAULTS, ...options };
+    this.windDir = new THREE.Vector2(this.opt.wind.x, this.opt.wind.z).normalize(); // blowing toward
+    this.windSpeed = this.opt.wind.speed;
     this.thermals = [];
     this.time = 0;
     this._n = new THREE.Vector3();
@@ -31,28 +45,37 @@ export class Air {
    * Scatter thermals where they would really form: sun-facing slopes, rock and
    * meadow rather than snow or water, spread out enough to be worth hunting.
    */
-  seedThermals(count = 46, rng = mulberry32(0x51ce)) {
+  seedThermals(count = this.opt.thermalCount, rng = mulberry32(0x51ce)) {
     const hf = this.hf;
+    const o = this.opt;
     const sun = this.sky.sunDir;
+    const margin = Math.min(2200, hf.halfSize * 0.16);
+    const spacing = Math.min(1900, hf.halfSize * 0.13);
     const out = [];
     let guard = 0;
     while (out.length < count && guard++ < count * 220) {
-      const x = (rng() * 2 - 1) * (hf.halfSize - 2200);
-      const z = (rng() * 2 - 1) * (hf.halfSize - 2200);
+      const x = (rng() * 2 - 1) * (hf.halfSize - margin);
+      const z = (rng() * 2 - 1) * (hf.halfSize - margin);
       const h = hf.heightAt(x, z);
-      if (h > 2750 || h < 570 || hf.isWater(x, z)) continue;
-      const n = hf.normalAt(x, z, 120, this._n);
-      const facing = n.x * sun.x + n.z * sun.z + n.y * sun.y * 0.35;
-      if (facing < 0.12) continue;
-      if (out.some((t) => (t.x - x) ** 2 + (t.z - z) ** 2 < 1900 ** 2)) continue;
-      const strength = 2.6 + facing * 4.0 + rng() * 1.8;
+      if (h > o.groundMax || h < o.groundMin || hf.isWater(x, z)) continue;
+      // On a slope, the sun-facing side cooks first. On the flat there is no
+      // aspect to prefer, so every site is as good as the next and what
+      // matters is only that they are spread out.
+      let facing = 1;
+      if (o.ridgeLift) {
+        const n = hf.normalAt(x, z, 120, this._n);
+        facing = n.x * sun.x + n.z * sun.z + n.y * sun.y * 0.35;
+        if (facing < 0.12) continue;
+      }
+      if (out.some((t) => (t.x - x) ** 2 + (t.z - z) ** 2 < spacing ** 2)) continue;
+      const strength = o.strength[0] + facing * (o.strength[1] - o.strength[0]) + rng() * 1.8;
       out.push({
         x,
         z,
         ground: h,
-        radius: 250 + rng() * 240,
+        radius: o.radius[0] + rng() * (o.radius[1] - o.radius[0]),
         strength,
-        top: Math.min(CLOUD_BASE + rng() * 350, h + 1500 + strength * 260),
+        top: Math.min(o.cloudBase + rng() * 350, h + 1500 + strength * 260),
         phase: rng() * 100,
       });
     }
@@ -85,13 +108,32 @@ export class Air {
     out.set(this.windDir.x * this.windSpeed * gradient, 0, this.windDir.y * this.windSpeed * gradient);
 
     // ---- ridge lift: air forced up a windward slope ----------------------
-    const n = hf.normalAt(pos.x, pos.z, 90, this._n);
-    const into = -(n.x * this.windDir.x + n.z * this.windDir.y);
-    if (into > 0 && agl < 900) {
-      const steep = Math.min(1, Math.hypot(n.x, n.z) / 0.72);
-      const decay = Math.exp(-Math.max(agl, 0) / 320);
-      out.y += this.windSpeed * into * steep * 1.35 * decay;
+    if (this.opt.ridgeLift) {
+      const n = hf.normalAt(pos.x, pos.z, 90, this._n);
+      const into = -(n.x * this.windDir.x + n.z * this.windDir.y);
+      if (into > 0 && agl < 900) {
+        const steep = Math.min(1, Math.hypot(n.x, n.z) / 0.72);
+        const decay = Math.exp(-Math.max(agl, 0) / 320);
+        out.y += this.windSpeed * into * steep * 1.35 * decay;
+      }
     }
+
+    // ---- the lake breeze front ------------------------------------------
+    // Cool air coming off the water meets warm air rising over the city, and
+    // the convergence line sits a few hundred metres inland. On a map with no
+    // hills this is the only lift you can count on finding twice.
+    const shore = this.opt.shoreLift;
+    const overWater = hf.isWater(pos.x, pos.z);
+    if (shore && !overWater && agl < shore.ceiling) {
+      let nearWater = false;
+      for (let k = 0; k < 8 && !nearWater; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        if (hf.isWater(pos.x + Math.cos(a) * shore.radius, pos.z + Math.sin(a) * shore.radius)) nearWater = true;
+      }
+      if (nearWater) out.y += shore.strength * (1 - agl / shore.ceiling);
+    }
+    // Nothing rises over cold water.
+    if (overWater) out.y -= this.opt.waterSink;
 
     // ---- thermals --------------------------------------------------------
     let lift = 0;

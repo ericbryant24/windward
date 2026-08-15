@@ -1,0 +1,17 @@
+{
+  "generator": "tools/bake-buildings.mjs",
+  "region": "jungfrau",
+  "source": "OpenStreetMap contributors, ODbL — see ATTRIBUTION.md",
+  "format": 2,
+  "count": 42372,
+  "vertices": 250962,
+  "vertexScale": 20,
+  "parts": 8,
+  "heights": {
+    "fromHeightTag": 40,
+    "fromLevels": 521,
+    "inferred": 41811,
+    "surveyedPercent": 1.3
+  },
+  "note": "Footprints, positions, orientations and building:part massing are surveyed data. Heights are surveyed where tagged and inferred from type and footprint area otherwise. Facade materials are inferred from height and use except where building:material is tagged."
+}

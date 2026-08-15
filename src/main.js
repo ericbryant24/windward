@@ -8,6 +8,7 @@ import { Controls } from './controls.js';
 import { Game } from './game.js';
 import { loadBuildings } from './buildings.js';
 import { loadNetwork } from './network.js';
+import { getRegion, DEFAULT_REGION } from './regions.js';
 import { Audio } from './audio.js';
 
 const canvas = document.getElementById('view');
@@ -99,15 +100,23 @@ addEventListener('resize', resize);
 addEventListener('orientationchange', () => setTimeout(resize, 150));
 
 async function boot() {
-  hud.setProgress(0.02, 'reading the terrain…');
+  // The standalone build embeds exactly one region; on the web the URL or the
+  // last choice decides.
+  const embeddedRegion = window.WINDWARD_REGION ?? null;
+  const wantRegion = embeddedRegion ?? params.get('map') ?? store.get('windward.region') ?? DEFAULT_REGION;
+  const region = getRegion(wantRegion);
+  state.region = region;
+  document.title = `Windward — ${region.name}`;
+
+  hud.setProgress(0.02, region.loading[0]);
   const hf = await Heightfield.load(
-    'data/jungfrau.png',
-    (p) => hud.setProgress(p * 0.5, 'reading the terrain…'),
+    region.data.terrain,
+    (p) => hud.setProgress(p * 0.5, region.loading[0]),
     window.WINDWARD_EMBED ?? null
   );
   await frame();
 
-  hud.setProgress(0.55, 'raising the Bernese Alps…');
+  hud.setProgress(0.55, region.loading[1]);
   const sky = new Sky(renderer);
   scene.add(sky.mesh);
 
@@ -116,7 +125,7 @@ async function boot() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY[qualityName].pixelRatio));
   resize();
 
-  const terrain = new Terrain(renderer, hf, sky, QUALITY[qualityName]);
+  const terrain = new Terrain(renderer, hf, sky, { ...QUALITY[qualityName], urban: region.palette === 'city' });
   scene.add(terrain.group);
   await frame();
 
@@ -126,14 +135,14 @@ async function boot() {
   const timeName = params.get('time') || store.get('windward.time') || 'afternoon';
   sky.setTime(TIME_PRESETS[timeName] ? timeName : 'afternoon');
 
-  hud.setProgress(0.66, 'tracing the shadows…');
+  hud.setProgress(0.66, region.loading[2]);
   await bakeLight(terrain, 0.66, 0.92);
 
-  hud.setProgress(0.94, 'surveying the villages…');
+  hud.setProgress(0.94, region.loading[3]);
   let buildingData = null;
   if (QUALITY[qualityName].buildings !== false) {
     try {
-      buildingData = await loadBuildings('data/buildings.bin.gz', window.WINDWARD_BUILDINGS ?? null);
+      buildingData = await loadBuildings(region.data.buildings, window.WINDWARD_BUILDINGS ?? null);
     } catch (err) {
       // A browser without DecompressionStream still gets a playable game.
       console.warn('buildings unavailable:', err.message);
@@ -143,17 +152,18 @@ async function boot() {
   let networkData = null;
   if (QUALITY[qualityName].buildings !== false) {
     try {
-      networkData = await loadNetwork('data/network.bin.gz', window.WINDWARD_NETWORK ?? null);
+      networkData = await loadNetwork(region.data.network, window.WINDWARD_NETWORK ?? null);
     } catch (err) {
       console.warn('network unavailable:', err.message);
     }
   }
 
+  hud.setRegion(region);
   hud.setProgress(0.96, 'checking the wind…');
   const controls = new Controls(uiRoot);
   controls.setVisible(false);
   const audio = new Audio();
-  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes, audio, quality: QUALITY[qualityName], buildingData, networkData });
+  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes, audio, quality: QUALITY[qualityName], buildingData, networkData, region });
   game.setBaseFov(baseFov);
 
   const applyLighting = () => {
@@ -226,6 +236,19 @@ async function boot() {
         store.set('windward.quality', value);
         hud.toast('Quality changes apply on reload');
         break;
+      case 'map': {
+        // A region is a different terrain, a different city and a different
+        // sky bake. Reloading is honest about that rather than pretending it
+        // can be swapped in place.
+        if (value === region.id) break;
+        selectSegment(btn);
+        store.set('windward.region', value);
+        const url = new URL(location.href);
+        url.searchParams.set('map', value);
+        hud.toast(`Loading ${getRegion(value).name}…`);
+        location.href = url.toString();
+        break;
+      }
       case 'input':
         if (value === 'tilt') {
           if (!(await controls.enableTilt())) {

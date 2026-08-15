@@ -3,55 +3,18 @@ import { makeLitMaterial } from './materials.js';
 import { NOISE, SKY, OUTPUT } from './shaders/lib.js';
 import { mulberry32 } from './flight.js';
 
-/**
- * Places in the Jungfrau region, in WGS84. Converted to the game's local metric
- * frame at load, so the map and the labels can never disagree.
- */
-export const PLACES = [
-  { name: 'Jungfrau', lat: 46.5367, lon: 7.9625, kind: 'peak', height: 4158 },
-  { name: 'Mönch', lat: 46.5586, lon: 7.9961, kind: 'peak', height: 4107 },
-  { name: 'Eiger', lat: 46.5775, lon: 8.0053, kind: 'peak', height: 3967 },
-  { name: 'Wetterhorn', lat: 46.6403, lon: 8.1128, kind: 'peak', height: 3692 },
-  { name: 'Schreckhorn', lat: 46.5897, lon: 8.1181, kind: 'peak', height: 4078 },
-  { name: 'Schilthorn', lat: 46.5556, lon: 7.8347, kind: 'peak', height: 2970 },
-  { name: 'Männlichen', lat: 46.6142, lon: 7.9394, kind: 'peak', height: 2343 },
-  { name: 'Schynige Platte', lat: 46.6553, lon: 7.9067, kind: 'peak', height: 2076 },
-  { name: 'Niesen', lat: 46.6456, lon: 7.6519, kind: 'peak', height: 2362 },
-  { name: 'Jungfraujoch', lat: 46.5474, lon: 7.9806, kind: 'landmark', height: 3454 },
-  { name: 'Kleine Scheidegg', lat: 46.5853, lon: 7.9614, kind: 'landmark', height: 2061 },
-  { name: 'Staubbach Falls', lat: 46.5906, lon: 7.9058, kind: 'landmark', height: 900 },
-  { name: 'Interlaken', lat: 46.686, lon: 7.863, kind: 'town', height: 567 },
-  { name: 'Lauterbrunnen', lat: 46.5936, lon: 7.9088, kind: 'town', height: 796 },
-  { name: 'Grindelwald', lat: 46.6242, lon: 8.0413, kind: 'town', height: 1034 },
-  { name: 'Wengen', lat: 46.6053, lon: 7.9219, kind: 'town', height: 1274 },
-  { name: 'Mürren', lat: 46.5586, lon: 7.8925, kind: 'town', height: 1638 },
-  { name: 'Thunersee', lat: 46.6805, lon: 7.7365, kind: 'water', height: 558 },
-  { name: 'Brienzersee', lat: 46.7245, lon: 7.9705, kind: 'water', height: 564 },
-];
-
-/** The race line: down Lauterbrunnen, up to the Joch, around the Eiger, home. */
-const CIRCUIT = [
-  { name: 'Lauterbrunnen Valley', lat: 46.6019, lon: 7.9088, agl: 260, radius: 100 },
-  { name: 'Staubbach Falls', lat: 46.5906, lon: 7.9058, agl: 210, radius: 95 },
-  { name: 'Mürren Terrace', lat: 46.5586, lon: 7.8925, agl: 230, radius: 105 },
-  { name: 'Sefinental', lat: 46.5411, lon: 7.8681, agl: 320, radius: 115 },
-  { name: 'Lauterbrunnen Wall', lat: 46.5453, lon: 7.9236, agl: 420, radius: 120 },
-  { name: 'Jungfraujoch', lat: 46.5474, lon: 7.9806, agl: 260, radius: 130 },
-  { name: 'Eigergletscher', lat: 46.5747, lon: 7.9739, agl: 300, radius: 120 },
-  { name: 'Eiger North Face', lat: 46.5861, lon: 8.0053, agl: 520, radius: 130 },
-  { name: 'Grindelwald Basin', lat: 46.6242, lon: 8.0413, agl: 340, radius: 115 },
-  { name: 'Männlichen Ridge', lat: 46.6142, lon: 7.9394, agl: 200, radius: 105 },
-  { name: 'Wengen', lat: 46.6053, lon: 7.9219, agl: 260, radius: 100 },
-];
+import { PLACES, CIRCUITS } from './regions.js';
 
 export class World {
-  constructor(heightfield, sky, scene) {
+  constructor(heightfield, sky, scene, regionId = 'jungfrau') {
     this.hf = heightfield;
     this.sky = sky;
     this.scene = scene;
+    this.regionId = regionId;
+    this.circuit = CIRCUITS[regionId] ?? [];
     this.mpdLon = 111320 * Math.cos((heightfield.meta.centerLat * Math.PI) / 180);
 
-    this.places = PLACES.map((p) => {
+    this.places = (PLACES[regionId] ?? []).map((p) => {
       const v = this.toLocal(p.lat, p.lon);
       return { ...p, x: v.x, z: v.z, y: heightfield.heightAt(v.x, v.z) };
     });
@@ -87,7 +50,7 @@ export class World {
       side: THREE.DoubleSide,
     });
 
-    const points = CIRCUIT.map((g) => {
+    const points = this.circuit.map((g) => {
       const v = this.toLocal(g.lat, g.lon);
       const ground = this.hf.heightAt(v.x, v.z);
       return { ...g, x: v.x, z: v.z, y: ground + g.agl };

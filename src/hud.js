@@ -53,6 +53,21 @@ export class Hud {
     setTimeout(() => (this.loading.style.display = 'none'), 700);
   }
 
+  /** Point the menu at a region: its name, its tagline, its course. */
+  setRegion(region) {
+    const set = (attr, text) => {
+      const el = this.root.querySelector(`[${attr}]`);
+      if (el) el.textContent = text;
+    };
+    set('data-tagline', region.tagline);
+    set('data-circuitname', region.circuitName);
+    set('data-circuitdesc', region.circuitDesc);
+    set('data-freedesc', region.freeDesc);
+    for (const b of this.root.querySelectorAll('[data-action="map"]')) {
+      b.classList.toggle('on', b.dataset.value === region.id);
+    }
+  }
+
   showMenu(show, { discovered = 0, total = 0, best = {} } = {}) {
     this.menu.classList.toggle('open', show);
     if (show) {
@@ -188,17 +203,17 @@ const TEMPLATE = /* html */ `
   <div class="menu-inner">
     <header>
       <h1>WINDWARD</h1>
-      <p class="sub">Jungfrau region · real terrain · 38 × 38 km</p>
+      <p class="sub" data-tagline>Jungfrau region · real terrain · 38 × 38 km</p>
     </header>
 
     <div class="modes">
       <button class="mode-card" data-action="start" data-value="free">
         <span class="mode-name">Free Flight</span>
-        <span class="mode-desc">Hunt thermals, ride the ridges, find every landmark.</span>
+        <span class="mode-desc" data-freedesc>Hunt thermals, ride the ridges, find every landmark.</span>
       </button>
       <button class="mode-card" data-action="start" data-value="circuit">
-        <span class="mode-name">Jungfrau Circuit</span>
-        <span class="mode-desc">Eleven gates from Lauterbrunnen to the Eiger. Beat the clock.</span>
+        <span class="mode-name" data-circuitname>Jungfrau Circuit</span>
+        <span class="mode-desc" data-circuitdesc>Eleven gates from Lauterbrunnen to the Eiger. Beat the clock.</span>
       </button>
       <button class="mode-card" data-action="start" data-value="climb">
         <span class="mode-name">Height Hunt</span>
@@ -213,6 +228,13 @@ const TEMPLATE = /* html */ `
     </div>
 
     <div class="settings">
+      <div class="setting">
+        <span>Map</span>
+        <div class="segmented" data-group="map">
+          <button class="on" data-action="map" data-value="jungfrau">Jungfrau</button>
+          <button data-action="map" data-value="chicago">Chicago</button>
+        </div>
+      </div>
       <div class="setting">
         <span>Time of day</span>
         <div class="segmented" data-group="time">

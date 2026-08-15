@@ -58,7 +58,7 @@ const cell = (lat, lon) => {
     cx,
     cy,
     water: png.data[i + 2] > 0,
-    veg: meta.encoding.vegetationChannel ? png.data[i + 3] > 0 : null,
+    veg: null,
     h: (png.data[i] * 256 + png.data[i + 1]) / meta.encoding.scale - meta.encoding.bias,
   };
 };

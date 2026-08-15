@@ -15,7 +15,7 @@ const STORE_KEY = 'windward.progress.v1';
  * flight.js; this is everything that turns flying into a game.
  */
 export class Game {
-  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio, quality, buildingData, networkData }) {
+  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio, quality, buildingData, networkData, region }) {
     this.audio = audio;
     this.renderer = renderer;
     this.scene = scene;
@@ -27,11 +27,12 @@ export class Game {
     this.terrain = terrain;
     this.lakes = lakes;
 
-    this.air = new Air(heightfield, sky);
+    this.region = region;
+    this.air = new Air(heightfield, sky, region.air);
     this.air.seedThermals();
     this.glider = new Glider(this.air);
 
-    this.world = new World(heightfield, sky, scene);
+    this.world = new World(heightfield, sky, scene, region.id);
     this.aircraft = createAircraft(sky);
     scene.add(this.aircraft);
 
@@ -39,7 +40,7 @@ export class Game {
     scene.add(this.clouds);
 
     if (quality?.trees !== false) {
-      this.trees = new Trees(heightfield, sky, quality?.treeOptions);
+      this.trees = new Trees(heightfield, sky, { ...quality?.treeOptions, ...region.trees });
       scene.add(this.trees.mesh);
     }
     if (networkData) {
@@ -47,7 +48,10 @@ export class Game {
       scene.add(this.network.group);
     }
     if (buildingData) {
-      this.buildings = new Buildings(heightfield, sky, buildingData, this.world.places, quality?.buildingOptions);
+      this.buildings = new Buildings(heightfield, sky, buildingData, this.world.places, {
+        ...quality?.buildingOptions,
+        ...region.buildings,
+      });
       scene.add(this.buildings.group);
     }
 
@@ -118,15 +122,11 @@ export class Game {
       const heading = (THREE.MathUtils.radToDeg(Math.atan2(g0.normal.x, -g0.normal.z)) + 360) % 360;
       return { position: pos, heading, speed: 40 };
     }
-    if (mode === 'climb') {
-      const p = this.world.places.find((q) => q.name === 'Interlaken');
-      return { position: new THREE.Vector3(p.x, 1250, p.z), heading: 150, speed: 34 };
-    }
-    // Free flight opens at Kleine Scheidegg, nose pointed at the Eiger.
-    const ks = this.world.places.find((p) => p.name === 'Kleine Scheidegg');
-    const eiger = this.world.places.find((p) => p.name === 'Eiger');
-    const heading = (THREE.MathUtils.radToDeg(Math.atan2(eiger.x - ks.x, -(eiger.z - ks.z))) + 360) % 360;
-    return { position: new THREE.Vector3(ks.x, ks.y + 780, ks.z), heading, speed: 36 };
+    // Free flight and the climb task each open where the region says.
+    const s = (mode === 'climb' ? this.region.climbStart : null) ?? this.region.start;
+    const v = this.world.toLocal(s.lat, s.lon);
+    const ground = this.hf.heightAt(v.x, v.z);
+    return { position: new THREE.Vector3(v.x, ground + s.agl, v.z), heading: s.heading, speed: mode === 'climb' ? 34 : 36 };
   }
 
   toMenu() {
@@ -449,13 +449,18 @@ export class Game {
     }
   }
 
-  /** Slow drift over the peaks behind the main menu. */
+  /** Slow orbit of whatever the region is known for, behind the main menu. */
   updateMenuCamera(t) {
-    const r = 5200;
+    const cam = this.region.menuCamera;
+    const centre = this.world.places.find((p) => p.name === cam.focus) ?? this.world.places[0];
+    if (!centre) return;
     const a = t * 0.035;
-    const centre = this.world.places.find((p) => p.name === 'Eiger');
-    this.camera.position.set(centre.x + Math.cos(a) * r, 3950 + Math.sin(a * 1.7) * 240, centre.z + Math.sin(a) * r);
-    this.camera.lookAt(centre.x, centre.y * 0.86, centre.z);
+    this.camera.position.set(
+      centre.x + Math.cos(a) * cam.radius,
+      cam.height + Math.sin(a * 1.7) * cam.radius * 0.046,
+      centre.z + Math.sin(a) * cam.radius
+    );
+    this.camera.lookAt(centre.x, cam.lookAtY ?? centre.y * (cam.lookAtScale ?? 1), centre.z);
   }
 
   setLighting(sunRadiance, skyAmbient) {
@@ -481,7 +486,7 @@ export class Game {
 }
 
 function modeName(mode) {
-  return { free: 'Free Flight', circuit: 'Jungfrau Circuit', climb: 'Height Hunt' }[mode] ?? mode;
+  return { free: 'Free Flight', circuit: 'Circuit', climb: 'Height Hunt' }[mode] ?? mode;
 }
 
 /** Floating place names, so the region reads as somewhere rather than terrain. */

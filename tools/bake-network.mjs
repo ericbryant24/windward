@@ -10,11 +10,13 @@
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
+import { regionFromArgv, paths, projector } from './regions.mjs';
 
-const META = JSON.parse(await readFile('data/jungfrau.json', 'utf8'));
-const MPD_LAT = 111320;
-const MPD_LON = 111320 * Math.cos((META.centerLat * Math.PI) / 180);
+const R = regionFromArgv();
+const OUT = paths(R);
+const META = JSON.parse(await readFile(OUT.meta, 'utf8'));
 const HALF = META.halfSize;
+const project = projector(R);
 
 export const KIND = {
   MAJOR_ROAD: 0,
@@ -41,6 +43,25 @@ const KIND_INFO = {
   8: { tol: 0.5, chain: true, movers: 'chair' },
 };
 
+/**
+ * How high off the ground a way runs.
+ *
+ * This is what makes Chicago's L the L. The CTA is tagged railway=subway
+ * whether it is in a tunnel under State Street or on steel forty feet above
+ * Wabash, and the difference is carried by layer/bridge/tunnel. Draw it all at
+ * ground level and the most recognisable structure in the city becomes a
+ * painted stripe on the road.
+ */
+function levelOf(tags) {
+  if (tags.tunnel && tags.tunnel !== 'no') return -1;
+  if (tags.covered === 'yes' && tags.layer && parseInt(tags.layer, 10) < 0) return -1;
+  const layer = parseInt(tags.layer ?? '0', 10);
+  if (isFinite(layer) && layer < 0) return -1;
+  if (isFinite(layer) && layer > 0) return Math.min(3, layer);
+  if (tags.bridge && tags.bridge !== 'no') return 1;
+  return 0;
+}
+
 function classify(tags) {
   if (tags.aerialway) {
     const a = tags.aerialway;
@@ -65,8 +86,6 @@ function classify(tags) {
   if (/^(path|footway|steps|bridleway)$/.test(h)) return KIND.PATH;
   return null;
 }
-
-const project = (lat, lon) => [(lon - META.centerLon) * MPD_LON, (META.centerLat - lat) * MPD_LAT];
 
 /** Douglas-Peucker. */
 function simplify(pts, tol) {
@@ -102,18 +121,26 @@ function simplify(pts, tol) {
 }
 
 // ------------------------------------------------------------------ read ---
-const raw = JSON.parse(await readFile('.cache/osm-network.json', 'utf8'));
+const raw = JSON.parse(await readFile(OUT.osmNetwork, 'utf8'));
 console.log(`read ${raw.length} OSM ways`);
 
 const segments = [];
+let tunnels = 0;
 for (const el of raw) {
-  const kind = classify(el.tags ?? {});
+  const tags = el.tags ?? {};
+  const kind = classify(tags);
   if (kind === null || !el.geometry || el.geometry.length < 2) continue;
+  const level = levelOf(tags);
+  if (level < 0) {
+    tunnels++;
+    continue; // nothing underground is visible from a glider
+  }
   const pts = el.geometry.map((p) => project(p.lat, p.lon));
   // clip to the play area rather than letting ribbons run off the map edge
   if (pts.every((p) => Math.abs(p[0]) > HALF || Math.abs(p[1]) > HALF)) continue;
-  segments.push({ kind, pts, name: el.tags?.name });
+  segments.push({ kind, pts, level, name: tags.name });
 }
+console.log(`dropped ${tunnels} ways in tunnels`);
 console.log(`classified ${segments.length} ways`);
 
 // ----------------------------------------------------------------- chain ---
@@ -177,19 +204,24 @@ function chainAll(list) {
         else pts = add.slice(0, -1).reverse().concat(pts);
       }
     }
-    routes.push({ kind: list[i].kind, pts, name });
+    routes.push({ kind: list[i].kind, level: list[i].level, pts, name });
   }
   return routes;
 }
 
+// Key by kind *and* level: chaining an elevated viaduct onto the street it
+// crosses would drag the whole run up or down with it.
 const byKind = new Map();
 for (const s of segments) {
-  if (!byKind.has(s.kind)) byKind.set(s.kind, []);
-  byKind.get(s.kind).push(s);
+  const k = `${s.kind}:${s.level}`;
+  if (!byKind.has(k)) byKind.set(k, []);
+  byKind.get(k).push(s);
 }
 
 const ways = [];
-for (const [kind, list] of byKind) {
+for (const [groupKey, list] of byKind) {
+  const kind = list[0].kind;
+  const level = list[0].level;
   const info = KIND_INFO[kind];
   const chained = info.chain ? chainAll(list) : list;
   for (const w of chained) {
@@ -211,24 +243,24 @@ for (const [kind, list] of byKind) {
     for (const c of chunks) {
       let length = 0;
       for (let i = 1; i < c.length; i++) length += Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]);
-      ways.push({ kind, pts: c, length, name: w.name });
+      ways.push({ kind, level, pts: c, length, name: w.name });
     }
   }
-  console.log(`  kind ${kind}: ${list.length} fragments -> ${chained.length} runs`);
+  console.log(`  kind ${kind} level ${level}: ${list.length} fragments -> ${chained.length} runs`);
 }
 
-ways.sort((a, b) => a.kind - b.kind || b.length - a.length);
+ways.sort((a, b) => a.kind - b.kind || a.level - b.level || b.length - a.length);
 const pointTotal = ways.reduce((s, w) => s + w.pts.length, 0);
 console.log(`${ways.length} ways, ${pointTotal} points`);
 
 // ---------------------------------------------------------------- encode ---
 const SCALE = 2; // half-metre resolution
-const bytes = 16 + ways.length * 8 + pointTotal * 4;
+const bytes = 16 + ways.length * 10 + pointTotal * 4;
 const buf = Buffer.alloc(bytes);
 let o = 0;
 buf.write('WNET', o);
 o += 4;
-buf.writeUInt16LE(1, o);
+buf.writeUInt16LE(2, o);
 o += 2;
 buf.writeUInt16LE(0, o);
 o += 2;
@@ -256,6 +288,10 @@ for (const w of ways) {
   o += 2;
   buf.writeInt16LE(oz, o);
   o += 2;
+  buf.writeInt8(w.level, o);
+  o += 1;
+  buf.writeUInt8(0, o);
+  o += 1;
   for (const [px, pz] of w.pts) {
     buf.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round((px - ox) * SCALE))), o);
     o += 2;
@@ -266,9 +302,9 @@ for (const w of ways) {
 
 const gz = gzipSync(buf, { level: 9 });
 await mkdir('data', { recursive: true });
-await writeFile('data/network.bin.gz', gz);
+await writeFile(OUT.network, gz);
 await writeFile(
-  'data/network.json',
+  OUT.networkMeta,
   JSON.stringify(
     {
       generator: 'tools/bake-network.mjs',
@@ -276,8 +312,11 @@ await writeFile(
       ways: ways.length,
       points: pointTotal,
       pointScale: SCALE,
+      region: R.id,
+      format: 2,
       kinds: KIND,
       routes: routeCounts,
+      elevated: ways.filter((w) => w.level > 0).length,
       note: 'Fragments sharing an endpoint are chained into continuous runs so trains and cable cars have a line to follow.',
     },
     null,

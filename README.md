@@ -20,18 +20,31 @@ There is no build step. The whole thing is ES modules, a vendored copy of
 three.js, and one 2.6 MB terrain file. `node tools/build-standalone.mjs` folds
 all of that into a single 4 MB HTML file if you need one that fetches nothing.
 
-## The place
+## The places
 
-The map is 38 × 38 km of real terrain centred on 46.60 N, 7.93 E, resampled to
-a 25 m grid from public SRTM-derived elevation tiles. Everything is where it
-should be: the Eiger's north face above Grindelwald, the Lauterbrunnen valley
-with its 400-metre walls, Jungfraujoch on the saddle, Thunersee and Brienzersee
-either side of Interlaken. Summit heights land within a few tens of metres of
-the surveyed figures — the residual is the 25 m grid rounding off the summits,
-not an error in placement.
+Two maps, picked from the menu or with `?map=`.
 
-`tools/bake-terrain.mjs` regenerates `data/jungfrau.png` from the source tiles
-if you want a different region or resolution.
+**Jungfrau** — 38 × 38 km centred on 46.60 N, 7.93 E, resampled to a 25 m grid
+from public SRTM-derived elevation tiles. Everything is where it should be: the
+Eiger's north face above Grindelwald, the Lauterbrunnen valley with its
+400-metre walls, Jungfraujoch on the saddle, Thunersee and Brienzersee either
+side of Interlaken. Summit heights land within a few tens of metres of the
+surveyed figures — the residual is the 25 m grid rounding off the summits, not
+an error in placement.
+
+**Chicago** — 14 × 14 km centred on 41.888 N, 87.635 W at a 9 m grid, reaching
+from Bronzeville to Wrigley Field and four kilometres out into the lake. The
+terrain is almost beside the point here; the map is its 103,769 buildings. Half
+of them carry a surveyed height, and the towers are built from their
+`building:part` records, so Willis Tower has its real setbacks at 355 m under a
+442 m roof rather than being a single slab. The lakefront and the river come
+from surveyed outlines rather than contours, because Chicago is flat enough
+that elevation tells you nothing about where the water is. The L runs on its
+viaduct, because OSM records which sections are elevated.
+
+Everything geographic lives in `tools/regions.mjs` (baking) and
+`src/regions.js` (runtime). Adding a third map means adding an entry to each
+and running the bakers.
 
 ## Flying
 
@@ -163,22 +176,37 @@ src/
   materials.js        shared lit material and lofting helpers
   shaders/            GLSL shared between modules
 tools/
-  bake-terrain.mjs    regenerate the heightfield from source tiles
-  fetch-buildings.mjs download OSM footprints for the region
+  regions.mjs         every geographic constant, for both maps
+  overpass.mjs        cached, retrying OSM client
+  geometry.mjs        rings, simplification, oriented boxes
+  bake-terrain.mjs    heightfield, water mask and vegetation mask
+  fetch-buildings.mjs download OSM footprints, parts and relations
   bake-buildings.mjs  turn those into the game's compact format
   fetch-network.mjs   download roads, railways and aerialways
   bake-network.mjs    classify, simplify and chain them into routes
+  verify-map.mjs      check a baked map against ground truth
   flight-test.mjs     headless flight model checks
   smoke.mjs           end-to-end browser test
   shot.mjs, crop.mjs  screenshot helpers
+```
+
+Each baking tool takes a region name:
+
+```
+node tools/bake-terrain.mjs chicago
+node tools/fetch-buildings.mjs chicago && node tools/bake-buildings.mjs chicago
+node tools/fetch-network.mjs chicago && node tools/bake-network.mjs chicago
+node tools/verify-map.mjs chicago
 ```
 
 ## Testing
 
 ```
 node tools/flight-test.mjs                 # flight model, no browser needed
+node tools/verify-map.mjs chicago          # is the map where the real place is?
 python3 -m http.server 8080 &
 node tools/smoke.mjs --portrait            # boots, flies, checks for errors
+node tools/smoke.mjs --map=chicago         # the other map, same checks
 ```
 
 The flight model runs headless, which is how the interesting bugs got caught —

@@ -1,5 +1,12 @@
 import * as THREE from '../vendor/three.module.js';
 
+function bytesFromBase64(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 /**
  * The baked Jungfrau heightfield: CPU copy for physics and placement, plus a
  * mip pyramid of R32F textures the terrain shader samples in the vertex stage.
@@ -7,7 +14,7 @@ import * as THREE from '../vendor/three.module.js';
  * World space is metres: +X east, +Z south, +Y up, origin at the region centre.
  */
 export class Heightfield {
-  constructor(meta, heights, water) {
+  constructor(meta, heights, water, vegetation = null) {
     this.meta = meta;
     this.size = meta.size;
     this.step = meta.step;
@@ -16,6 +23,7 @@ export class Heightfield {
     this.maxHeight = meta.maxHeight;
     this.heights = heights;
     this.water = water;
+    this.vegetation = vegetation; // { data: Uint8Array, size } from the region's own survey, or null
 
     this.mips = [];
     this.mipTextures = [];
@@ -31,6 +39,20 @@ export class Heightfield {
    * surface texture, the tree placer samples it directly.
    */
   #buildForestMask() {
+    // A region that ships a surveyed vegetation mask uses it verbatim: the
+    // parks in a city are where the city put them, and no treeline rule is
+    // going to guess Lincoln Park.
+    if (this.vegetation) {
+      const n = this.vegetation.size;
+      const mask = new Float32Array(n * n);
+      const src = this.vegetation.data;
+      for (let p = 0; p < mask.length; p++) mask[p] = src[p] / 255;
+      this.forestMask = mask;
+      this.forestSize = n;
+      this.forestStep = (this.halfSize * 2) / (n - 1);
+      return;
+    }
+
     const n = 768;
     const mask = new Float32Array(n * n);
     const step = (this.halfSize * 2) / (n - 1);
@@ -176,7 +198,25 @@ export class Heightfield {
       heights[p] = (px[q] * 256 + px[q + 1]) / scale - bias;
       water[p] = px[q + 2] > 127 ? 1 : 0;
     }
-    return new Heightfield(meta, heights, water);
+
+    let vegetation = null;
+    const vegSize = meta.vegetation?.size;
+    if (vegSize) {
+      const vegBlob = embedded?.vegetation
+        ? new Blob([bytesFromBase64(embedded.vegetation)], { type: 'image/png' })
+        : await fetch(meta.vegetation.file).then((r) => r.blob());
+      const vbm = await createImageBitmap(vegBlob);
+      canvas.width = vegSize;
+      canvas.height = vegSize;
+      ctx.drawImage(vbm, 0, 0);
+      const vpx = ctx.getImageData(0, 0, vegSize, vegSize).data;
+      vbm.close?.();
+      const data = new Uint8Array(vegSize * vegSize);
+      for (let p = 0, q = 0; p < data.length; p++, q += 4) data[p] = vpx[q];
+      vegetation = { data, size: vegSize };
+    }
+
+    return new Heightfield(meta, heights, water, vegetation);
   }
 
   #buildMips() {

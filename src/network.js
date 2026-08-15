@@ -51,9 +51,11 @@ const MOVERS = {
   [KIND.CHAIRLIFT]: { speed: 2.6, cars: 1, size: [1.9, 1.3, 1.5], colour: [0.05, 0.06, 0.09], hang: 2.4, many: 9 },
 };
 
-export async function loadNetwork(url = 'data/network.bin.gz', embedded = null) {
+export async function loadNetwork(url, embedded = null) {
   const view = await loadPacked(url, embedded);
   if (readMagic(view) !== 'WNET') throw new Error('network: bad file');
+  const format = view.getUint16(4, true);
+  if (format !== 2) throw new Error(`network: format ${format}, expected 2`);
   const wayCount = view.getUint32(8, true);
 
   const ways = [];
@@ -64,14 +66,15 @@ export async function loadNetwork(url = 'data/network.bin.gz', embedded = null) 
     const n = view.getUint16(o + 2, true);
     const ox = view.getInt16(o + 4, true);
     const oz = view.getInt16(o + 6, true);
-    o += 8;
+    const level = view.getInt8(o + 8);
+    o += 10;
     const pts = new Float32Array(n * 2);
     for (let k = 0; k < n; k++) {
       pts[k * 2] = ox + view.getInt16(o, true) / 2;
       pts[k * 2 + 1] = oz + view.getInt16(o + 2, true) / 2;
       o += 4;
     }
-    ways.push({ kind, canMove, pts });
+    ways.push({ kind, canMove, level, pts });
   }
   return ways;
 }
@@ -117,7 +120,7 @@ export class Network {
         const key = `${Math.floor(mx / TILE)},${Math.floor(mz / TILE)}`;
         let list = this.tiles.get(key);
         if (!list) this.tiles.set(key, (list = []));
-        list.push(way.kind, p[i * 2], p[i * 2 + 1], p[(i + 1) * 2], p[(i + 1) * 2 + 1]);
+        list.push(way.kind, p[i * 2], p[i * 2 + 1], p[(i + 1) * 2], p[(i + 1) * 2 + 1], way.level);
       }
     }
   }
@@ -131,7 +134,7 @@ export class Network {
     let minY = Infinity;
     let maxY = -Infinity;
 
-    for (let i = 0; i < list.length; i += 5) {
+    for (let i = 0; i < list.length; i += 6) {
       const kind = list[i];
       const style = STYLE[kind];
       if (style.range < budgetRange) continue;
@@ -139,6 +142,7 @@ export class Network {
       const az = list[i + 2];
       const bx = list[i + 3];
       const bz = list[i + 4];
+      const level = list[i + 5];
       let dx = bx - ax;
       let dz = bz - az;
       const len = Math.hypot(dx, dz);
@@ -161,7 +165,11 @@ export class Network {
         [x1 + nx, z1 + nz],
         [x0 + nx, z0 + nz],
       ];
-      const ys = corners.map(([x, z]) => hf.heightAt(x, z) + 0.45);
+      // Elevated structure rides above the street it crosses. Chicago's L is
+      // tagged as subway whether it is under State Street or on steel above
+      // Wabash, and only the layer says which.
+      const lift = level > 0 ? (kind >= KIND.NARROW_GAUGE ? 7.4 : 6.2) * level : 0;
+      const ys = corners.map(([x, z]) => hf.heightAt(x, z) + 0.45 + lift);
       for (const y of ys) {
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
@@ -328,6 +336,7 @@ export class Network {
         pts: way.pts,
         cum,
         total,
+        lift: way.level > 0 ? (way.kind >= KIND.NARROW_GAUGE ? 7.4 : 6.2) * way.level : 0,
         cable: cable ?? null,
         mid: new THREE.Vector3(way.pts[(n >> 1) * 2], 0, way.pts[(n >> 1) * 2 + 1]),
         movers: [],
@@ -391,7 +400,8 @@ export class Network {
       out.set(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.z + (b.z - a.z) * f);
       tangent.set(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
     } else {
-      out.y = this.hf.heightAt(out.x, out.z);
+      // A train on the L rides its viaduct, not the street underneath.
+      out.y = this.hf.heightAt(out.x, out.z) + (route.lift ?? 0);
     }
     return out;
   }

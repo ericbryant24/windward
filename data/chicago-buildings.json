@@ -1,0 +1,17 @@
+{
+  "generator": "tools/bake-buildings.mjs",
+  "region": "chicago",
+  "source": "OpenStreetMap contributors, ODbL — see ATTRIBUTION.md",
+  "format": 2,
+  "count": 103769,
+  "vertices": 604346,
+  "vertexScale": 20,
+  "parts": 906,
+  "heights": {
+    "fromHeightTag": 543,
+    "fromLevels": 51382,
+    "inferred": 51844,
+    "surveyedPercent": 50
+  },
+  "note": "Footprints, positions, orientations and building:part massing are surveyed data. Heights are surveyed where tagged and inferred from type and footprint area otherwise. Facade materials are inferred from height and use except where building:material is tagged."
+}

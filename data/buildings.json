@@ -1,8 +1,0 @@
-{
-  "generator": "tools/bake-buildings.mjs",
-  "source": "OpenStreetMap contributors, ODbL — see ATTRIBUTION.md",
-  "count": 42372,
-  "vertices": 250962,
-  "vertexScale": 100,
-  "note": "Footprints and orientations are surveyed data. Heights are inferred from building type and footprint area; OSM carries a height for only 46 of these."
-}

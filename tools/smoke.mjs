@@ -7,6 +7,8 @@
 import { chromium } from 'playwright';
 
 const portrait = process.argv.includes('--portrait');
+const mapArg = process.argv.find((a) => a.startsWith('--map='));
+const map = mapArg ? mapArg.slice(6) : 'jungfrau';
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium',
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
@@ -32,10 +34,10 @@ const step = async (name, fn) => {
   }
 };
 
-await page.goto('http://localhost:8080/index.html', { waitUntil: 'load' });
+await page.goto(`http://localhost:8080/index.html?map=${map}`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.WINDWARD?.ready || window.WINDWARD?.error, { timeout: 120000 });
 
-console.log(portrait ? 'portrait 430x932' : 'landscape 1280x720');
+console.log(`${map} — ${portrait ? 'portrait 430x932' : 'landscape 1280x720'}`);
 
 await step('boot without error', async () => {
   const err = await page.evaluate(() => window.WINDWARD.error);
@@ -43,7 +45,9 @@ await step('boot without error', async () => {
 });
 
 await step('menu is showing', async () => {
-  await page.waitForSelector('.menu.open', { timeout: 5000 });
+  // Generous: Chicago buckets 104,000 buildings before the first frame, and
+  // the software renderer here needs a while to produce one.
+  await page.waitForSelector('.menu.open', { timeout: 30000 });
 });
 
 await step('start free flight', async () => {

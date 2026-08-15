@@ -11,11 +11,18 @@ import { NOISE, SKY, OUTPUT } from './shaders/lib.js';
  * so the trees always stand where the woods are.
  */
 export class Trees {
-  constructor(heightfield, sky, { radius = 1150, spacing = 15, maxInstances = 3800 } = {}) {
+  constructor(
+    heightfield,
+    sky,
+    { radius = 1150, spacing = 15, maxInstances = 3800, broadleaf = false, densityScale = 1, height = [11, 24] } = {}
+  ) {
     this.hf = heightfield;
     this.radius = radius;
     this.spacing = spacing;
     this.max = maxInstances;
+    this.broadleaf = broadleaf;
+    this.densityScale = densityScale;
+    this.height = height;
     // The buffer only covers a disc around wherever it was last rebuilt, so the
     // fade has to finish inside that disc with room for the player to fly on
     // before the next rebuild — otherwise trees wink into existence at the rim.
@@ -99,7 +106,11 @@ export class Trees {
     this.mesh.renderOrder = 11;
   }
 
-  /** A two-tier conifer, 24 triangles, unit height and unit radius. */
+  /**
+   * A two-tier tree, 24 triangles, unit height and unit radius. Narrow and
+   * pointed for a spruce; wide and round for the street trees and park oaks of
+   * a city, which read completely differently from the air.
+   */
   #geometry() {
     const pos = [];
     const nrm = [];
@@ -120,8 +131,13 @@ export class Trees {
       }
       for (let i = 0; i < seg; i++) idx.push(base, base + 1 + i, base + 1 + ((i + 1) % seg));
     };
-    tier(0.18, 0.68, 1.0);
-    tier(0.55, 1.0, 0.62);
+    if (this.broadleaf) {
+      tier(0.34, 0.92, 1.0);
+      tier(0.14, 0.74, 0.86);
+    } else {
+      tier(0.18, 0.68, 1.0);
+      tier(0.55, 1.0, 0.62);
+    }
     // trunk
     const base = pos.length / 3;
     for (let i = 0; i < 3; i++) {
@@ -207,7 +223,7 @@ export class Trees {
         if (d2 > r * r) continue;
         if (far && d2 < this.nearFadeEnd * this.nearFadeEnd * 0.25) continue;
 
-        const density = hf.forestAt(x, z);
+        const density = hf.forestAt(x, z) * this.densityScale;
         if (density < 0.06) continue;
         // the far field is already sparse; trim it a little further
         if (hash2i(gx - 517, gz + 2281) > density * (far ? 1.15 : 1.5)) continue;
@@ -216,7 +232,8 @@ export class Trees {
         this.treeData[n * 4] = x;
         this.treeData[n * 4 + 1] = y - 0.6;
         this.treeData[n * 4 + 2] = z;
-        this.treeData[n * 4 + 3] = 11 + hash2i(gx + 71, gz + 137) * 13 + density * 5;
+        this.treeData[n * 4 + 3] =
+          this.height[0] + hash2i(gx + 71, gz + 137) * (this.height[1] - this.height[0]) + density * 2;
         this.tintData[n * 3] = hash2i(gx * 3 + 5, gz * 7 - 11);
         this.tintData[n * 3 + 1] = (h2 - 0.5) * 0.16;
         this.tintData[n * 3 + 2] = far ? this.fadeEnd : this.nearFadeEnd;

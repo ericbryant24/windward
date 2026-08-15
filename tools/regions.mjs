@@ -37,8 +37,9 @@ export const REGIONS = {
     vegetation: null,
     buildings: {
       // Almost nothing in the Alps carries a height tag, so these fall back to
-      // footprint area and building type.
-      minArea: 24,
+      // footprint area and building type. The 14 m2 floor keeps the woodsheds
+      // and single garages that make a hamlet look inhabited.
+      minArea: 14,
       simplifyTo: 24,
     },
   },
@@ -135,4 +136,5 @@ export const paths = (r) => ({
   osmNetwork: `.cache/osm-${r.id}-network.json`,
   osmWater: `.cache/osm-${r.id}-water.json`,
   osmVegetation: `.cache/osm-${r.id}-vegetation.json`,
+  vegetation: `data/${r.id}-vegetation.png`,
 });

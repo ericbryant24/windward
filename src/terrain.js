@@ -26,6 +26,7 @@ export class Terrain {
     this.baseRange = quality.baseRange ?? 1400;
     this.lightmapSize = quality.lightmapSize ?? 1024;
     this.detail = quality.detail ?? 1;
+    this.urban = quality.urban ?? false;
 
     this.group = new THREE.Group();
     this.levels = this.maxDepth + 1;
@@ -317,6 +318,7 @@ export class Terrain {
         uLightmap: { value: this.lightmap.texture },
         uSunRadiance: { value: new THREE.Vector3(20, 19, 18) },
         uSkyAmbient: { value: new THREE.Vector3(0.6, 0.8, 1.2) },
+        uUrban: { value: this.urban ? 1 : 0 },
         uSnowLine: { value: 2760 },
         uTreeLine: { value: 1950 },
         uDetail: { value: this.detail },
@@ -535,6 +537,7 @@ uniform float uGradMax;
 uniform sampler2D uLightmap;
 uniform vec3 uSunRadiance;
 uniform vec3 uSkyAmbient;
+uniform float uUrban;
 uniform float uSnowLine;
 uniform float uTreeLine;
 uniform float uDetail;
@@ -639,7 +642,17 @@ void main(){
   vec3 iceCol = vec3(0.40, 0.55, 0.68);
   vec3 lakeBed = vec3(0.030, 0.045, 0.038);
 
+  // In a city the ground between the buildings is pavement, not pasture, and
+  // the green is exactly and only where the parks department put it. The same
+  // mask that plants the trees decides this, so the canopy and the grass under
+  // it always agree.
   vec3 albedo = meadow;
+  if (uUrban > 0.5) {
+    vec3 paving = mix(vec3(0.088, 0.084, 0.079), vec3(0.132, 0.126, 0.118), varMid * 0.5 + 0.5);
+    paving = mix(paving, vec3(0.150, 0.140, 0.126), smoothstep(0.35, 0.85, varFine * 0.5 + 0.5) * 0.5);
+    vec3 lawn = mix(vec3(0.040, 0.072, 0.026), vec3(0.076, 0.112, 0.036), varFine * 0.5 + 0.5);
+    albedo = mix(paving, lawn, smoothstep(0.10, 0.55, forestMask));
+  }
   albedo = mix(albedo, treeCol, forest);
   albedo = mix(albedo, screeCol, scree);
   albedo = mix(albedo, rockCol, rock);

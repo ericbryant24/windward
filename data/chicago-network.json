@@ -1,9 +1,11 @@
 {
   "generator": "tools/bake-network.mjs",
   "source": "OpenStreetMap contributors, ODbL — see ATTRIBUTION.md",
-  "ways": 19628,
-  "points": 118696,
+  "ways": 77144,
+  "points": 175998,
   "pointScale": 2,
+  "region": "chicago",
+  "format": 2,
   "kinds": {
     "MAJOR_ROAD": 0,
     "MINOR_ROAD": 1,
@@ -16,10 +18,9 @@
     "CHAIRLIFT": 8
   },
   "routes": {
-    "car": 329,
-    "train": 59,
-    "cabin": 43,
-    "chair": 26
+    "car": 910,
+    "train": 246
   },
+  "elevated": 3525,
   "note": "Fragments sharing an endpoint are chained into continuous runs so trains and cable cars have a line to follow."
 }

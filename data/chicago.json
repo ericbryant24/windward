@@ -12,8 +12,7 @@
   "encoding": {
     "bias": 512,
     "scale": 2,
-    "waterChannel": "b",
-    "vegetationChannel": "a"
+    "waterChannel": "b"
   },
   "minHeight": 160,
   "maxHeight": 194.7,
@@ -43,7 +42,9 @@
       "landuse=recreation_ground",
       "natural=wood",
       "natural=scrub"
-    ]
+    ],
+    "size": 768,
+    "file": "data/chicago-vegetation.png"
   },
-  "sha256": "0976adeb738025f6"
+  "sha256": "caba79420f6a0335"
 }

@@ -4,7 +4,12 @@
  *
  *   R,G  -> elevation, packed big-endian as round((h + 512) * 2)  [0.5 m steps]
  *   B    -> water mask (255 = water surface)
- *   A    -> vegetation mask, where the region bakes one (else 255)
+ *
+ * Stays three-channel deliberately. A vegetation mask in the alpha channel
+ * would be free storage but not free data: the browser decodes a PNG into a
+ * canvas through premultiplied alpha, so every height sample under a
+ * transparent pixel comes back as zero. Regions that bake vegetation get their
+ * own greyscale file alongside.
  *
  * Usage: node tools/bake-terrain.mjs [jungfrau|chicago]
  */
@@ -401,10 +406,7 @@ async function main() {
   }
 
   // ------------------------------------------------------------ encode ---
-  // Jungfrau keeps its three-channel form so its bytes do not move; regions
-  // that bake a vegetation mask carry it in alpha.
-  const hasAlpha = vegetation !== null;
-  const png = new PNG({ width: size, height: size, colorType: hasAlpha ? 6 : 2 });
+  const png = new PNG({ width: size, height: size, colorType: 2 });
   const BIAS = 512;
   const SCALE = 2; // 0.5 m steps — below the DEM's own noise floor, keeps the file lean
   for (let p = 0; p < size * size; p++) {
@@ -412,12 +414,45 @@ async function main() {
     png.data[p * 4] = v >> 8;
     png.data[p * 4 + 1] = v & 255;
     png.data[p * 4 + 2] = water[p];
-    png.data[p * 4 + 3] = hasAlpha ? veg[p] : 255;
+    png.data[p * 4 + 3] = 255;
   }
   const out = PNG.sync.write(png, { deflateLevel: 9, filterType: 4 });
   await mkdir('data', { recursive: true });
   await writeFile(OUT.terrain, out);
   console.log(`wrote ${OUT.terrain} (${(out.length / 1048576).toFixed(2)} MB)`);
+
+  // Vegetation goes in its own greyscale file, at the resolution the runtime
+  // forest mask actually uses.
+  if (vegetation) {
+    const VN = 768;
+    const vpng = new PNG({ width: VN, height: VN, colorType: 0 });
+    const ratio = (size - 1) / (VN - 1);
+    for (let j = 0; j < VN; j++) {
+      for (let i = 0; i < VN; i++) {
+        // Box-average the source cells so a one-cell park does not flicker in
+        // and out depending on where the sample lands.
+        const x0 = Math.round(i * ratio);
+        const y0 = Math.round(j * ratio);
+        let acc = 0;
+        let cnt = 0;
+        for (let dy = 0; dy <= 1; dy++) {
+          for (let dx = 0; dx <= 1; dx++) {
+            const x = Math.min(size - 1, x0 + dx);
+            const y = Math.min(size - 1, y0 + dy);
+            acc += veg[y * size + x];
+            cnt++;
+          }
+        }
+        vpng.data[(j * VN + i) * 4] = Math.round(acc / cnt);
+        vpng.data[(j * VN + i) * 4 + 3] = 255;
+      }
+    }
+    const vout = PNG.sync.write(vpng, { deflateLevel: 9, filterType: 4 });
+    await writeFile(OUT.vegetation, vout);
+    vegetation.size = VN;
+    vegetation.file = OUT.vegetation;
+    console.log(`wrote ${OUT.vegetation} (${(vout.length / 1024).toFixed(0)} kB, ${VN}^2)`);
+  }
 
   const meta = {
     generator: 'tools/bake-terrain.mjs',
@@ -430,7 +465,7 @@ async function main() {
     halfSize,
     size,
     step,
-    encoding: { bias: BIAS, scale: SCALE, waterChannel: 'b', vegetationChannel: hasAlpha ? 'a' : null },
+    encoding: { bias: BIAS, scale: SCALE, waterChannel: 'b' },
     minHeight: Math.round(minH * 10) / 10,
     maxHeight: Math.round(maxH * 10) / 10,
     lakes,
