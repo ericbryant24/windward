@@ -102,7 +102,7 @@ await step('gates can be passed', async () => {
     const g = window.WINDWARD.game;
     const gate = g.world.gates[g.gateIndex];
     const before = g.gateIndex;
-    const heading = (Math.atan2(-gate.normal.x, -gate.normal.z) * 180) / Math.PI;
+    const heading = (Math.atan2(gate.normal.x, -gate.normal.z) * 180) / Math.PI;
     const start = gate.position.clone().addScaledVector(gate.normal, -50);
     g.glider.reset(start, heading, 55);
     for (let i = 0; i < 100 && g.gateIndex === before; i++) {

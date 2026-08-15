@@ -327,7 +327,14 @@ for (const item of [...outlines.filter((o) => !o.replaced), ...parts]) {
   }
 
   const area = Math.abs(signedArea(ring));
-  if (area < minArea) {
+  // The area floor exists to drop bin stores and single garages. It also drops
+  // masts: Willis Tower's twin antennas are 17 m2 at the base and carry the
+  // building from its 442 m roof to 527 m, which is most of what makes that
+  // silhouette recognisable. Anything tagged tall enough is kept whatever its
+  // footprint, and the test is deferred until the height is known.
+  const slender =
+    parseLength(tags.height ?? tags['building:height']) > 45 || parseFloat(tags['building:levels']) > 14;
+  if (area < minArea && !slender) {
     stats.tiny++;
     continue;
   }

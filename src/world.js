@@ -22,19 +22,7 @@ export class World {
     this.gates = [];
     this.group = new THREE.Group();
     scene.add(this.group);
-    this.#buildGates();
-  }
 
-  toLocal(lat, lon) {
-    const meta = this.hf.meta;
-    return {
-      x: (lon - meta.centerLon) * this.mpdLon,
-      z: (meta.centerLat - lat) * 111320,
-    };
-  }
-
-  // ------------------------------------------------------------- gates ---
-  #buildGates() {
     this.gateMaterial = makeLitMaterial(this.sky, {
       color: new THREE.Color(0.05, 0.35, 0.55),
       emissive: new THREE.Color(0.15, 0.75, 1.0),
@@ -50,7 +38,34 @@ export class World {
       side: THREE.DoubleSide,
     });
 
-    const points = this.circuit.map((g) => {
+    this.setCourse(this.circuit, true, 'circuit');
+  }
+
+  toLocal(lat, lon) {
+    const meta = this.hf.meta;
+    return {
+      x: (lon - meta.centerLon) * this.mpdLon,
+      z: (meta.centerLat - lat) * 111320,
+    };
+  }
+
+  // ------------------------------------------------------------- gates ---
+  /**
+   * Lay out a run of gates. The race circuit is one course; a slalom challenge
+   * swaps in another and puts this one back when it is done, which is why the
+   * course is built here rather than in the constructor.
+   *
+   * @param {boolean} closed A circuit loops back on itself; a slalom does not.
+   */
+  setCourse(defs, closed = true, courseId = 'circuit') {
+    for (const g of this.gates) {
+      this.group.remove(g.mesh);
+      g.mesh.geometry.dispose();
+    }
+    this.gates.length = 0;
+    this.courseId = courseId;
+
+    const points = defs.map((g) => {
       const v = this.toLocal(g.lat, g.lon);
       const ground = this.hf.heightAt(v.x, v.z);
       return { ...g, x: v.x, z: v.z, y: ground + g.agl };
@@ -58,8 +73,10 @@ export class World {
 
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
-      const next = points[(i + 1) % points.length];
-      const prev = points[(i - 1 + points.length) % points.length];
+      // An open course has no wrap-around, so each end takes its heading from
+      // the single neighbour it has.
+      const next = points[closed ? (i + 1) % points.length : Math.min(i + 1, points.length - 1)];
+      const prev = points[closed ? (i - 1 + points.length) % points.length : Math.max(i - 1, 0)];
       // face the gate along the course so you fly through, not past
       const dir = new THREE.Vector3(next.x - prev.x, next.y - prev.y, next.z - prev.z).normalize();
 

@@ -34,13 +34,14 @@ an error in placement.
 
 **Chicago** — 14 × 14 km centred on 41.888 N, 87.635 W at a 9 m grid, reaching
 from Bronzeville to Wrigley Field and four kilometres out into the lake. The
-terrain is almost beside the point here; the map is its 103,769 buildings. Half
+terrain is almost beside the point here; the map is its 145,396 buildings. Half
 of them carry a surveyed height, and the towers are built from their
 `building:part` records, so Willis Tower has its real setbacks at 355 m under a
-442 m roof rather than being a single slab. The lakefront and the river come
-from surveyed outlines rather than contours, because Chicago is flat enough
-that elevation tells you nothing about where the water is. The L runs on its
-viaduct, because OSM records which sections are elevated.
+442 m roof, with its antennas carrying on to 527 m, rather than being a single
+slab. The lakefront and the river come from surveyed outlines rather than
+contours, because Chicago is flat enough that elevation tells you nothing about
+where the water is. The L runs on its viaduct, because OSM records which
+sections are elevated.
 
 Everything geographic lives in `tools/regions.mjs` (baking) and
 `src/regions.js` (runtime). Adding a third map means adding an entry to each

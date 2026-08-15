@@ -5,6 +5,8 @@ import { World, createThermalClouds } from './world.js';
 import { Trees } from './trees.js';
 import { Buildings } from './buildings.js';
 import { Network } from './network.js';
+import { Challenges, MEDAL_NAMES, formatMetric, challengeMetric } from './challenges.js';
+import { store } from './store.js';
 import { formatTime } from './hud.js';
 
 const CAMERA_MODES = ['chase', 'far', 'cockpit'];
@@ -55,6 +57,10 @@ export class Game {
       scene.add(this.buildings.group);
     }
 
+    // After the buildings, which the collect tasks consult so that no pickup
+    // ends up buried inside a tower.
+    this.challenges = new Challenges(this.world, heightfield, sky, scene, region.id, this.buildings);
+
     this.state = 'menu';
     this.mode = 'free';
     this.cameraMode = 0;
@@ -92,6 +98,10 @@ export class Game {
     this.gateIndex = 0;
     this.lowTime = 0;
     this.respawnTimer = 0;
+    // Puts the circuit course back if a slalom had swapped it out, so the
+    // gates below are the ones this mode expects.
+    this.challenges.abort();
+    this.challenges.setVisible(mode === 'free');
     this.world.resetGates();
     this.world.group.visible = mode === 'circuit';
 
@@ -107,7 +117,7 @@ export class Game {
     this.controls.setVisible(true);
 
     const intro = {
-      free: 'Find the lift. Cumulus marks the thermals.',
+      free: 'Find the lift. Fly into a marker to start a challenge.',
       circuit: 'Eleven gates. Fly clean, fly low, fly fast.',
       climb: 'Five minutes. Take everything the air will give.',
     }[mode];
@@ -132,10 +142,13 @@ export class Game {
 
   toMenu() {
     this.state = 'menu';
+    this.challenges.abort();
+    this.challenges.setVisible(false);
     this.controls.setVisible(false);
     this.hud.showFlight(false);
     this.hud.hideResults();
     this.labels.clear();
+    this.hud.setChallenges(this.challenges.summary());
     this.hud.showMenu(true, {
       discovered: this.progress.discovered.length,
       total: this.world.places.length,
@@ -189,6 +202,7 @@ export class Game {
         timer: this.timer,
         score: this.score,
         streak: this.streak,
+        challenge: this.challenges.hudState(),
       });
       this.controls.setBoostCharge(this.glider.boost);
       this.audio?.update(dt, {
@@ -285,7 +299,93 @@ export class Game {
         this.timer = 0;
         this.#finishClimb();
       }
+    } else if (this.mode === 'free') {
+      // Challenges are a sub-state of free flight rather than a mode of their
+      // own: that is what lets you leave one and fly straight into the next.
+      for (const ev of this.challenges.update(dt, g.position, this._prevPos, agl)) {
+        if (ev.kind === 'armed') this.#announceChallenge(ev.def);
+        else if (ev.kind === 'note') this.#noteChallenge(ev);
+        else if (ev.kind === 'done') this.#finishChallenge(ev);
+        else if (ev.kind === 'failed') this.#failChallenge(ev);
+      }
     }
+  }
+
+  // -------------------------------------------------------- challenges ---
+  #announceChallenge(def) {
+    const target = challengeMetric(def) === 'height'
+      ? `under ${def.ceiling} m for ${def.hold} s`
+      : `gold in ${def.medals[2]} s`;
+    this.hud.toast(`<b>${def.name}</b> · ${target}`);
+    this.audio?.cue('gate');
+  }
+
+  #noteChallenge(ev) {
+    this.hud.toast(ev.text, ev.tone ?? '');
+    if (ev.cue) this.audio?.cue(ev.cue);
+  }
+
+  #finishChallenge(ev) {
+    const { def, value, medal, improved } = ev;
+    this.state = 'done';
+    this.audio?.cue('finish');
+    this.controls.setVisible(false);
+    this.score += 500 + medal * 700;
+    this.#recordBest();
+    const label = challengeMetric(def) === 'height' ? 'Mean height' : 'Time';
+    this.hud.showResults(medal ? `${MEDAL_NAMES[medal]} — ${def.name}` : def.name, [
+      [label, formatMetric(def, value)],
+      ['Your best', formatMetric(def, ev.best) + (improved ? ' · new' : '')],
+      ['Gold at', formatMetric(def, def.medals[2])],
+      ['Score', Math.round(this.score).toLocaleString('en-US')],
+    ], this.#challengeButtons());
+  }
+
+  /**
+   * Losing a task must not stop the flight. The modal card is for a medal you
+   * want to look at; a failure that takes the sky away from you is the map
+   * interrupting a free flight you never asked it to interrupt.
+   */
+  #failChallenge(ev) {
+    const why = ev.reason === 'crash' ? 'you crashed' : 'out of time';
+    this.hud.toast(`<b>${ev.def.name}</b> — ${why}`, 'bad');
+  }
+
+  #challengeButtons() {
+    return [
+      { label: 'Retry', action: 'challenge-retry', primary: true },
+      { label: 'Keep flying', action: 'challenge-resume' },
+      { label: 'Menu', action: 'menu' },
+    ];
+  }
+
+  /** Straight back to the marker with the clock zeroed. Nothing reloads. */
+  retryChallenge() {
+    const def = this.challenges.lastDef;
+    if (!def) return this.resumeFree();
+    this.hud.hideResults();
+    this.state = 'flying';
+    this.respawnTimer = 0;
+    this.controls.setVisible(true);
+    const spawn = this.challenges.spawnFor(def);
+    this.glider.reset(spawn.position, spawn.heading, 44);
+    this._prevPos.copy(this.glider.position);
+    this.#placeCamera(true);
+    this.challenges.arm(def);
+    this.#announceChallenge(def);
+  }
+
+  /** Put the results card away and carry on from where the task ended. */
+  resumeFree() {
+    this.hud.hideResults();
+    this.state = 'flying';
+    this.controls.setVisible(true);
+  }
+
+  /** R, and the results-screen button: retry the task if one is running. */
+  restart() {
+    if (this.challenges.active) this.retryChallenge();
+    else this.startMode(this.mode);
   }
 
   #checkGates() {
@@ -312,14 +412,26 @@ export class Game {
       const g = this.world.gates[this.gateIndex];
       return g ? { name: `Gate ${this.gateIndex + 1} · ${g.name}`, position: g.position } : null;
     }
-    const near = this.air.nearestThermal(this.glider.position.x, this.glider.position.z);
-    if (!near) return null;
+    // A task you are actually flying owns the arrow. A marker you merely
+    // happen to be near does not: over Chicago the markers cluster downtown
+    // and would hide the thermal that is the only thing keeping you up, so
+    // whichever of the two is closer wins.
+    let task = null;
+    if (this.mode === 'free') {
+      task = this.challenges.objective(this.glider.position);
+      if (task && !task.hint) return task;
+    }
+    const p = this.glider.position;
+    const near = this.air.nearestThermal(p.x, p.z);
+    if (!near) return task;
+    if (task && Math.hypot(task.position.x - p.x, task.position.z - p.z) < near.distance) return task;
     const t = near.thermal;
     return { name: 'Nearest lift', position: this._v2.set(t.x, t.ground + 400, t.z) };
   }
 
   #land() {
     this.state = 'done';
+    this.challenges.abort();
     this.audio?.cue('finish');
     this.controls.setVisible(false);
     const lines = [
@@ -340,9 +452,13 @@ export class Game {
     this.score = Math.max(0, this.score - 250);
     this.respawnTimer = 1.4;
     this.glider.velocity.multiplyScalar(0.1);
-    this.hud.toast(cause === 'structure' ? 'You hit a building. Resetting…' : 'Terrain! Resetting…', 'bad');
     this.audio?.cue('crash');
     this.hud.setWarning('');
+    // A running challenge has to die with the ship, not keep counting while
+    // the wreck waits to respawn.
+    const failed = this.challenges.crashed();
+    if (failed) this.#failChallenge(failed);
+    else this.hud.toast(cause === 'structure' ? 'You hit a building. Resetting…' : 'Terrain! Resetting…', 'bad');
   }
 
   #respawn() {
@@ -482,6 +598,7 @@ export class Game {
 
   setLighting(sunRadiance, skyAmbient) {
     this.world.setLighting(sunRadiance, skyAmbient);
+    this.challenges.setLighting(sunRadiance, skyAmbient);
     this.clouds.userData.setLighting(sunRadiance, skyAmbient);
     this.trees?.setLighting(sunRadiance, skyAmbient);
     this.buildings?.setLighting(sunRadiance, skyAmbient);
@@ -560,7 +677,7 @@ class LabelLayer {
 
 function loadProgress() {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+    const raw = JSON.parse(store.get(STORE_KEY) ?? '{}');
     return { discovered: raw.discovered ?? [], best: raw.best ?? {} };
   } catch {
     return { discovered: [], best: {} };
@@ -568,9 +685,5 @@ function loadProgress() {
 }
 
 function saveProgress(p) {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(p));
-  } catch {
-    /* private mode; progress just won't persist */
-  }
+  store.set(STORE_KEY, JSON.stringify(p));
 }

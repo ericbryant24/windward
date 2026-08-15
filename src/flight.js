@@ -10,6 +10,8 @@ import * as THREE from '../vendor/three.module.js';
 
 const G = 9.80665;
 const RHO0 = 1.225;
+/** How far the water has to keep going before it sinks you like a lake. */
+const OPEN_WATER = 260;
 
 /** Alpine defaults; a region overrides what differs. */
 const AIR_DEFAULTS = {
@@ -132,8 +134,9 @@ export class Air {
       }
       if (nearWater) out.y += shore.strength * (1 - agl / shore.ceiling);
     }
-    // Nothing rises over cold water.
-    if (overWater) out.y -= this.opt.waterSink;
+    // Nothing rises over cold water — but that is the lake's doing, and a
+    // river eighty metres wide between two rows of towers is not the lake.
+    if (overWater && this.opt.waterSink && this.#openWater(pos.x, pos.z)) out.y -= this.opt.waterSink;
 
     // ---- thermals --------------------------------------------------------
     let lift = 0;
@@ -164,6 +167,18 @@ export class Air {
     const t = this.time;
     out.y += 0.35 * Math.sin(pos.x * 0.0021 + t * 0.7) * Math.sin(pos.z * 0.0018 - t * 0.5);
     return out;
+  }
+
+  /**
+   * Still water in every direction, which is what tells a lake from a river or
+   * a harbour slip. Wider than the widest reach of the Chicago River at Wolf
+   * Point, narrow enough that the lake keeps its teeth to within a wingspan or
+   * two of the shore.
+   */
+  #openWater(x, z) {
+    const r = OPEN_WATER;
+    const hf = this.hf;
+    return hf.isWater(x + r, z) && hf.isWater(x - r, z) && hf.isWater(x, z + r) && hf.isWater(x, z - r);
   }
 
   update(dt) {
@@ -227,7 +242,9 @@ export class Glider {
   /** Place the glider heading in a compass direction, trimmed and flying. */
   reset(position, headingDeg = 0, speed = 32) {
     this.position.copy(position);
-    const yaw = THREE.MathUtils.degToRad(headingDeg);
+    // Yaw about +Y runs anticlockwise seen from above; compass bearings run
+    // clockwise. Without the sign the ship ends up on the reciprocal.
+    const yaw = THREE.MathUtils.degToRad(-headingDeg);
     this.quaternion.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ'));
     this.forward(this._f);
     this.velocity.copy(this._f).multiplyScalar(speed);

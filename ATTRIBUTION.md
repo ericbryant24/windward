@@ -59,16 +59,25 @@ building's type and the area of its footprint, and roof pitch likewise except
 where `roof:shape` is tagged. Treat that skyline as characteristic rather than
 surveyed.
 
-**Chicago — 103,769 buildings, 50% with a surveyed height.** 543 carry a
-`height` tag and 51,382 carry `building:levels`. More importantly, 906 of these
+**Chicago — 145,396 buildings, 50% with a surveyed height.** 614 carry a
+`height` tag and 72,384 carry `building:levels`. More importantly, 958 of these
 are `building:part` records under the Simple 3D Buildings scheme, which is how
 the towers that define the skyline are actually mapped: Willis Tower is a
 `type=building` relation carrying no height at all, with nine bundled tubes as
 separate parts that each stop at a different level. Those parts are the
-setbacks, and the baker extrudes them individually — Willis comes out at 442 m
-with its 355 m shoulders, Aon at 346 m, 875 N Michigan at 344 m, all from the
-tags. The remaining half of the city's heights are still inferred from type and
-footprint area.
+setbacks, and the baker extrudes them individually — Willis comes out at 527 m
+to its antenna tips with 442 m of roof and 355 m shoulders, 875 N Michigan at
+457 m, Trump at 400 m, St. Regis at 349 m, all from the tags. The remaining
+half of the city's heights are still inferred from type and footprint area.
+
+Two bugs in the download suppressed a third of the city until they were found.
+`out tags geom;` returns a relation's tags but not its members' geometry, so
+every multipolygon building — Soldier Field, the Shedd Aquarium, the Wrigley
+Building — arrived with nothing to extrude. And a busy Overpass mirror answers
+a query it cannot afford with a well-formed empty result, which the cache
+accepted as truth; four tiles of the city were stored as containing no
+buildings at all. Both are fixed, and empty responses are now retried across
+mirrors before being believed.
 
 **Facade materials are inferred in Chicago**, not surveyed. Only a few hundred
 buildings tag `building:material`, so the rest are guessed from height and use

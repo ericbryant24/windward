@@ -9,6 +9,13 @@
  * a flat slab where the Sears Tower should be.
  *
  *   node tools/fetch-buildings.mjs chicago
+ *
+ * The query ends `out geom;` rather than `out tags geom;`. That one word cost
+ * the city its multipolygons: with `tags` named explicitly, Overpass returns a
+ * relation's tags but not its members' geometry, so all 191 relation buildings
+ * in Chicago — Soldier Field, the Shedd Aquarium, the Wrigley Building, Aqua —
+ * arrived with nothing to extrude and were silently dropped. The cache label is
+ * versioned so the broken tiles are not reused.
  */
 import { writeFile, mkdir } from 'node:fs/promises';
 import { regionFromArgv, paths, bbox } from './regions.mjs';
@@ -30,8 +37,8 @@ const elements = await tiledQuery(
   way["building:part"](${bb});
   relation["building:part"](${bb});
 );
-out tags geom;`,
-  { label: 'buildings' }
+out geom;`,
+  { label: 'buildings-v2' }
 );
 
 const kinds = { way: 0, relation: 0, part: 0 };

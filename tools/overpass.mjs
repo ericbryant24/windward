@@ -43,13 +43,42 @@ export async function query(ql, { attempts = 12, label = 'query' } = {}) {
   throw new Error(`${label} failed after ${attempts} attempts: ${lastErr}`);
 }
 
-/** As `query`, but memoised to a file so repeat bakes are free. */
-export async function cachedQuery(file, ql, opts = {}) {
+/**
+ * As `query`, but memoised to a file so repeat bakes are free.
+ *
+ * An empty result is never cached, and by default is not even accepted. A busy
+ * Overpass mirror answers a query it cannot afford with a perfectly well-formed
+ * `{"elements":[]}`, and caching that is worse than failing: four tiles of
+ * Chicago silently lost 43,000 buildings that way, and the only symptom was a
+ * total that still looked plausible. Callers that genuinely expect nothing back
+ * pass allowEmpty. An area that answers empty from three mirrors in a row is
+ * taken at its word — several of Chicago's tiles are open lake — but says so.
+ */
+export async function cachedQuery(file, ql, { allowEmpty = false, ...opts } = {}) {
+  const label = opts.label ?? 'query';
   try {
     const s = await stat(file);
-    if (s.size > 200) return JSON.parse(await readFile(file, 'utf8'));
+    if (s.size > 200) {
+      const cached = JSON.parse(await readFile(file, 'utf8'));
+      if (allowEmpty || cached.elements?.length) return cached;
+      console.log(`  ${label}: cached result was empty, refetching`);
+    }
   } catch {}
-  const json = await query(ql, opts);
+
+  let json = null;
+  for (let round = 0; round < 3; round++) {
+    json = await query(ql, opts);
+    if (allowEmpty || json.elements?.length) break;
+    console.log(`  ${label}: empty response, treating as a failure (round ${round + 1})`);
+    await sleep(8000 * (round + 1));
+  }
+  if (!allowEmpty && !json.elements?.length) {
+    // Three empty answers from three different mirrors is good evidence the
+    // area really is empty — several of Chicago's tiles are open lake. Take it,
+    // but say so loudly, because the same shape is what a silent data loss
+    // looks like.
+    console.warn(`  ${label}: empty from every mirror, accepting as genuinely empty`);
+  }
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(json));
   return json;

@@ -9,6 +9,7 @@ import { Game } from './game.js';
 import { loadBuildings } from './buildings.js';
 import { loadNetwork } from './network.js';
 import { getRegion, DEFAULT_REGION } from './regions.js';
+import { store } from './store.js';
 import { Audio } from './audio.js';
 
 const canvas = document.getElementById('view');
@@ -45,25 +46,6 @@ const QUALITY = {
 
 const state = { ready: false };
 window.WINDWARD = state;
-
-// Sandboxed frames and private browsing can make storage throw on access, not
-// just on write, so every read goes through here too.
-const store = {
-  get(key, fallback = null) {
-    try {
-      return localStorage.getItem(key) ?? fallback;
-    } catch {
-      return fallback;
-    }
-  },
-  set(key, value) {
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      /* preferences just will not persist */
-    }
-  },
-};
 
 const hud = new Hud(uiRoot);
 const renderer = new THREE.WebGLRenderer({
@@ -222,6 +204,12 @@ async function boot() {
       case 'restart':
         game.startMode(game.mode);
         break;
+      case 'challenge-retry':
+        game.retryChallenge();
+        break;
+      case 'challenge-resume':
+        game.resumeFree();
+        break;
       case 'time': {
         selectSegment(btn);
         sky.setTime(value);
@@ -272,7 +260,7 @@ async function boot() {
 
   addEventListener('keydown', (e) => {
     if (e.code === 'KeyC') game.cycleCamera();
-    else if (e.code === 'KeyR' && game.state === 'flying') game.startMode(game.mode);
+    else if (e.code === 'KeyR' && game.state === 'flying') game.restart();
     else if (e.code === 'Escape' || e.code === 'KeyP') game.togglePause();
   });
   document.addEventListener('visibilitychange', () => {

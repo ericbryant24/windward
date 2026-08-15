@@ -1,4 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
+import { MEDAL_NAMES, formatMetric } from './challenges.js';
 
 /**
  * All of the 2D UI: loading, menus, and the in-flight instruments. DOM rather
@@ -33,6 +34,10 @@ export class Hud {
     this.compassTape = this.el('.compass-tape');
     this.arrow = this.el('.gate-arrow');
     this.warn = this.el('.warn');
+    this.task = this.el('.task');
+    this.taskName = this.el('[data-taskname]');
+    this.taskProgress = this.el('[data-taskprogress]');
+    this.taskTime = this.el('[data-tasktime]');
 
     this._v = new THREE.Vector3();
     this.onAction = () => {};
@@ -89,6 +94,31 @@ export class Hud {
     this.flight.classList.toggle('open', show);
   }
 
+  /**
+   * The menu checklist. Challenges are found by flying into them, so this is a
+   * scoreboard rather than a launcher — it says what is out there, where, and
+   * what you have taken off it so far.
+   */
+  setChallenges({ rows, total, golds, medalled }) {
+    this.el('[data-goldcount]').textContent = `${golds} of ${total} golds`;
+    this.el('[data-medalcount]').textContent = medalled
+      ? `${medalled}/${total} medalled`
+      : 'none medalled yet';
+    this.el('.task-list').innerHTML = rows
+      .map(
+        ({ def, medal, best }) => `
+        <div class="task-row m${medal}">
+          <i title="${MEDAL_NAMES[medal]}"></i>
+          <div>
+            <span>${def.name}</span>
+            <em>${def.where} · ${def.blurb}</em>
+          </div>
+          <b>${best == null ? '—' : formatMetric(def, best)}</b>
+        </div>`
+      )
+      .join('');
+  }
+
   setMode(mode) {
     this.flight.dataset.mode = mode;
   }
@@ -127,7 +157,7 @@ export class Hud {
 
   /** Per-frame instrument refresh. */
   update(state) {
-    const { glider, ground, objective, camera, mode, timer, score, streak } = state;
+    const { glider, ground, objective, camera, mode, timer, score, streak, challenge } = state;
 
     this.alt.textContent = Math.round(glider.position.y);
     this.agl.textContent = `${Math.max(0, Math.round(glider.position.y - ground))} agl`;
@@ -164,6 +194,14 @@ export class Hud {
       this.chip.textContent = `×${streak.toFixed(1)} ridge run`;
     } else {
       this.chip.classList.remove('on');
+    }
+
+    this.task.classList.toggle('on', !!challenge);
+    if (challenge) {
+      this.taskName.textContent = challenge.name;
+      this.taskProgress.textContent = challenge.progress;
+      this.taskTime.textContent = `${challenge.remaining.toFixed(1)}s`;
+      this.taskTime.classList.toggle('low', challenge.remaining < 10);
     }
   }
 
@@ -239,6 +277,15 @@ const TEMPLATE = /* html */ `
         <span class="mode-name">Height Hunt</span>
         <span class="mode-desc">Five minutes. Climb as high as the air will let you.</span>
       </button>
+    </div>
+
+    <div class="tasks">
+      <div class="task-head">
+        <span>Challenges</span>
+        <b data-goldcount>0 of 0 golds</b>
+      </div>
+      <p class="task-note">Out in the map. Fly into a marker to start one — <em data-medalcount>none medalled yet</em>.</p>
+      <div class="task-list"></div>
     </div>
 
     <div class="stats">
@@ -321,6 +368,11 @@ const TEMPLATE = /* html */ `
   </div>
 
   <div class="score-chip"><b data-score>0</b><span>pts</span></div>
+  <div class="task">
+    <span data-taskname>—</span>
+    <b data-taskprogress>—</b>
+    <em data-tasktime>—</em>
+  </div>
   <div class="streak"></div>
   <div class="warn"></div>
   <div class="gate-arrow">➤</div>
