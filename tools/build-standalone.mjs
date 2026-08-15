@@ -26,6 +26,7 @@ const css = await readFile('src/ui/style.css', 'utf8');
 const meta = JSON.parse(await readFile('data/jungfrau.json', 'utf8'));
 const png = (await readFile('data/jungfrau.png')).toString('base64');
 const buildings = (await readFile('data/buildings.bin.gz')).toString('base64');
+const network = (await readFile('data/network.bin.gz')).toString('base64');
 
 // The artifact host wraps this in its own document skeleton, so emit page
 // content only — no doctype, html, head or body tags.
@@ -45,6 +46,7 @@ window.WINDWARD_EMBED = {
   png: "${png}"
 };
 window.WINDWARD_BUILDINGS = "${buildings}";
+window.WINDWARD_NETWORK = "${network}";
 </script>
 <script>
 ${js}
@@ -57,4 +59,5 @@ console.log(`wrote ${out}`);
 console.log(`  script  ${mb(js)} MB`);
 console.log(`  terrain ${mb(png)} MB (base64)`);
 console.log(`  buildings ${mb(buildings)} MB (base64)`);
+console.log(`  network ${mb(network)} MB (base64)`);
 console.log(`  total   ${mb(html)} MB`);

@@ -7,6 +7,7 @@ import { Hud } from './hud.js';
 import { Controls } from './controls.js';
 import { Game } from './game.js';
 import { loadBuildings } from './buildings.js';
+import { loadNetwork } from './network.js';
 import { Audio } from './audio.js';
 
 const canvas = document.getElementById('view');
@@ -26,6 +27,7 @@ const QUALITY = {
     pixelRatio: 1.5,
     treeOptions: { radius: 850, spacing: 17, maxInstances: 3000 },
     buildingOptions: { maxDistance: 1900 },
+    networkOptions: { ribbonDistance: 1400, moverDistance: 2600 },
   },
   high: {
     gridN: 20,
@@ -36,6 +38,7 @@ const QUALITY = {
     pixelRatio: 2,
     treeOptions: { radius: 1150, spacing: 15, maxInstances: 5200 },
     buildingOptions: { maxDistance: 2800 },
+    networkOptions: { ribbonDistance: 2000, moverDistance: 3600 },
   },
 };
 
@@ -137,11 +140,20 @@ async function boot() {
     }
   }
 
+  let networkData = null;
+  if (QUALITY[qualityName].buildings !== false) {
+    try {
+      networkData = await loadNetwork('data/network.bin.gz', window.WINDWARD_NETWORK ?? null);
+    } catch (err) {
+      console.warn('network unavailable:', err.message);
+    }
+  }
+
   hud.setProgress(0.96, 'checking the wind…');
   const controls = new Controls(uiRoot);
   controls.setVisible(false);
   const audio = new Audio();
-  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes, audio, quality: QUALITY[qualityName], buildingData });
+  const game = new Game({ renderer, scene, camera, hud, controls, heightfield: hf, sky, terrain, lakes, audio, quality: QUALITY[qualityName], buildingData, networkData });
   game.setBaseFov(baseFov);
 
   const applyLighting = () => {
@@ -169,6 +181,7 @@ async function boot() {
       score: Math.round(game.score),
       trees: game.trees?.count ?? 0,
       buildingTiles: game.buildings?.built.size ?? 0,
+      movers: game.network?.moverCount ?? 0,
       calls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
     }),

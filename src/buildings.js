@@ -1,6 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { NOISE, SKY, OUTPUT } from './shaders/lib.js';
 import { makeLitMaterial } from './materials.js';
+import { loadPacked, readMagic } from './binary.js';
 
 /**
  * Every building in the region, from OpenStreetMap.
@@ -44,21 +45,8 @@ const PALETTE = {
 
 /** Decompress and parse the baked footprint file. */
 export async function loadBuildings(url = 'data/buildings.bin.gz', embedded = null) {
-  let buffer;
-  if (embedded) {
-    const bin = atob(embedded);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    buffer = await gunzip(bytes);
-  } else {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`buildings: HTTP ${res.status}`);
-    buffer = await gunzip(new Uint8Array(await res.arrayBuffer()));
-  }
-
-  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-  const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
-  if (magic !== 'WBLD') throw new Error('buildings: bad file');
+  const view = await loadPacked(url, embedded);
+  if (readMagic(view) !== 'WBLD') throw new Error('buildings: bad file');
   const count = view.getUint32(8, true);
 
   const origin = new Int16Array(count * 2);
@@ -89,12 +77,6 @@ export async function loadBuildings(url = 'data/buildings.bin.gz', embedded = nu
   first[count] = corners.length / 2;
 
   return { count, origin, wallH, roofH, angle, style, first, corners: Float32Array.from(corners) };
-}
-
-async function gunzip(bytes) {
-  if (typeof DecompressionStream !== 'function') throw new Error('buildings: no DecompressionStream');
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 export class Buildings {

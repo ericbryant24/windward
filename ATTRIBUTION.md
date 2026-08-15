@@ -42,6 +42,19 @@ surveyed.
 The ODbL requires that this attribution travel with the data and with any
 work produced from it. It is also shown in the game's menu.
 
+## Roads, railways, aerialways and paths
+
+`data/network.bin.gz` is likewise derived from **OpenStreetMap**, © OpenStreetMap
+contributors, ODbL. `tools/fetch-network.mjs` downloads the region's highways,
+railways and aerialways; `tools/bake-network.mjs` classifies and simplifies
+them, and chains fragments that share an endpoint into continuous runs so that
+trains and cable cars have a line to follow.
+
+The centrelines are the surveyed data. Everything drawn around them is not:
+carriageway widths, rail and cable heights, pylon heights, cable sag, and the
+timetable — which vehicles run where, how many, and how fast — are all
+invented to look right from the air.
+
 ## Software
 
 - **three.js** — MIT licence, © 2010–present three.js authors. A copy of the

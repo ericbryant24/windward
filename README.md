@@ -114,6 +114,17 @@ would be tens of megabytes of vertex data for a view that only ever shows one
 valley. The Sphinx observatory and Piz Gloria are modelled by hand, since no
 footprint conveys a dome.
 
+**The transport network** is real too: roads, farm tracks, hiking paths,
+railways and aerialways, all from OSM. Surfaces are ribbons draped on the
+terrain and tiled like the buildings. Cables hang between their pylons with a
+little sag, drawn as camera-facing ribbons with a minimum apparent width — a
+real 40 mm cable is far thinner than a pixel and would strobe in and out of
+existence otherwise. OSM stores a railway as dozens of fragments split wherever
+a tag changes, so the baker chains fragments that share an endpoint (taking the
+straightest continuation at junctions) into continuous runs, which is what
+gives the trains, cars and cable cars a line to run along. Traffic only exists
+within a few kilometres of the aircraft.
+
 **Shading normals** come from a mipmapped gradient map baked from the
 heightfield, not from per-fragment height derivatives — the derivative of a
 bilinear patch is piecewise constant, which shows up as blocky bands. One
@@ -141,6 +152,8 @@ src/
   world.js            landmarks, race gates, thermal cumulus
   trees.js            near-field instanced conifers
   buildings.js        OSM footprints, tiled and extruded on demand
+  network.js          roads, rails, cables, and the traffic on them
+  binary.js           shared loaders for the packed data files
   flight.js           air mass and glider dynamics
   aircraft.js         the sailplane, built procedurally
   game.js             modes, scoring, camera, progression
@@ -153,6 +166,8 @@ tools/
   bake-terrain.mjs    regenerate the heightfield from source tiles
   fetch-buildings.mjs download OSM footprints for the region
   bake-buildings.mjs  turn those into the game's compact format
+  fetch-network.mjs   download roads, railways and aerialways
+  bake-network.mjs    classify, simplify and chain them into routes
   flight-test.mjs     headless flight model checks
   smoke.mjs           end-to-end browser test
   shot.mjs, crop.mjs  screenshot helpers

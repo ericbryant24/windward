@@ -4,6 +4,7 @@ import { createAircraft } from './aircraft.js';
 import { World, createThermalClouds } from './world.js';
 import { Trees } from './trees.js';
 import { Buildings } from './buildings.js';
+import { Network } from './network.js';
 import { formatTime } from './hud.js';
 
 const CAMERA_MODES = ['chase', 'far', 'cockpit'];
@@ -14,7 +15,7 @@ const STORE_KEY = 'windward.progress.v1';
  * flight.js; this is everything that turns flying into a game.
  */
 export class Game {
-  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio, quality, buildingData }) {
+  constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio, quality, buildingData, networkData }) {
     this.audio = audio;
     this.renderer = renderer;
     this.scene = scene;
@@ -40,6 +41,10 @@ export class Game {
     if (quality?.trees !== false) {
       this.trees = new Trees(heightfield, sky, quality?.treeOptions);
       scene.add(this.trees.mesh);
+    }
+    if (networkData) {
+      this.network = new Network(heightfield, sky, networkData, quality?.networkOptions);
+      scene.add(this.network.group);
     }
     if (buildingData) {
       this.buildings = new Buildings(heightfield, sky, buildingData, this.world.places, quality?.buildingOptions);
@@ -167,6 +172,7 @@ export class Game {
 
     this.trees?.update(dt, this.camera.position);
     this.buildings?.update(this.camera.position);
+    this.network?.update(dt, this.camera.position);
     this.aircraft.position.copy(this.glider.position);
     this.aircraft.quaternion.copy(this.glider.quaternion);
     this.aircraft.visible = this.state !== 'menu' && CAMERA_MODES[this.cameraMode] !== 'cockpit';
@@ -457,6 +463,7 @@ export class Game {
     this.clouds.userData.setLighting(sunRadiance, skyAmbient);
     this.trees?.setLighting(sunRadiance, skyAmbient);
     this.buildings?.setLighting(sunRadiance, skyAmbient);
+    this.network?.setLighting(sunRadiance, skyAmbient);
     for (const m of this.aircraft.userData.materials) {
       m.uniforms.uSunRadiance.value.copy(sunRadiance);
       m.uniforms.uSkyAmbient.value.copy(skyAmbient);
