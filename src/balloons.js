@@ -25,8 +25,18 @@ import { OUTPUT } from './shaders/lib.js';
  * ground is not.
  */
 
-/** How big they are, in metres. The hit sphere is this; the mesh is longer. */
-const RADIUS = 7;
+/**
+ * How big they are, in metres. The hit sphere is this; the mesh is longer.
+ *
+ * Was 7, which is a real barrage balloon and the wrong number. A real one is
+ * moored a few hundred feet up and looked at from the ground; these are strung
+ * down three kilometres of valley and looked at from an aeroplane, and at seven
+ * metres the far end of a field is a dozen pixels of orange in a green valley
+ * full of orange-brown roofs. Legibility beats the reference photograph: at
+ * eleven the mesh is a thirty-metre airship and it reads as a thing to shoot
+ * from the far end of the line, which is the only place the reading matters.
+ */
+const RADIUS = 11;
 /** Pops take this long to play out, then the balloon is gone. */
 const POP = 0.45;
 
@@ -90,9 +100,12 @@ export class BalloonField {
     // stay legible against a shaded valley wall — which is where half of them
     // hang and where an unlit grey shape simply disappears.
     this.material = makeLitMaterial(sky, {
-      color: new THREE.Color(0.62, 0.2, 0.05),
-      emissive: new THREE.Color(0.9, 0.34, 0.08),
-      emissiveStrength: 0.55,
+      color: new THREE.Color(0.72, 0.19, 0.03),
+      emissive: new THREE.Color(0.95, 0.25, 0.03),
+      // Lit hard enough to hold its colour in shadow. Half the Grindelwald
+      // field hangs under the Wetterhorn's own shade, and a shaded orange
+      // against a shaded green valley is a smudge.
+      emissiveStrength: 0.95,
       roughness: 0.62,
     });
     const body = new THREE.SphereGeometry(RADIUS, 14, 10);
@@ -129,7 +142,11 @@ export class BalloonField {
         uniform float uExposure;
         ${OUTPUT}
         out vec4 fragColour;
-        void main(){ fragColour = outputColor(vec3(0.16, 0.17, 0.19), 0.5); }`,
+        // Pale, not the near-black a steel cable would be. The tether is the
+        // one part of a balloon that tells you where it is when the balloon
+        // itself is a speck — a bright line standing off the valley floor is
+        // visible from the far end of the field, and the dark one was not.
+        void main(){ fragColour = outputColor(vec3(1.05, 0.86, 0.6), 0.42); }`,
     });
     this.cables = new THREE.LineSegments(geom, this.cableMat);
     this.cables.frustumCulled = false;

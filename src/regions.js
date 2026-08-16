@@ -500,33 +500,56 @@ export const CHALLENGES = {
       type: 'gunnery',
       name: 'The Grindelwald Field',
       where: 'The basin under the Wetterhorn',
-      blurb: 'Fourteen balloons over the bowl. Sixty seconds, three hundred rounds, no reload.',
+      blurb: 'A line of balloons strung down the bowl. Ninety seconds and three hundred rounds to walk the stream along it.',
       // The one place the gun is rationed. Everywhere else it is unlimited.
       rounds: 300,
       needs: 0,
-      marker: { lat: 46.6335, lon: 8.0205, agl: 500, heading: 112 },
-      window: 60,
+      // Set back four hundred metres from the first balloon and level with the
+      // line rather than five hundred above it. Arriving on top of a field you
+      // are looking DOWN into is the worst possible way to meet it: the
+      // targets are below the horizon against a valley floor the same size and
+      // colour as they are, and the first one is gone before the sight settles.
+      marker: { lat: 46.635, lon: 8.015, agl: 300, heading: 112 },
+      window: 90,
       targets: {
-        count: 14,
-        height: [150, 430],
-        spread: 150,
+        count: 12,
+        // A band, not a scatter. Was 150–430, which put a two-hundred-and-
+        // eighty-metre climb between neighbours and made every balloon its own
+        // separate attack; at 230–310 the line is a thing you fly ALONG, and
+        // one good pass is worth several. They still step down with the valley
+        // floor, which falls two hundred metres over the run, so holding the
+        // line is holding a descent.
+        height: [230, 310],
+        // Thirty-five metres either side of the line instead of a hundred and
+        // fifty. The old field asked for a two-hundred-metre lateral jink
+        // between consecutive targets at seventy metres a second, which is not
+        // gunnery — it is a slalom you also have to shoot.
+        spread: 35,
         path: [
           [46.6335, 8.0205],
           [46.628, 8.0405],
           [46.6225, 8.057],
         ],
       },
-      // Measured at 10 of 14 — and then NOT re-measured, which is why this
-      // says so. The calibrator's gunnery pilot is a tracking law bolted to a
-      // navigation autopilot and it turns out to be brittle in a way the
-      // flying pilots are not: linking the trim to the throttle, a change that
-      // moved no other number in this table, took it from ten balloons to
-      // three without touching the challenge. Ten was a real measurement of a
-      // real aeroplane and the ladder is still hung off it, but the tool can
-      // no longer stand behind it, so it reports instead of failing.
-      calibrated: false,
-      uncalibrated: 'the tracking pilot is brittle — 10 balloons before the trim changed, 4 after, same field',
-      medals: [5, 7, 9],
+      // The one ladder in this table set from PLAY rather than from the tool,
+      // and deliberately so. The tool's pilot knows where all twelve are
+      // before it starts, flies a perfect intercept on each and never has to
+      // find anything; it clears eleven. A player has to read the line out of
+      // a valley at two hundred and eighty kilometres an hour, and the first
+      // report from one was a single balloon on the field as it stood before
+      // this — fourteen of them scattered through a two-hundred-and-eighty-
+      // metre height band five hundred metres below the hoop.
+      //
+      // So: bronze is a first pass that goes tolerably, silver is a pass and a
+      // turn, gold wants you to know the line. The tool's eleven is the
+      // ceiling the ladder is checked against, not the ladder.
+      //
+      // And that ceiling is noisy in a way no other measurement in this table
+      // is: the gun disperses at random, so the same policy sweep comes back
+      // with nine, eleven, eleven on three consecutive runs. Hang a gold off
+      // the tool's exact number and it fails its own check next week. These
+      // sit two clear of the worst of those runs.
+      medals: [4, 6, 8],
     },
   ],
 
@@ -690,15 +713,17 @@ export const CHALLENGES = {
       type: 'gunnery',
       name: 'The Harbour Line',
       where: 'Moored off the lakefront',
-      blurb: 'Fourteen balloons over open water, with the whole skyline behind them.',
+      blurb: 'A line of balloons moored off the shore, with the whole skyline behind them. Ninety seconds and three hundred rounds.',
       rounds: 300,
       needs: 2,
-      marker: { lat: 41.8695, lon: -87.6095, agl: 400, heading: 9 },
-      window: 60,
+      // Same treatment as Grindelwald: set back from the first balloon and
+      // level with the line rather than well above it.
+      marker: { lat: 41.8655, lon: -87.6104, agl: 240, heading: 9 },
+      window: 90,
       targets: {
-        count: 14,
-        height: [120, 380],
-        spread: 150,
+        count: 12,
+        height: [180, 260],
+        spread: 35,
         path: [
           [41.8695, -87.6095],
           [41.8785, -87.6075],
@@ -706,17 +731,11 @@ export const CHALLENGES = {
           [41.8945, -87.605],
         ],
       },
-      // Carried over from the Grindelwald field rather than measured, and
-      // that is a deliberate exception to how every other number in this table
-      // was arrived at. The calibrator's gunnery pilot pops 10 of 14 over
-      // Grindelwald and 4 here — over open water, no obstacles, the same
-      // count, the same spacing, and the easier of the two sites by any
-      // reading. A four is an artefact of the autopilot, not a fact about the
-      // challenge, and shipping it as gold would be worse than saying so.
-      // Re-cut this against real play.
-      calibrated: false,
-      uncalibrated: 'the tool tracks this field badly — 4 of 14 against 10 on an identical harder one',
-      medals: [4, 6, 8],
+      // A rung above Grindelwald all the way up, because this is the site with
+      // nothing in it: open water, no walls to hit, no valley floor coming up
+      // to meet the line, and a whole lake to turn round in. The terrain does
+      // none of the work here, so the shooting has to.
+      medals: [5, 7, 9],
     },
   ],
 };
