@@ -283,6 +283,12 @@ async function boot() {
       case 'restart':
         game.restart();
         break;
+      case 'brief-start':
+        game.beginBriefed();
+        break;
+      case 'brief-cancel':
+        game.cancelBriefing();
+        break;
       case 'challenge-retry':
         game.retryChallenge();
         break;
@@ -339,6 +345,18 @@ async function boot() {
   };
 
   addEventListener('keydown', (e) => {
+    // A briefing owns the keyboard while it is up: the two things worth doing
+    // are go and don't, and both are one key. Space as well as Enter because
+    // Space is already the trigger and the hand is on it.
+    if (game.state === 'briefing') {
+      if (e.code === 'Enter' || e.code === 'Space') {
+        e.preventDefault();
+        game.beginBriefed();
+      } else if (e.code === 'Escape') {
+        game.cancelBriefing();
+      }
+      return;
+    }
     if (e.code === 'KeyC') game.cycleCamera();
     else if (e.code === 'KeyR' && game.state === 'flying') game.restart();
     else if (e.code === 'Escape' || e.code === 'KeyP') game.togglePause();

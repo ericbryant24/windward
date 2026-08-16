@@ -162,6 +162,11 @@ await step('a challenge starts from the level select, in the issued ship', async
   const id = await page.$eval('[data-action="challenge"]', (el) => el.dataset.value);
   await page.click(`[data-action="challenge"][data-value="${id}"]`);
   await page.waitForFunction((want) => window.WINDWARD.stats().challenge === want, id, { timeout: 5000 });
+  // The level select opens onto the briefing, not onto the run. Pressing Start
+  // is the click under test as much as pressing the row was.
+  await page.waitForSelector('[data-action="brief-start"]', { timeout: 3000 });
+  await page.click('[data-action="brief-start"]');
+  await page.waitForFunction(() => window.WINDWARD.stats().phase === 'flying', { timeout: 3000 });
   const s = await page.evaluate(() => window.WINDWARD.stats());
   // Whatever the table says a task was designed around, nothing swaps the
   // aeroplane underneath the player while one ship is issued.
@@ -179,6 +184,9 @@ await step('gates can be passed', async () => {
   await page.evaluate(() => {
     const g = window.WINDWARD.game;
     g.startChallenge(g.challenges.defs.find((d) => d.type === 'slalom'));
+    // Entering a challenge stands a briefing card in front of it; pressing
+    // Start is part of entering one now.
+    g.beginBriefed();
   });
 
   // Line the ship up on the gate's own axis and let it fly through under its
@@ -247,6 +255,55 @@ await step('every challenge is one of the five kinds, with a ladder that climbs'
   if (bad.length) throw new Error(bad.join(', '));
 });
 
+await step('a challenge briefs first, holds everything still, and starts on the button', async () => {
+  const out = await page.evaluate(async () => {
+    const g = window.WINDWARD.game;
+    const def = g.challenges.defs.find((d) => d.type === 'deck') ?? g.challenges.defs[0];
+    g.startChallenge(def);
+    const card = document.querySelector('.results.open');
+    const brief = {
+      state: g.state,
+      shown: !!card,
+      title: card?.querySelector('h2')?.textContent,
+      // The rule has to be on the card in the task's own numbers, not in the
+      // abstract: a briefing that says "fly it well" is not a briefing.
+      note: card?.querySelector('.results-note')?.textContent ?? '',
+      rungs: card?.querySelectorAll('.rung').length ?? 0,
+      start: !!card?.querySelector('[data-action="brief-start"]'),
+    };
+    // Nothing moves while the card is up, and the clock does not start.
+    const before = g.glider.position.clone();
+    for (let i = 0; i < 240; i++) g.update(1 / 120);
+    const drifted = g.glider.position.distanceTo(before);
+    const clock = g.challenges.active?.elapsed ?? 0;
+
+    g.beginBriefed();
+    const flying = { after: g.state, gone: !document.querySelector('.results.open'), armed: g.challenges.active?.def === def };
+    for (let i = 0; i < 120; i++) g.update(1 / 120);
+    const ran = g.challenges.active?.elapsed ?? 0;
+    // Going again must not brief. You read it thirty seconds ago, and a card
+    // between attempts would be the most tiresome thing in the game.
+    g.retryChallenge();
+    const retry = { retryState: g.state, retryCard: !!document.querySelector('.results.open') };
+    g.resumeFree();
+    return { id: def.id, name: def.name, ...brief, drifted, clock, ...flying, ran, ...retry };
+  });
+  if (!out.shown) throw new Error('no briefing card appeared');
+  if (out.state !== 'briefing') throw new Error(`entering a challenge left the game in "${out.state}"`);
+  if (out.title !== out.name) throw new Error(`the card is headed "${out.title}", not "${out.name}"`);
+  if (out.rungs !== 3) throw new Error(`${out.rungs} medal rungs on the card, not 3`);
+  if (!out.start) throw new Error('the card has no Start button');
+  if (!/\d/.test(out.note)) throw new Error(`the rule quotes no numbers: "${out.note}"`);
+  if (out.drifted > 0.01) throw new Error(`the ship moved ${out.drifted.toFixed(2)} m during the briefing`);
+  if (out.clock > 0.01) throw new Error(`the clock ran ${out.clock.toFixed(2)} s during the briefing`);
+  if (out.gone !== true) throw new Error('the card stayed up after Start');
+  if (out.after !== 'flying' || !out.armed) throw new Error(`Start left the game in "${out.after}", armed: ${out.armed}`);
+  if (!(out.ran > 0.9)) throw new Error(`the clock ran ${out.ran.toFixed(2)} s in the first second after Start`);
+  if (out.retryCard) throw new Error('Retry briefed again instead of going straight round');
+  if (out.retryState !== 'flying') throw new Error(`Retry left the game in "${out.retryState}"`);
+  console.log(`        ${out.id}: card up, ship still, ${out.ran.toFixed(1)} s on the clock a second after Start`);
+});
+
 await step("a deck run's clock runs under the ceiling, on the line, and nowhere else", async () => {
   const out = await page.evaluate(async () => {
     const { corridorAt } = await import('/src/challenges.js');
@@ -291,6 +348,7 @@ await step('a balloon shot down scores, and the magazine runs down', async () =>
     const def = g.challenges.defs.find((d) => d.type === 'gunnery');
     if (!def) return { skip: true };
     g.startChallenge(def);
+    g.beginBriefed();
     const run = g.challenges.active;
     const V = g.glider.position.constructor;
     // Line up three hundred metres behind a balloon, level, pointing at it.
@@ -449,6 +507,7 @@ await step('a finished run leaves a ghost, and the next attempt races it', async
     // over a gorge floor with a wandering stick — tests the wall.
     const def = g.challenges.defs.find((d) => d.type === 'distance') ?? g.challenges.defs[0];
     g.startChallenge(findChallenge(def.id));
+    g.beginBriefed();
     // Step the sim directly: software rendering manages about a frame a second
     // and this needs a whole run's worth of flight time.
     const real = g.controls.sample.bind(g.controls);
@@ -478,6 +537,7 @@ await step('a finished run leaves a ghost, and the next attempt races it', async
     // Go again: the ghost must load, be on screen, and move with the clock.
     g.resumeFree();
     g.startChallenge(findChallenge(def.id));
+    g.beginBriefed();
     const loaded = !!g.ghost.track;
     const a = g.ghost.mesh.position.clone();
     for (let i = 0; i < 6 * 120; i++) g.update(1 / 120);

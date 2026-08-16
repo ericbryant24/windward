@@ -7,7 +7,7 @@ import { Wreck } from './wreck.js';
 import { World, createThermalClouds } from './world.js';
 import { Trees } from './trees.js';
 import { createFalls } from './falls.js';
-import { Ghost, Recorder, saveGhost } from './ghost.js';
+import { Ghost, Recorder, loadGhost, saveGhost } from './ghost.js';
 import { Guns } from './guns.js';
 import { Buildings } from './buildings.js';
 import { Network } from './network.js';
@@ -123,6 +123,9 @@ export class Game {
     this.recorder = new Recorder();
 
     this.state = 'menu';
+    // The challenge whose briefing card is up, if one is. Set only in the
+    // 'briefing' state, and the only thing Start needs to know.
+    this.briefing = null;
     this.cameraMode = 0;
     this.timer = 0;
     this.maxAltitude = 0;
@@ -216,7 +219,7 @@ export class Game {
   startChallenge(def) {
     const spec = shipFor(def);
     this.#takeOff({ ...this.challenges.spawnFor(def), speed: entrySpeed(def, spec) }, spec);
-    this.#beginChallenge(def);
+    this.#brief(def, 'menu');
   }
 
   /** Shared by both: put the world in the air and the UI out of the way. */
@@ -224,6 +227,7 @@ export class Game {
     this.guns.reload();
     if (spec) this.setAircraft(spec.id, false);
     this.state = 'flying';
+    this.briefing = null;
     this.timer = 0;
     this.maxAltitude = 0;
     this.wreck.end();
@@ -268,6 +272,109 @@ export class Game {
     this.audio?.cue('gate');
   }
 
+  // --------------------------------------------------------- the briefing ---
+  /**
+   * Stand the ship still on the start line and say what the task is before it
+   * starts.
+   *
+   * The rules of five different challenge types used to arrive as one line of
+   * toast over a moving aeroplane — and a deck run in particular is two
+   * conditions and a corridor, which is not a thing anybody reads at a hundred
+   * and eighty kilometres an hour. So the clock does not start until it is
+   * read: the world stays up and lit behind the card, the ship hangs on the
+   * hoop it is about to fly, and nothing moves until Start.
+   *
+   * Deliberately NOT shown on Retry. You just read it, and a card between
+   * every attempt would be the single most tiresome thing in the game.
+   *
+   * @param {'menu'|'air'} from where the player came from, which decides what
+   *   the second button does — back to the level select, or back to the sky.
+   */
+  #brief(def, from) {
+    // Armed, but not running: the clock only advances from #simulate, which
+    // the briefing state does not reach. Arming here is what puts the gate
+    // course, the balloon field and the corridor up BEHIND the card, so the
+    // words on it have the thing they describe standing in the window. Start
+    // arms it again from scratch, so nothing read here can leak into the run.
+    this.challenges.arm(def);
+    this.state = 'briefing';
+    this.briefing = def;
+    this.controls.setVisible(false);
+    this.hud.dismissAsk();
+
+    const best = this.challenges.best[def.id];
+    const medal = this.challenges.medalOf(def);
+    // Only what the sentence above does not already say. Which direction the
+    // ladder climbs is in the prose and in the order of the rungs, and a row
+    // repeating it is a row the eye has to read before finding the one thing
+    // on this card that is about the player rather than the task.
+    const lines = [];
+    if (def.rounds) lines.push(['Ammunition', `${def.rounds} rounds, no reload`]);
+    lines.push(['Your best', best == null ? 'unflown' : formatMetric(def, best) + (medal ? ` · ${MEDAL_NAMES[medal]}` : '')]);
+    if (loadGhost(def.id)) lines.push(['Ghost', 'your best run flies it with you']);
+
+    this.hud.showResults(def.name, lines, [
+      { label: 'Start', action: 'brief-start', primary: true },
+      from === 'menu' ? { label: 'Menu', action: 'menu' } : { label: 'Fly on', action: 'brief-cancel' },
+    ], {
+      sub: def.where,
+      note: `${def.blurb}<br><br>${this.#taskRule(def)}`,
+      ladder: MEDAL_NAMES.slice(1).map((name, i) => ({
+        name,
+        value: formatMetric(def, def.medals[i]),
+        won: medal >= i + 1,
+      })),
+    });
+  }
+
+  /** The rule, in the task's own numbers. One sentence, no jargon. */
+  #taskRule(def) {
+    switch (def.type) {
+      case 'slalom':
+        return `Fly all ${def.gates.length} gates in order, in under ${def.limit} seconds. The clock is your score, so the shortest line wins.`;
+      case 'height':
+        return `You have ${def.window} seconds. Your score is how much height you have gained above the ring when they run out.`;
+      case 'distance':
+        return `You have ${def.window} seconds. Your score is how far from the ring you have got when they run out.`;
+      case 'deck':
+        return (
+          `You have ${def.window} seconds, and the clock only counts while you are below ` +
+          `${def.deck.ceiling} m above the ground AND inside the ${def.deck.width} m corridor. ` +
+          `Come off the deck and it stops; get back on and it starts again. Seconds banked are never lost.`
+        );
+      case 'gunnery':
+        return (
+          `You have ${def.window} seconds to shoot down as many of the ${def.targets.count} balloons as you can. ` +
+          `The rounds take time to arrive and they fall on the way, so lead the shot — the sight shows where they land.`
+        );
+      default:
+        return '';
+    }
+  }
+
+  /** Start pressed. From here it is an ordinary run, begun from a dead stop. */
+  beginBriefed() {
+    const def = this.briefing;
+    if (!def) return;
+    this.briefing = null;
+    this.hud.hideResults();
+    this.state = 'flying';
+    this.controls.setVisible(true);
+    this.#beginChallenge(def);
+  }
+
+  /** Read it, decided against it. The hoop stays locked until you fly clear. */
+  cancelBriefing() {
+    if (!this.briefing) return;
+    this.briefing = null;
+    this.hud.hideResults();
+    this.state = 'flying';
+    this.controls.setVisible(true);
+    this.challenges.forget();
+    this.ghost.clear();
+    this.guns.clear();
+  }
+
   /**
    * Where plain flying opens. Spawn speeds are multiples of the ship's trim
    * speed, not absolutes: a trainer launched at the sailplane's 40 m/s arrives
@@ -286,6 +393,7 @@ export class Game {
 
   toMenu() {
     this.state = 'menu';
+    this.briefing = null;
     this.wreck.end();
     this.challenges.forget();
     this.ghost.clear();
@@ -635,7 +743,7 @@ export class Game {
 
     // ---- challenges --------------------------------------------------------
     for (const ev of this.challenges.update(dt, g.position, this._prevPos, agl)) {
-      if (ev.kind === 'armed') this.#armFromMarker(ev.def);
+      if (ev.kind === 'armed') this.#armFromMarker(ev.def, true);
       else if (ev.kind === 'note') this.#noteChallenge(ev);
       else if (ev.kind === 'done') this.#finishChallenge(ev);
       else if (ev.kind === 'failed') this.#failChallenge(ev);
@@ -651,13 +759,14 @@ export class Game {
    * same place at the same speed, which is the only way the medal times mean
    * anything.
    */
-  #armFromMarker(def) {
+  #armFromMarker(def, brief) {
     const spawn = this.challenges.spawnFor(def);
     this.setAircraft(shipFor(def).id, false);
     this.glider.reset(spawn.position, spawn.heading, entrySpeed(def, this.spec));
     this._prevPos.copy(this.glider.position);
     this.#placeCamera(true);
-    this.#beginChallenge(def);
+    if (brief) this.#brief(def, 'air');
+    else this.#beginChallenge(def);
   }
 
   #noteChallenge(ev) {
@@ -720,9 +829,10 @@ export class Game {
     this.hud.hideResults();
     this.hud.dismissAsk();
     this.state = 'flying';
+    this.briefing = null;
     this.wreck.end();
     this.controls.setVisible(true);
-    this.#armFromMarker(def);
+    this.#armFromMarker(def, false);
     this.#surveyAir();
   }
 
@@ -742,6 +852,7 @@ export class Game {
   resumeFree() {
     this.hud.hideResults();
     this.hud.dismissAsk();
+    this.briefing = null;
     this.challenges.forget();
     this.ghost.clear();
     this.guns.clear();

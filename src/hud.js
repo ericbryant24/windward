@@ -292,9 +292,36 @@ export class Hud {
       `${this.polar.bestLD.toFixed(0)}:1 · ↓${this.polar.minSink.toFixed(1)} · max ${Math.round(spec.vne * 3.6)}`;
   }
 
-  showResults(title, lines, buttons) {
+  /**
+   * The one modal card, used by the pause screen, the results screen and the
+   * briefing that stands in front of every challenge. The three parts beyond
+   * the rows are all optional and all collapse when unused, so a card carries
+   * only what it has something to say with.
+   *
+   * @param {object} [extra]
+   * @param {string} [extra.sub]    a place, under the title
+   * @param {string} [extra.note]   a sentence or two of prose
+   * @param {object[]} [extra.ladder] the three rungs, `{name, value, won}`
+   */
+  showResults(title, lines, buttons, extra = {}) {
     this.results.classList.add('open');
     this.el('.results h2').textContent = title;
+    const sub = this.el('.results-sub');
+    sub.textContent = extra.sub ?? '';
+    sub.hidden = !extra.sub;
+    const note = this.el('.results-note');
+    note.innerHTML = extra.note ?? '';
+    note.hidden = !extra.note;
+    const ladder = this.el('.results-ladder');
+    ladder.hidden = !extra.ladder;
+    if (extra.ladder) {
+      // Which rungs are already yours is the fastest thing to read on this
+      // card and the reason to be looking at it, so it is a picture rather
+      // than three more rows of text.
+      ladder.innerHTML = extra.ladder
+        .map((r, i) => `<div class="rung m${i + 1}${r.won ? ' won' : ''}"><span>${r.name}</span><b>${r.value}</b></div>`)
+        .join('');
+    }
     this.el('.results-lines').innerHTML = lines
       .map((l) => `<div class="rline"><span>${l[0]}</span><b>${l[1]}</b></div>`)
       .join('');
@@ -685,6 +712,9 @@ const TEMPLATE = /* html */ `
 <div class="results">
   <div class="results-card">
     <h2>Flight complete</h2>
+    <p class="results-sub" hidden></p>
+    <p class="results-note" hidden></p>
+    <div class="results-ladder" hidden></div>
     <div class="results-lines"></div>
     <div class="results-actions"></div>
   </div>

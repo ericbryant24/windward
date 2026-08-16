@@ -1285,6 +1285,79 @@ body {
   text-align: center;
 }
 
+/* Where you are about to be, under the name of what you are about to do. */
+.results-sub {
+  margin: -12px 0 14px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+/* The briefing itself. Prose, because what a task asks of you is a sentence
+   and not a table — the table is underneath it. */
+.results-note {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.results-ladder {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.rung {
+  flex: 1;
+  text-align: center;
+  padding: 8px 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.rung span {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.rung b {
+  display: block;
+  margin-top: 3px;
+  font-size: 15px;
+}
+
+/* A rung already won is lit in its own metal. The unwon ones stay grey, so
+   the card shows what is left rather than what is there. */
+.rung.won.m1 {
+  border-color: rgba(200, 132, 63, 0.6);
+}
+
+.rung.won.m1 b {
+  color: var(--medal-bronze);
+}
+
+.rung.won.m2 {
+  border-color: rgba(219, 230, 240, 0.55);
+}
+
+.rung.won.m2 b {
+  color: var(--medal-silver);
+}
+
+.rung.won.m3 {
+  border-color: rgba(255, 207, 112, 0.7);
+  background: rgba(255, 207, 112, 0.1);
+}
+
+.rung.won.m3 b {
+  color: var(--medal-gold);
+}
+
 .rline {
   display: flex;
   justify-content: space-between;
