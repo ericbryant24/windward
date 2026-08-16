@@ -57,7 +57,7 @@ import { Heightfield } from '../src/heightfield.js';
 import { Air, Glider } from '../src/flight.js';
 import { REGIONS, CHALLENGES } from '../src/regions.js';
 import { World } from '../src/world.js';
-import { Challenges, medalFor, challengeMetric, entrySpeed, shipFor } from '../src/challenges.js';
+import { Challenges, TYPES, medalFor, challengeMetric, entrySpeed, shipFor } from '../src/challenges.js';
 import { loadBuildings, Buildings } from '../src/buildings.js';
 import { polar } from '../src/fleet.js';
 import { TIME_PRESETS } from '../src/sky.js';
@@ -88,7 +88,7 @@ const TICK = 1 / 120;
  * flying against it would only ever confirm whatever it already says. Runs are
  * flown against a generous horizon and the clock is proposed afterwards.
  */
-const horizonFor = (def) => clamp(def.limit * 2.2, 180, 2400);
+const horizonFor = (def) => (TYPES[def.type].windowed ? def.window + 2 : clamp(def.limit * 2.2, 120, 400));
 
 /**
  * The medal ladder, as multiples of the best run this tool could fly.
@@ -105,20 +105,16 @@ const horizonFor = (def) => clamp(def.limit * 2.2, 180, 2400);
  * different events — if they were equal the ladder would have two rungs.
  */
 const LADDER = { gold: 1.10, silver: 1.28, bronze: 1.52, limit: 2.05 };
+/** Nothing in the game runs longer than this. See the note on CHALLENGES. */
+const SLALOM_CAP = 90;
 /**
- * Climbing is looser on purpose. A gate is in a fixed place and a thermal is
- * not: centring one costs a human turns that the tool, which is handed the
- * column's exact address by the survey, never spends.
+ * The windowed three are quantities rather than clocks, and more is better, so
+ * their ladder runs the other way: gold just under the best measured, bronze a
+ * good way below it. Looser than the slalom ladder because the machine below is
+ * a steady pilot with perfect information — it never misjudges a thermal or a
+ * roll, and it never has to look for anything.
  */
-const CLIMB_LADDER = { gold: 1.22, silver: 1.5, bronze: 1.85, limit: 2.5 };
-/**
- * A low pass is scored between two fixed points rather than off one: the lowest
- * mean height anybody managed, and the ceiling the task sets. Gold sits just
- * above the first, bronze comfortably below the second — because a bronze at
- * the ceiling would be handed out for merely holding the pass, and a gold at
- * the measured floor would want a run with no margin in it at all.
- */
-const LOWPASS = { goldPad: [1.15, 4], bronzeOfCeiling: 0.8, minGap: 5 };
+const YIELD_LADDER = { gold: 0.9, silver: 0.72, bronze: 0.52 };
 
 // ------------------------------------------------------------- the world ---
 /** The baked region, read the way the browser reads it but without a browser. */
@@ -312,9 +308,12 @@ function fly(ctx, def, policy, guide) {
   air.time = 0;
   challenges.abort();
   const run = challenges.arm(def);
-  // See horizonFor: the authored clock is an output of this tool, not an input.
   const horizon = horizonFor(def);
-  run.limit = horizon;
+  // See horizonFor: for a slalom the authored clock is an output of this tool
+  // and must not be flown against, so the run gets a generous one instead. For
+  // the windowed three the clock IS the task and overriding it would measure a
+  // different challenge.
+  if (!TYPES[def.type].windowed) run.limit = horizon;
   const pilot = new Pilot(glider, policy);
   const state = {
     ctx,
@@ -377,7 +376,7 @@ function fly(ctx, def, policy, guide) {
       break;
     }
 
-    for (const ev of challenges.update(TICK, glider.position, prev, agl)) {
+    for (const ev of challenges.update(TICK, glider.position, prev, agl, glider)) {
       if (ev.kind === 'done') out = { finished: true, value: ev.value, elapsed: state.t };
       else if (ev.kind === 'failed') out = { reason: ev.reason === 'time' ? 'out of time' : ev.reason };
     }
@@ -395,8 +394,6 @@ function fly(ctx, def, policy, guide) {
     minAgl: state.minAgl,
     heightUsed: state.startY - state.lowY,
     peakSpeed: state.peakSpeed,
-    gain: def.type === 'climb' ? glider.position.y - state.startY : null,
-    held: def.type === 'lowpass' ? (challenges.active?.hold ?? state.bestHold ?? 0) : null,
   };
 }
 
@@ -429,10 +426,6 @@ function courseGuide(state, dt) {
       const apex = inB.sub(inA);
       if (apex.lengthSq() > 1e-4) target.addScaledVector(apex.normalize(), gate.radius * 0.45);
     }
-  } else if (run?.def.type === 'collect') {
-    [target, next] = pickTarget(state, run);
-    // PICKUP_RADIUS in challenges.js: what counts as having collected one.
-    state.capture = 34;
   }
   if (!target) target = g.position.clone().addScaledVector(g.forward(new THREE.Vector3()), 400);
 
@@ -463,24 +456,9 @@ function courseGuide(state, dt) {
     }
   }
 
-  // Cut the corner. Flying at each point in turn and only then looking at the
-  // next one is what makes a machine slower than a person round a course: the
-  // human is already leaning into the following gate. The aim point leans with
-  // the leg ahead until close in, where it snaps back to the thing itself so
-  // that a 34 m pickup is still actually collected.
-  // Only where there is room for it. Leaning into the next leg early is free
-  // speed over open ground and suicide in a canyon, where the inside of the
-  // corner is a building — so a gate course flies its own line and lets the
-  // overshoot happen, and a collect over the parks cuts.
-  if (next && run?.def.type === 'collect') {
-    const d = Math.hypot(target.x - g.position.x, target.z - g.position.z);
-    const lean = clamp((d - 90) / 320, 0, 1) * 0.3;
-    if (lean > 0) target = target.clone().lerp(next, lean);
-  }
-  // A gate flown or a pickup taken ends any go-around that was in progress and
-  // starts a new leg. Watching the challenge's own progress rather than how far
-  // the aim point jumped is what makes that exact: two pickups can be a hundred
-  // metres apart, and inheriting the last one's go-around throws the next away.
+  // A gate flown ends any go-around that was in progress and starts a new leg.
+  // Watching the challenge's own progress rather than how far the aim point
+  // jumped is what makes that exact.
   const progress = challenges.hudState()?.progress;
   if (progress !== state.progress) {
     state.progress = progress;
@@ -791,53 +769,65 @@ function beatGuide(state, dt) {
 }
 
 /**
- * The low pass: hold a hard deck over ground that is not flat.
+ * Distance: ninety seconds, and the only question is how far from the hoop the
+ * ship can be at the end of them.
  *
- * The task is to be low, so the target sits at a fixed height over the HIGHEST
- * ground within the next few seconds rather than over the ground underneath —
- * a trench floor that rises at 1 in 20 will otherwise fly the ship into itself.
- * The heading is chosen the same way a pilot reads a valley: of the headings
- * near the one the task runs on, take the one whose ground stays lowest.
+ * There is nothing to steer at, so the policy IS the line — a heading and a
+ * speed — and the sweep over headings is the tool asking the terrain which way
+ * pays. Held straight on purpose: turning is how you lose a distance task, and
+ * a pilot who wanders looking for lift in ninety seconds arrives nowhere.
  */
-function lowGuide(state, dt) {
-  const { hf } = state.ctx;
+function dashGuide(state, dt) {
   const g = state.glider;
   const p = state.policy;
-  const f = g.forward(new THREE.Vector3());
-  const psi = Math.atan2(f.x, -f.z);
-  const reach = Math.max(220, g.airspeed * 6);
-
-  let bestHeading = p.heading;
-  let bestScore = Infinity;
-  for (let k = -4; k <= 4; k++) {
-    const h = p.heading + (k / 4) * p.spread;
-    // Only ever a small correction away from where the ship is pointed: a
-    // sixty-degree change of mind at 40 m over a river is not a low pass.
-    if (Math.abs(wrap(h - psi)) > 0.9) continue;
-    let worst = -Infinity;
-    for (let s = 0.35; s <= 1.001; s += 0.325) {
-      const x = g.position.x + Math.sin(h) * reach * s;
-      const z = g.position.z - Math.cos(h) * reach * s;
-      worst = Math.max(worst, hf.heightAt(x, z));
-    }
-    const score = worst + Math.abs(wrap(h - p.heading)) * 40;
-    if (score < bestScore) {
-      bestScore = score;
-      bestHeading = h;
-    }
-  }
-  state.heading = bestHeading;
-
-  let ahead = hf.heightAt(g.position.x, g.position.z);
-  for (let s = 0.25; s <= 1.001; s += 0.25) {
-    ahead = Math.max(ahead, hf.heightAt(g.position.x + Math.sin(bestHeading) * reach * s, g.position.z - Math.cos(bestHeading) * reach * s));
-  }
+  const reach = Math.max(400, g.airspeed * 12);
+  // Aim down the glide slope the requested speed actually flies at. Aiming
+  // level and asking for sixty-six metres a second gets neither: the pitch loop
+  // holds the line it is given and the boards take the speed back off, so every
+  // policy flew at the same forty and the sweep measured nothing.
   const target = new THREE.Vector3(
-    g.position.x + Math.sin(bestHeading) * reach,
-    ahead + p.deck,
-    g.position.z - Math.cos(bestHeading) * reach
+    g.position.x + Math.sin(p.heading) * reach,
+    g.position.y - reach / glideAt(g.spec, p.speed),
+    g.position.z - Math.cos(p.heading) * reach
   );
   return state.pilot.fly(dt, avoid(state, target), p.speed);
+}
+
+/** Still-air glide ratio at a given speed, from the same coefficients as polar(). */
+function glideAt(spec, v) {
+  const w = (spec.mass * 9.80665) / spec.wingArea;
+  const k = 1 / (Math.PI * spec.aspectRatio * spec.oswald);
+  const cl = (2 * w) / (1.225 * v * v);
+  return cl / (spec.cd0 + k * cl * cl);
+}
+
+/**
+ * Aerobatics: sixty seconds, and how many rolls fit into them.
+ *
+ * Pinning the stick rolls fastest and dives the ship into the redline, so the
+ * policy is a duty cycle — roll for a while, then recover the attitude and bleed
+ * the speed — and the sweep over cycles and recovery speeds is the tool finding
+ * the rhythm. Which is the task: a player who simply holds the stick over takes
+ * the wings off.
+ */
+function aeroGuide(state, dt) {
+  const g = state.glider;
+  const p = state.policy;
+  const spec = g.spec;
+  state.phase = (state.phase ?? 0) + dt;
+  const tooFast = g.airspeed > spec.vne * p.redline;
+  const rolling = !tooFast && state.phase % (p.rollFor + p.restFor) < p.rollFor;
+  if (rolling) {
+    // Pinned, which is what puts the model into its continuous-roll law.
+    return { roll: 1, pitch: 0.06, brake: 0 };
+  }
+  // Wings level, nose up, boards out: get the speed back under control and the
+  // attitude somewhere a roll can start from again.
+  const f = g.forward(new THREE.Vector3());
+  const bank = g.bankRad;
+  const level = clamp(-bank * 1.4, -0.9, 0.9);
+  const pitch = clamp((0.05 - Math.asin(clamp(f.y, -1, 1))) * 2.2, -0.6, 0.8);
+  return { roll: level, pitch, brake: tooFast ? 1 : p.brake };
 }
 
 /**
@@ -952,13 +942,9 @@ function blockedLegs(ctx, def, marker, points) {
   const { hf, buildings } = ctx;
   const book = polar(shipFor(def));
   const out = [];
-  // The same lift challenges.js applies when it arms a collect: a pickup is
-  // never allowed to sit inside a roof, so the height flown to is not always
-  // the height in the table.
   const at = (p) => {
     const y = hf.heightAt(p.x, p.z) + p.agl;
-    const roof = def.type === 'collect' ? buildings?.topNear(p.x, p.z) ?? -Infinity : -Infinity;
-    return { x: p.x, y: isFinite(roof) ? Math.max(y, roof + 25) : y, z: p.z };
+    return { x: p.x, y, z: p.z };
   };
   let a = { x: marker.x, y: marker.y, z: marker.z };
   let name = 'the marker';
@@ -1021,11 +1007,60 @@ function speedLadder(spec) {
 
 function coursePolicies(def, spec) {
   const out = [];
-  const orders = def.type === 'collect' ? ['authored', 'nearest'] : ['course'];
   for (const speed of speedLadder(spec)) {
     for (const bankMax of [1.0, 1.2, 1.4]) {
-      for (const order of orders) {
-        out.push({ kind: 'course', speed, bankMax, order, label: `${speed} m/s · ${Math.round((bankMax * 180) / Math.PI)}° · ${order}` });
+      out.push({ kind: 'course', speed, bankMax, label: `${speed} m/s · ${Math.round((bankMax * 180) / Math.PI)}°` });
+    }
+  }
+  return out;
+}
+
+/**
+ * Distance: every heading worth trying, at every speed worth flying. Which one
+ * wins is the tool telling you what the terrain under that hoop is for — and if
+ * the authored heading is not close to the winner, the hoop is pointed the
+ * wrong way.
+ */
+function dashPolicies(def, spec) {
+  const out = [];
+  const authored = THREE.MathUtils.degToRad(def.marker.heading);
+  for (let k = -3; k <= 3; k++) {
+    const heading = authored + (k / 3) * 0.9;
+    for (const speed of speedLadder(spec).slice(1)) {
+      out.push({
+        kind: 'dash',
+        heading,
+        speed,
+        bankMax: 0.9,
+        brakes: false,
+        clearance: 70,
+        label: `${Math.round(((heading * 180) / Math.PI + 360) % 360)}° · ${speed} m/s`,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Aerobatics: how long to hold the stick over before letting the ship recover,
+ * and how hard to recover. Pinning it for the whole minute is on the list and
+ * is meant to lose — that is the shape of the task.
+ */
+function aeroPolicies() {
+  const out = [];
+  for (const rollFor of [3, 5, 8, 60]) {
+    for (const restFor of [2, 4, 7]) {
+      for (const brake of [0, 0.6]) {
+        out.push({
+          kind: 'aero',
+          rollFor,
+          restFor,
+          brake,
+          redline: 0.94,
+          bankMax: 1.4,
+          clearance: 60,
+          label: `roll ${rollFor}s / rest ${restFor}s${brake ? ' · boards' : ''}`,
+        });
       }
     }
   }
@@ -1113,11 +1148,20 @@ function climbPolicies(ctx, def, spec, survey, marker) {
       // the sink behind it. Which axis to run is either the one the lift itself
       // stays strong along, or — on a map with ridge lift at all — the contour,
       // which is where the slope keeps pushing air up at the same rate.
-      const axes = [];
+      // Always try the contour. A sixty-second window is too short for this
+      // ship to centre a thermal — measured, it loses height trying — so the
+      // beat along a face or a convergence line is the whole answer, and it
+      // has to be on the list whether or not the region declares ridge lift.
+      // Chicago's lake breeze is a band like any other.
+      // The way the author pointed the hoop, always: over Chicago the ground
+      // is flat, so contourAt has no slope to read and answers due east —
+      // straight out over the lake and its 1.9 m/s of sink. The marker heading
+      // is the one piece of data that knows which way the band runs.
+      const along = THREE.MathUtils.degToRad(def.marker.heading);
+      const axes = [{ x: Math.sin(along), z: -Math.cos(along) }, contourAt(ctx, site)];
       if (band.banded) axes.push(band.axis);
-      if (ctx.region.air.ridgeLift) axes.push(contourAt(ctx, site));
       for (const axis of axes) {
-        for (const half of [420, 700]) {
+        for (const half of [420, 700, 1100]) {
           out.push({
             kind: 'climb',
             type: 'beat',
@@ -1184,24 +1228,36 @@ function timedLadder(best, ladder) {
   const silver = Math.max(gold + to, round(best * ladder.silver, to));
   const bronze = Math.max(silver + to, round(best * ladder.bronze, to));
   // Finishing and bronzing must stay different events, so the clock sits a
-  // clear margin past bronze rather than on top of it.
-  const limit = Math.max(roundUp(best * ladder.limit, to), roundUp(bronze * 1.25, to));
-  return { medals: [bronze, silver, gold], limit };
+  // clear margin past bronze rather than on top of it — but nothing in the game
+  // runs longer than ninety seconds, and that cap wins. A course whose bronze
+  // will not fit underneath it is a course with a gate too many, and the caller
+  // says so rather than quietly shipping a limit nobody can meet.
+  const limit = Math.min(SLALOM_CAP, Math.max(roundUp(best * ladder.limit, to), roundUp(bronze * 1.25, to)));
+  // The cap is the hard constraint, so the ladder gets squeezed under it rather
+  // than the other way round: a bronze that would land past ninety seconds is
+  // pulled back to just inside. Only when that would put it on top of silver is
+  // the course actually too long, and then the caller says so.
+  const fitted = Math.min(bronze, limit - to);
+  return { medals: [fitted, silver, gold], limit, tooLong: fitted <= silver };
 }
 
-function lowpassLadder(best, def, worstElapsed) {
-  const gold = Math.max(4, Math.round(Math.max(best * LOWPASS.goldPad[0], best + LOWPASS.goldPad[1])));
-  const bronze = Math.round(def.ceiling * LOWPASS.bronzeOfCeiling);
-  const silver = Math.round((gold + bronze) / 2);
-  // The clock only has to allow the hold plus the run-in and one spoiled pass.
-  const limit = roundUp(Math.max(def.hold * 2.5, worstElapsed * 1.6), 5);
+/**
+ * Quantity ladder for the windowed three, where more is better and the window
+ * is fixed. Anchored under the best measured yield rather than over it, and the
+ * rungs are held apart so a task with a narrow spread reads as three rungs
+ * rather than three names for the same number.
+ */
+function yieldLadder(best, unit) {
+  const to = unit === 'count' ? 1 : best > 2000 ? 100 : best > 400 ? 10 : 5;
+  const gold = Math.max(to, round(best * YIELD_LADDER.gold, to));
+  const silver = Math.min(gold - to, round(best * YIELD_LADDER.silver, to));
+  const bronze = Math.min(silver - to, round(best * YIELD_LADDER.bronze, to));
   return {
     medals: [bronze, silver, gold],
-    limit,
-    // Say so rather than quietly shuffling the numbers: if the best pass anybody
-    // can fly is already most of the way to the ceiling, the rungs are on top of
-    // each other and it is the ceiling that wants changing, not the ladder.
-    tight: silver - gold < LOWPASS.minGap || bronze - silver < LOWPASS.minGap,
+    limit: null,
+    // Three rungs need somewhere to live. A roll counter that tops out at two
+    // cannot carry a ladder, and saying so beats shipping bronze = silver.
+    tight: bronze < (unit === 'count' ? 1 : to),
   };
 }
 
@@ -1239,39 +1295,32 @@ for (const mapId of MAPS) {
     let policies;
     let guide;
     let survey = null;
-    if (def.type === 'climb' || def.type === 'lowpass') {
-      survey = surveyLift(ctx, spec, marker, {
-        radius: def.type === 'climb' ? 2600 : 900,
-        step: def.type === 'climb' ? 130 : 90,
-        heights: def.type === 'climb' ? [0, 200, 400, 700] : [0, 60],
-      });
-      const here = survey.sites.find((s) => s.distance < 120) ?? survey.best;
-      note(`   air at the marker: ${fmt(here?.mean, 2)} m/s · best within ${def.type === 'climb' ? '2.6 km' : '900 m'}: ${fmt(survey.best?.mean, 2)} m/s at ${fmt(survey.best?.distance, 0)} m`);
+    if (def.type === 'height') {
+      survey = surveyLift(ctx, spec, marker, { radius: 2600, step: 130, heights: [0, 200, 400, 700] });
+      const here = survey.sites.find((s2) => s2.distance < 120) ?? survey.best;
+      note(`   air at the marker: ${fmt(here?.mean, 2)} m/s · best within 2.6 km: ${fmt(survey.best?.mean, 2)} m/s at ${fmt(survey.best?.distance, 0)} m`);
       note(`   the ship sinks at ${fmt(survey.circling, 2)} m/s circling, so net there is ${fmt(survey.best?.net, 2)} m/s`);
-      // Where the good air actually is, in the coordinates the table is written
-      // in — so that moving a marker onto it is a copy rather than a hunt.
       for (const site of survey.sites.slice(0, 1).concat(pickSites(survey, 2))) {
         const ll = toLatLon(ctx, site);
         note(`   lift at ${ll.lat.toFixed(4)}, ${ll.lon.toFixed(4)}: ${fmt(site.mean, 2)} m/s mean, ${fmt(site.worst, 2)} m/s at its weakest, ${fmt(site.distance, 0)} m out`);
       }
-      if (def.type === 'climb' && (survey.best?.net ?? -1) <= 0) {
-        problems.push(`${def.id}: no air within 2.6 km of the marker beats the ${spec.name}'s own sink — the task cannot be climbed`);
+      if ((survey.best?.net ?? -1) <= 0) {
+        problems.push(`${def.id}: no air within 2.6 km of the marker beats the ${spec.name}'s own sink — the window cannot be climbed`);
       }
-    }
-
-    if (def.type === 'slalom' || def.type === 'collect') {
+      note(`   ${def.window} s at that net is ${fmt((survey.best?.net ?? 0) * def.window, 0)} m if it were all circling`);
+      policies = climbPolicies(ctx, def, spec, survey, marker);
+      guide = climbGuide;
+    } else if (def.type === 'slalom') {
       // The arithmetic budget, before anything is flown: what the line costs at
       // best glide against what the marker hands you. Being short here does not
       // prove the task impossible — there may be lift on the line — but it is
       // the first thing to look at when every run runs out of height.
-      const points = def.type === 'slalom'
-        ? def.gates.map((g) => ({ ...ctx.world.toLocal(g.lat, g.lon), agl: g.agl, name: g.name }))
-        : def.picks.map((p, i) => ({ ...ctx.world.toLocal(p.lat, p.lon), agl: p.agl, name: `pickup ${i + 1}` }));
+      const points = def.gates.map((gt) => ({ ...ctx.world.toLocal(gt.lat, gt.lon), agl: gt.agl, name: gt.name }));
       let length = 0;
       let prev = { x: marker.x, z: marker.z };
-      for (const p of points) {
-        length += Math.hypot(p.x - prev.x, p.z - prev.z);
-        prev = p;
+      for (const pt of points) {
+        length += Math.hypot(pt.x - prev.x, pt.z - prev.z);
+        prev = pt;
       }
       const last = points[points.length - 1];
       const lastY = ctx.hf.heightAt(last.x, last.z) + last.agl;
@@ -1279,27 +1328,30 @@ for (const mapId of MAPS) {
       const cost = length / book.bestLD;
       note(`   line ${fmt(length / 1000, 2)} km · costs ${fmt(cost, 0)} m at best glide · the course gives ${fmt(budget, 0)} m`);
       // Whether the steepest leg is steeper than the ship can glide, and
-      // whether the straight line between two points goes through a tower. Both
-      // are course-design errors rather than pilot errors, and neither shows up
-      // as anything but a pile of identical crashes once you start flying.
+      // whether the straight line between two points goes through a tower.
       for (const bad of blockedLegs(ctx, def, marker, points)) note(`   → ${bad}`);
       if (cost > budget) note(`   → short by ${fmt(cost - budget, 0)} m on the glide alone: it has to come off the air`);
       policies = coursePolicies(def, spec);
       guide = courseGuide;
-    } else if (def.type === 'climb') {
-      policies = climbPolicies(ctx, def, spec, survey, marker);
-      guide = climbGuide;
-      note(`   asks for ${def.gain} m, which at that net is ${fmt(def.gain / Math.max(survey.best?.net ?? 0.01, 0.01), 0)} s of circling before any transit`);
+    } else if (def.type === 'distance') {
+      policies = dashPolicies(def, spec);
+      guide = dashGuide;
+      note(`   ${def.window} s; at best glide from ${fmt(marker.y - ctx.hf.heightAt(marker.x, marker.z), 0)} m over the ground the still-air reach is ${fmt(((marker.y - ctx.hf.heightAt(marker.x, marker.z)) * book.bestLD) / 1000, 2)} km`);
     } else {
-      policies = lowpassPolicies(def, spec);
-      guide = lowGuide;
-      note(`   hold ${def.hold} s under ${def.ceiling} m`);
+      policies = aeroPolicies();
+      guide = aeroGuide;
+      note(`   ${def.window} s of rolls, ${fmt(marker.y - ctx.hf.heightAt(marker.x, marker.z), 0)} m of air underneath and a ${spec.vne} m/s redline`);
     }
 
     // ---- fly it -----------------------------------------------------------
     if (POLICY) policies = policies.filter((p) => p.label.includes(POLICY));
     const results = policies.map((p) => fly(ctx, def, p, guide));
-    const done = results.filter((r) => r.finished).sort((a, b) => a.value - b.value);
+    // Sorted so that done[0] is the BEST run, which is not the smallest number
+    // for three of the four types: a distance task's best line is its longest.
+    // Getting this backwards anchored every windowed ladder on the worst run
+    // anybody flew, and reported it as the best.
+    const better = TYPES[def.type].wins === 'high' ? (a, b) => b.value - a.value : (a, b) => a.value - b.value;
+    const done = results.filter((r) => r.finished).sort(better);
     const anchor = done[0] ?? null;
     const failures = {};
     for (const r of results) if (!r.finished) failures[r.reason] = (failures[r.reason] ?? 0) + 1;
@@ -1321,7 +1373,7 @@ for (const mapId of MAPS) {
       continue;
     }
 
-    const unit = challengeMetric(def) === 'height' ? 'm' : 's';
+    const unit = { time: 's', height: 'm', distance: 'm', count: 'rolls' }[challengeMetric(def)];
     const median = done[Math.floor(done.length / 2)];
     note(`   best ${fmt(anchor.value)} ${unit} (${anchor.policy.label})`);
     note(`   median finish ${fmt(median.value)} ${unit} · worst ${fmt(done[done.length - 1].value)} ${unit}`);
@@ -1336,32 +1388,41 @@ for (const mapId of MAPS) {
     if (TRACE) note(anchor.trace.join('\n'));
 
     // ---- the ladder -------------------------------------------------------
-    const proposal =
-      def.type === 'lowpass'
-        ? lowpassLadder(anchor.value, def, Math.max(...done.map((r) => r.seconds)))
-        : timedLadder(anchor.value, def.type === 'climb' ? CLIMB_LADDER : LADDER);
+    const windowed = TYPES[def.type].windowed;
+    const proposal = windowed
+      ? yieldLadder(anchor.value, challengeMetric(def))
+      : timedLadder(anchor.value, LADDER);
     proposals[def.id] = proposal;
 
-    if (proposal.tight) {
+    if (proposal.tooLong) {
       problems.push(
-        `${def.id}: the best pass flown is ${fmt(anchor.value)} m against a ${def.ceiling} m ceiling — there is not enough room between them for three rungs`
+        `${def.id}: the best line takes ${fmt(anchor.value)} s, so bronze lands at ${proposal.medals[0]} s and there is no room under the ninety second cap — the course wants a gate taken off it`
       );
     }
-    const [b, s, g] = proposal.medals;
+    if (proposal.tight) {
+      problems.push(
+        `${def.id}: the best the tool managed in ${def.window} s is ${fmt(anchor.value)} — too little to hang three rungs off`
+      );
+    }
+    const [b, s2, g] = proposal.medals;
     const cur = def.medals;
-    note(`   proposed  bronze ${b} · silver ${s} · gold ${g} · limit ${proposal.limit}`);
-    note(`   current   bronze ${cur[0]} · silver ${cur[1]} · gold ${cur[2]} · limit ${def.limit}`);
+    note(`   proposed  bronze ${b} · silver ${s2} · gold ${g}${proposal.limit ? ` · limit ${proposal.limit}` : ''}`);
+    note(`   current   bronze ${cur[0]} · silver ${cur[1]} · gold ${cur[2]}${def.limit ? ` · limit ${def.limit}` : ''}`);
 
     // The table as it stands, judged against what was just measured. These are
     // the failures that make a ladder meaningless rather than merely wrong.
-    if (challengeMetric(def) === 'time') {
+    if (windowed) {
+      if (!(cur[0] < cur[1] && cur[1] < cur[2])) {
+        problems.push(`${def.id}: the ladder does not climb — bronze ${cur[0]}, silver ${cur[1]}, gold ${cur[2]}`);
+      }
+      if (anchor.value < cur[2]) {
+        problems.push(`${def.id}: gold (${cur[2]}) is more than the best the tool managed (${fmt(anchor.value)}) — unreachable`);
+      }
+    } else {
+      if (def.limit > 90) problems.push(`${def.id}: a limit of ${def.limit} s breaks the ninety second cap`);
       if (cur[0] >= def.limit) problems.push(`${def.id}: bronze (${cur[0]}) is not under the fail limit (${def.limit}) — finishing and bronzing are the same event`);
       if (anchor.value > def.limit) problems.push(`${def.id}: the best line takes ${fmt(anchor.value)} s and the limit is ${def.limit} s — nobody finishes`);
       if (anchor.value > cur[2]) problems.push(`${def.id}: gold (${cur[2]} s) is quicker than the best line flown (${fmt(anchor.value)} s) — unreachable`);
-    } else {
-      if (cur[0] >= def.ceiling) problems.push(`${def.id}: bronze (${cur[0]} m) is at or above the ${def.ceiling} m ceiling — holding the pass bronzes it by itself`);
-      if (anchor.value > cur[2]) problems.push(`${def.id}: gold (${cur[2]} m) is lower than the best pass flown (${fmt(anchor.value)} m) — unreachable`);
-      if (anchor.seconds > def.limit) problems.push(`${def.id}: the best pass needed ${fmt(anchor.seconds)} s and the limit is ${def.limit} s`);
     }
     const medal = medalFor(def, anchor.value);
     note(`   the best line flown scores ${['nothing', 'bronze', 'silver', 'gold'][medal]} against the table as it stands`);

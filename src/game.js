@@ -230,9 +230,10 @@ export class Game {
   #beginChallenge(def) {
     this.setAircraft(shipFor(def).id, false);
     this.challenges.arm(def);
-    const target = challengeMetric(def) === 'height'
-      ? `under ${def.ceiling} m for ${def.hold} s`
-      : `gold in ${formatMetric(def, def.medals[2])}`;
+    // What gold asks for, said in the task's own units — "gold in 54 s" for a
+    // slalom, "gold at 190 m" for the three that are scored upwards.
+    const gold = formatMetric(def, def.medals[2]);
+    const target = def.type === 'slalom' ? `gold in ${gold}` : `${def.window} s · gold at ${gold}`;
     this.hud.toast(`<b>${def.name}</b> · ${target}`);
     this.audio?.cue('gate');
   }
@@ -492,7 +493,7 @@ export class Game {
     this.timer += dt;
 
     // ---- challenges --------------------------------------------------------
-    for (const ev of this.challenges.update(dt, g.position, this._prevPos, agl)) {
+    for (const ev of this.challenges.update(dt, g.position, this._prevPos, agl, g)) {
       if (ev.kind === 'armed') this.#armFromMarker(ev.def);
       else if (ev.kind === 'note') this.#noteChallenge(ev);
       else if (ev.kind === 'done') this.#finishChallenge(ev);
@@ -528,7 +529,9 @@ export class Game {
     this.state = 'done';
     this.audio?.cue('finish');
     this.controls.setVisible(false);
-    const label = challengeMetric(def) === 'height' ? 'Mean height' : 'Time';
+    const label = { time: 'Time', height: 'Height gained', distance: 'Distance', count: 'Rolls' }[
+      challengeMetric(def)
+    ];
     const totals = tally(this.challenges.best);
     const lines = [
       [label, formatMetric(def, value)],

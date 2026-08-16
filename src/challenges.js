@@ -27,14 +27,6 @@ import { store } from './store.js';
 const MARKER_RADIUS = 52;
 /** And how far back out before it will trigger again. */
 const REARM_RADIUS = 300;
-/**
- * How close counts as having taken a pickup. Thirty-four metres was sized for
- * a ship that could be flown at thirty; the ballasted glider crosses that in
- * six tenths of a second at racing speed, and measured over the Loop it turned
- * a five-marker collect into a series of near misses — one line in seventy-two
- * finished. Fifty-five is still a target you have to be pointed at.
- */
-const PICKUP_RADIUS = 55;
 /** Height of the light column that makes a marker findable from far off. */
 const BEACON_HEIGHT = 460;
 
@@ -48,18 +40,58 @@ const MEDAL_TINTS = [
   { color: [0.4, 0.3, 0.06], emissive: [1.0, 0.81, 0.28] },
 ];
 
+/**
+ * The four kinds of challenge, and what each one is scored on.
+ *
+ *   slalom     a run of gates threaded through the terrain, against the clock.
+ *              The only type where the run ends when you finish it, and the
+ *              only one that can be failed by being slow.
+ *   height     sixty seconds. How much of it can you turn into altitude?
+ *   distance   ninety seconds. How far from here can you be at the end of it?
+ *   aerobatic  a window, and how many clean rolls you fit into it. Rolling
+ *              costs height and speed, so the task is really about managing
+ *              both against the redline and the ground.
+ *
+ * Three of the four are fixed windows, and that is the shape of the whole set:
+ * the clock is the task rather than a deadline attached to one. You cannot fail
+ * them except by hitting something — the window closes and whatever you have is
+ * the score — which is what makes them worth pressing Retry on.
+ *
+ * `wins` is which direction is better. A slalom is seconds and lower wins; the
+ * other three are quantities and more is better. Everything downstream — the
+ * medal rule, the running standing on the HUD, the calibrator's ladder — reads
+ * this rather than knowing the types.
+ */
+export const TYPES = {
+  slalom: { wins: 'low', unit: 'time', windowed: false },
+  height: { wins: 'high', unit: 'height', windowed: true },
+  distance: { wins: 'high', unit: 'distance', windowed: true },
+  aerobatic: { wins: 'high', unit: 'count', windowed: true },
+};
+
 /** Which medal a result earns. Thresholds are [bronze, silver, gold]. */
 export function medalFor(def, value) {
   const [bronze, silver, gold] = def.medals;
+  if (TYPES[def.type].wins === 'high') {
+    if (value >= gold) return 3;
+    if (value >= silver) return 2;
+    if (value >= bronze) return 1;
+    return 0;
+  }
   if (value <= gold) return 3;
   if (value <= silver) return 2;
   if (value <= bronze) return 1;
   return 0;
 }
 
-/** Seconds for the timed types, metres of mean height for a low pass. */
+/** What the number on a result card means. */
 export function challengeMetric(def) {
-  return def.type === 'lowpass' ? 'height' : 'time';
+  return TYPES[def.type].unit;
+}
+
+/** The clock a run gets: the window for the windowed types, the limit for a slalom. */
+export function runClock(def) {
+  return TYPES[def.type].windowed ? def.window : def.limit;
 }
 
 /**
@@ -75,8 +107,16 @@ export function formatClock(seconds) {
 
 export function formatMetric(def, value) {
   if (value == null || !isFinite(value)) return '—';
-  if (challengeMetric(def) === 'height') return `${Math.round(value)} m`;
-  return formatClock(value);
+  switch (challengeMetric(def)) {
+    case 'height':
+      return `${Math.round(value)} m`;
+    case 'distance':
+      return value >= 1000 ? `${(value / 1000).toFixed(2)} km` : `${Math.round(value)} m`;
+    case 'count':
+      return `${Math.round(value)}`;
+    default:
+      return formatClock(value);
+  }
 }
 
 // ------------------------------------------------------- the medal book ---
@@ -86,14 +126,13 @@ export function formatMetric(def, value) {
  * screen that could add them up. Challenge ids are unique across regions, so
  * the region never has to appear in the key at all.
  *
- * The version suffix is what throws the book away when the times underneath it
- * stop meaning anything. `.v3` is the game issuing one aeroplane: every
- * challenge used to name its own ship and every threshold was measured against
- * that ship, so a Kite's low pass and a Cadet's climb are not comparable with
- * the same tasks flown in the Draco. Carrying them forward would show a gold
- * against a run nobody flew.
+ * The version suffix is what throws the book away when the numbers underneath
+ * it stop meaning anything. `.v4` is the challenge set being re-cut to four
+ * kinds and a ninety second cap: half the ids are gone, the rest measure a
+ * different thing over a different course, and three of the four now score
+ * upwards. There is nothing in a v3 book worth carrying forward.
  */
-const MEDAL_KEY = 'windward.medals.v3';
+const MEDAL_KEY = 'windward.medals.v4';
 
 export function loadMedals() {
   try {
@@ -139,7 +178,7 @@ export function shipFor(def) {
   return getAircraft(ISSUED_AIRCRAFT ?? def.ship);
 }
 
-/** Every task that is not a climb drops you in at this multiple of trim speed. */
+/** Every task but a height run drops you in at this multiple of trim speed. */
 const START_SPEED = 1.33;
 
 /**
@@ -148,12 +187,11 @@ const START_SPEED = 1.33;
  * the level select, because otherwise a medal time says as much about the
  * approach as about the run.
  *
- * A climb is the exception, and it has to be. Arriving at a third over trim is
+ * A height run is the exception, and it has to be. Arriving at a third over trim is
  * free height — the ballasted ship carries 140 m of it in the speed alone — and
  * a task scored on metres gained will happily hand out a gold for converting
- * that back into altitude without ever finding a thermal. Measured, a climb
- * armed at cruise was over in half a minute and never went near the lift it was
- * standing on.
+ * that back into altitude without ever finding a thermal — and on a sixty
+ * second window that free height is most of the answer.
  *
  * Hands-off trim speed is the answer rather than best-sink speed, which was
  * tried first: entering at 28 m/s left the ship slow, low and on a slope, and
@@ -162,7 +200,7 @@ const START_SPEED = 1.33;
  * task that asks for four hundred, which is a margin rather than a shortcut.
  */
 export function entrySpeed(def, spec = shipFor(def)) {
-  if (def?.type === 'climb') return spec.trimSpeed;
+  if (def?.type === 'height') return spec.trimSpeed;
   return spec.trimSpeed * START_SPEED;
 }
 
@@ -258,18 +296,6 @@ export class Challenges {
     });
     this.refreshUnlocks();
 
-    // One shared blob, repositioned per run: only one collect is ever live, and
-    // building the meshes on arm would allocate mid-flight. Sized from the data
-    // so adding a longer collect cannot quietly overrun the pool.
-    const pickGeom = new THREE.IcosahedronGeometry(22, 0);
-    const poolSize = Math.max(0, ...this.defs.map((d) => d.picks?.length ?? 0));
-    this.pickups = Array.from({ length: poolSize }, () => {
-      const mesh = new THREE.Mesh(pickGeom, this.materials[3]);
-      mesh.visible = false;
-      this.group.add(mesh);
-      return mesh;
-    });
-
     this.active = null;
     this.lastDef = null;
     this.events = [];
@@ -327,7 +353,7 @@ export class Challenges {
   arm(def) {
     this.abort();
     this.lastDef = def;
-    const run = { def, elapsed: 0, limit: def.limit };
+    const run = { def, elapsed: 0, limit: runClock(def), value: 0 };
     this.active = run;
     // Held down until you fly clear, so finishing inside the hoop — which a
     // retry always does — does not instantly re-arm it.
@@ -339,29 +365,15 @@ export class Challenges {
       this.world.resetGates();
       this.world.group.visible = true;
       run.gateIndex = 0;
-    } else if (def.type === 'collect') {
-      run.taken = def.picks.map(() => false);
-      run.points = def.picks.map((p, i) => {
-        const v = this.world.toLocal(p.lat, p.lon);
-        let y = this.hf.heightAt(v.x, v.z) + p.agl;
-        // A pickup sitting inside the twentieth floor of a tower is not a
-        // pickup. The roofs are surveyed data; trust them over the table.
-        const roof = this.buildings?.topNear(v.x, v.z) ?? -Infinity;
-        if (isFinite(roof)) y = Math.max(y, roof + 25);
-        const mesh = this.pickups[i];
-        mesh.position.set(v.x, y, v.z);
-        mesh.visible = true;
-        return new THREE.Vector3(v.x, y, v.z);
-      });
-    } else if (def.type === 'climb') {
-      // Measured from the marker rather than from wherever the ship crossed
-      // it, so the task is the same height whether you arrive high, arrive low
-      // or take the Retry button. Arriving below the hoop starts you negative.
+    } else if (def.type === 'height') {
+      // Measured from the marker rather than from wherever the ship crossed it,
+      // so the task is the same height whether you arrive high, arrive low, or
+      // take the Retry button.
       run.startY = marker.position.y;
-      run.gain = 0;
-    } else if (def.type === 'lowpass') {
-      run.hold = 0;
-      run.heightSum = 0;
+    } else if (def.type === 'distance') {
+      run.from = marker.position.clone();
+    } else if (def.type === 'aerobatic') {
+      run.figures = new Figures();
     }
     return run;
   }
@@ -369,7 +381,6 @@ export class Challenges {
   /** Put the world back the way plain flying expects it. */
   abort() {
     this.active = null;
-    for (const mesh of this.pickups) mesh.visible = false;
     this.world.clearCourse();
   }
 
@@ -395,7 +406,7 @@ export class Challenges {
   }
 
   // -------------------------------------------------------------- loop ---
-  update(dt, position, prevPos, agl) {
+  update(dt, position, prevPos, agl, glider = null) {
     this.events.length = 0;
     this.spin += dt * 0.6;
     // About the hoop's own axis, so the ring stays across the course and only
@@ -408,7 +419,7 @@ export class Challenges {
     for (const m of this.materials) m.uniforms.uPulse.value += dt * 2.6;
     for (const m of this.beaconMaterials) m.uniforms.uPulse.value += dt * 2.6;
 
-    if (this.active) this.#step(dt, position, prevPos, agl);
+    if (this.active) this.#step(dt, position, prevPos, agl, glider);
     else this.#checkMarkers(position, prevPos);
     return this.events;
   }
@@ -433,7 +444,7 @@ export class Challenges {
     }
   }
 
-  #step(dt, position, prevPos, agl) {
+  #step(dt, position, prevPos, agl, glider) {
     const run = this.active;
     const def = run.def;
     run.elapsed += dt;
@@ -452,36 +463,29 @@ export class Challenges {
           cue: 'gate',
         });
       }
-    } else if (def.type === 'collect') {
-      for (let i = 0; i < run.points.length; i++) {
-        if (run.taken[i]) continue;
-        if (run.points[i].distanceToSquared(position) > PICKUP_RADIUS * PICKUP_RADIUS) continue;
-        run.taken[i] = true;
-        this.pickups[i].visible = false;
-        const got = run.taken.filter(Boolean).length;
-        if (got >= run.points.length) return this.#finish(run.elapsed);
-        this.events.push({ kind: 'note', def, text: `${got}/${run.points.length}`, cue: 'gate' });
+      // A slalom is the one type with a deadline, because it is the one type
+      // that can be left unfinished.
+      if (run.elapsed >= run.limit) {
+        this.abort();
+        this.events.push({ kind: 'failed', def, reason: 'time' });
       }
-    } else if (def.type === 'climb') {
-      run.gain = position.y - run.startY;
-      if (run.gain >= def.gain) return this.#finish(run.elapsed);
-    } else if (def.type === 'lowpass') {
-      if (agl <= def.ceiling) {
-        run.hold += dt;
-        run.heightSum += Math.max(0, agl) * dt;
-        if (run.hold >= def.hold) return this.#finish(run.heightSum / run.hold);
-      } else if (run.hold > 0) {
-        // Only worth saying out loud if there was a run to lose.
-        if (run.hold > 3) this.events.push({ kind: 'note', def, text: 'Too high — hold reset', tone: 'bad' });
-        run.hold = 0;
-        run.heightSum = 0;
-      }
+      return;
     }
 
-    if (run.elapsed >= run.limit) {
-      this.abort();
-      this.events.push({ kind: 'failed', def, reason: 'time' });
+    // ---- the windowed three ------------------------------------------------
+    if (def.type === 'height') {
+      run.value = position.y - run.startY;
+    } else if (def.type === 'distance') {
+      run.value = Math.hypot(position.x - run.from.x, position.z - run.from.z);
+    } else if (def.type === 'aerobatic') {
+      if (run.figures.update(glider)) {
+        run.value += 1;
+        this.events.push({ kind: 'note', def, text: `${run.value} roll${run.value === 1 ? '' : 's'}`, cue: 'gate' });
+      }
     }
+    // The window closing is the end of the task, not a failure: whatever is on
+    // the counter is the score, and there is always a score.
+    if (run.elapsed >= run.limit) return this.#finish(run.value);
   }
 
   #finish(value) {
@@ -510,19 +514,6 @@ export class Challenges {
         const gate = this.world.gates[run.gateIndex];
         if (gate) return { name: `Gate ${run.gateIndex + 1} · ${gate.name}`, position: gate.position };
       }
-      if (run.def.type === 'collect') {
-        let best = null;
-        let bestD = Infinity;
-        for (let i = 0; i < run.points.length; i++) {
-          if (run.taken[i]) continue;
-          const d = run.points[i].distanceToSquared(position);
-          if (d < bestD) {
-            bestD = d;
-            best = run.points[i];
-          }
-        }
-        if (best) return { name: run.def.name, position: best };
-      }
       return null;
     }
     // Not running one: point at a nearby task still worth flying, so leaving
@@ -549,13 +540,13 @@ export class Challenges {
     const def = run.def;
     let progress = '';
     if (def.type === 'slalom') progress = `Gate ${run.gateIndex}/${def.gates.length}`;
-    else if (def.type === 'collect') progress = `${run.taken.filter(Boolean).length}/${def.picks.length}`;
-    else if (def.type === 'climb') progress = `${Math.max(0, Math.round(run.gain))}/${def.gain} m`;
-    else progress = `${run.hold.toFixed(1)}/${def.hold} s`;
-    // The medal this run is still on for, which is the whole reason to show a
-    // running clock. A low pass is scored on height, so its clock is only ever
-    // a deadline and there is no standing to lose by being slow.
-    const standing = challengeMetric(def) === 'time' ? medalFor(def, run.elapsed) : null;
+    else if (def.type === 'height') progress = `${run.value > 0 ? '+' : ''}${Math.round(run.value)} m`;
+    else if (def.type === 'distance') progress = `${(run.value / 1000).toFixed(2)} km`;
+    else progress = `${run.value} roll${run.value === 1 ? '' : 's'}`;
+    // What the run is on for as it stands. A slalom's is its clock, because
+    // that is what it will be scored on; the windowed three are already
+    // carrying their own score in `progress`, so the standing is that.
+    const standing = medalFor(def, def.type === 'slalom' ? run.elapsed : run.value);
     return {
       name: def.name,
       progress,
@@ -570,6 +561,69 @@ export class Challenges {
       m.uniforms.uSunRadiance.value.copy(sunRadiance);
       m.uniforms.uSkyAmbient.value.copy(skyAmbient);
     }
+  }
+}
+
+/**
+ * Counting rolls.
+ *
+ * The honest way to do this is to measure what the airframe actually did rather
+ * than watch the stick: the rotation between one frame and the next, taken in
+ * BODY axes, splits cleanly into roll, pitch and yaw whatever attitude the ship
+ * is in. Integrate the roll component and a full turn of it is a roll.
+ *
+ * Body axes here are the ones flight.js rotates about: +X right, +Y up, -Z
+ * forward — so roll is the -Z component.
+ *
+ * Two guards stop ordinary flying scoring. The figure has to pass through
+ * inverted, which nothing short of actually rolling will do; and the integral
+ * is thrown away if the wings come back level before it completes, so a wallow
+ * cannot be banked half a roll at a time. Measured against the real model: a
+ * pinned stick scores six in thirty seconds, and a forty-degree turn, a steep
+ * turn and straight-and-level all score nothing.
+ *
+ * Only rolls. A loop is the other figure a pilot would name and this aeroplane
+ * cannot fly one: the model's static stability rolls it upright over the top
+ * before it is halfway round, which is correct for a nineteen-metre glass ship
+ * and means a clean loop is not a thing the game can ask for.
+ */
+class Figures {
+  constructor() {
+    this.prev = new THREE.Quaternion();
+    this.rel = new THREE.Quaternion();
+    this.up = new THREE.Vector3();
+    this.first = true;
+    this.roll = 0;
+    this.inverted = false;
+  }
+
+  /** @returns true on the frame a roll completes. */
+  update(glider) {
+    if (!glider) return false;
+    if (this.first) {
+      this.prev.copy(glider.quaternion);
+      this.first = false;
+      return false;
+    }
+    // The rotation from the last attitude to this one, in the body frame the
+    // ship started the step in. Small-angle: for a hundred-and-twentieth of a
+    // second the quaternion's vector part is half the rotation vector, and
+    // nothing in the game turns far enough in one step for that to matter.
+    this.rel.copy(this.prev).invert().multiply(glider.quaternion);
+    this.prev.copy(glider.quaternion);
+    this.roll += -this.rel.z * (this.rel.w < 0 ? -2 : 2);
+
+    const upright = glider.up(this.up).y;
+    if (upright < -0.15) this.inverted = true;
+    if (Math.abs(this.roll) >= Math.PI * 2 && this.inverted) {
+      this.roll = 0;
+      this.inverted = false;
+      return true;
+    }
+    // Back level the right way up without having gone round: not half a roll,
+    // just a wobble. Start again.
+    if (!this.inverted && upright > 0.97) this.roll = 0;
+    return false;
   }
 }
 

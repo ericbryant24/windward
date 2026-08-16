@@ -58,7 +58,7 @@ await step('level select lists both maps', async () => {
   // are still two games.
   await page.click(`.level-tab[data-value="${other}"]`);
   const away = await page.$$eval('.task-list .task-row', (els) => els.length);
-  if (away < 7) throw new Error(`other level shows ${away} rows`);
+  if (away < 6) throw new Error(`other level shows ${away} rows`);
   // Picking a level is the only step: Fly goes wherever the list is pointing,
   // rather than to a second button that has to be found underneath it.
   const flyTo = await page.$eval('.fly-btn', (el) => el.dataset.value);
@@ -201,15 +201,28 @@ await step('rotate to the other orientation', async () => {
   if (!(fov > 40 && fov < 90)) throw new Error(`fov ${fov}`);
 });
 
-await step('every challenge names a ship that exists', async () => {
+await step('every challenge is one of the four kinds, with a ladder that climbs', async () => {
   const bad = await page.evaluate(async () => {
     const { CHALLENGES } = await import('/src/regions.js');
-    const { FLEET } = await import('/src/fleet.js');
-    const ids = new Set(FLEET.map((s) => s.id));
-    return Object.values(CHALLENGES)
-      .flat()
-      .filter((d) => !ids.has(d.ship))
-      .map((d) => `${d.id}:${d.ship}`);
+    const { TYPES } = await import('/src/challenges.js');
+    const out = [];
+    for (const def of Object.values(CHALLENGES).flat()) {
+      const t = TYPES[def.type];
+      if (!t) {
+        out.push(`${def.id}: unknown kind "${def.type}"`);
+        continue;
+      }
+      const [b, s, g] = def.medals;
+      // A slalom's rungs descend and carry a clock; the windowed three ascend
+      // and carry a window. Getting either backwards is a ladder nobody climbs.
+      if (t.wins === 'low' ? !(b > s && s > g) : !(b < s && s < g)) {
+        out.push(`${def.id}: ladder does not climb (${b}/${s}/${g})`);
+      }
+      if (t.windowed && !(def.window > 0)) out.push(`${def.id}: no window`);
+      if (!t.windowed && !(def.limit > 0 && def.limit <= 90)) out.push(`${def.id}: limit ${def.limit}`);
+      if (!t.windowed && b >= def.limit) out.push(`${def.id}: bronze ${b} is not under the limit ${def.limit}`);
+    }
+    return out;
   });
   if (bad.length) throw new Error(bad.join(', '));
 });

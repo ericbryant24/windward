@@ -98,32 +98,46 @@ puts you in the air over whichever level the list is pointing at, with no clock
 and nothing to accumulate but the map itself — nineteen landmarks to find, and
 whatever you can reach before you run out of height.
 
-Everything else is a **challenge** — fourteen of them, seven per level, standing
-out in the world as hoops with a light column under them. Fly through one and it
-starts; or press it on the level select and you are taken to it. Four kinds,
-all scored on a single number where lower always wins:
+Everything else is a **challenge** — twelve of them, six per level, standing out
+in the world as hoops with a light column under them. Fly through one and it
+starts; or press it on the level select and you are taken to it. Four kinds, and
+nothing runs longer than ninety seconds:
 
 | | |
 |---|---|
-| slalom | a run of gates, timed — from a six-gate trench dash to the thirty-three-kilometre descent of the whole Oberland |
-| collect | markers to gather on one arrival, timed |
-| climb | a fixed height gain, timed |
-| lowpass | hold it under a ceiling for a set time, scored on mean height |
+| slalom | gates threaded through the terrain, against the clock |
+| height | sixty seconds — how much of it can you turn into altitude? |
+| distance | ninety seconds — how far from the hoop can you be at the end? |
+| aerobatic | sixty seconds, and how many clean rolls fit inside them |
+
+A slalom is seconds and lower wins. The other three are quantities and more is
+better, and all three are fixed windows: the clock closing IS the score, so they
+cannot be failed by running out of time and only hitting something ends a run
+early. That is the point of the ninety second cap — a challenge you can lose in
+a minute and a half is one you press Retry on.
 
 Two rules make a challenge a designed thing rather than a stopwatch:
 
 - **Every attempt starts identically.** Same place, same heading, same speed,
   whether you crossed the hoop or pressed the row on the level select — so a
   time flown off the menu and a time flown off the map are the same time. The
-  entry speed is a third over trim for everything except a climb, which arms at
-  trim: a task scored on metres gained must not be winnable by cashing in the
-  speed it was handed.
-- **They unlock on medals earned anywhere.** Four are open on a fresh save; the
+  entry speed is a third over trim for everything except a height run, which
+  arms at trim: a task scored on metres gained must not be winnable by cashing
+  in the speed it was handed.
+- **They unlock on medals earned anywhere.** Two are open on a fresh save; the
   rest raise their markers as the count climbs, and the count spans both levels,
   so golds over the Alps open the lakefront.
 
 Landing counts: put it down slowly on gentle ground and it is a landing rather
 than a wreck.
+
+Two things the measurements decided rather than the design. A **height** run is
+a ridge beat, not a thermal — this aeroplane takes thirty-seven seconds to fly
+one turn, so a minute of circling loses height, while a windward face pays from
+the moment you are on it. And an **aerobatic** run counts rolls only: the flight
+model's static stability rolls the ship upright over the top of a loop before it
+is halfway round, which is correct for a nineteen-metre glass ship and means a
+clean loop is not something the game can ask for.
 
 ### The waterfalls
 
