@@ -501,6 +501,8 @@ export const CHALLENGES = {
       name: 'The Grindelwald Field',
       where: 'The basin under the Wetterhorn',
       blurb: 'Fourteen balloons over the bowl. Sixty seconds, three hundred rounds, no reload.',
+      // The one place the gun is rationed. Everywhere else it is unlimited.
+      rounds: 300,
       needs: 0,
       marker: { lat: 46.6335, lon: 8.0205, agl: 500, heading: 112 },
       window: 60,
@@ -680,6 +682,7 @@ export const CHALLENGES = {
       name: 'The Harbour Line',
       where: 'Moored off the lakefront',
       blurb: 'Fourteen balloons over open water, with the whole skyline behind them.',
+      rounds: 300,
       needs: 2,
       marker: { lat: 41.8695, lon: -87.6095, agl: 400, heading: 9 },
       window: 60,

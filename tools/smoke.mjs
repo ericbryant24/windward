@@ -120,9 +120,11 @@ await step('glider stays airborne and controllable', async () => {
     };
     window.__unwatch = () => (gl.update = orig);
   });
-  await page.mouse.move(box.w * 0.2, box.h * 0.75);
+  // The right half: that is where the stick lives now, so that the trigger and
+  // the throttle can sit under the other thumb.
+  await page.mouse.move(box.w * 0.75, box.h * 0.75);
   await page.mouse.down();
-  await page.mouse.move(box.w * 0.2 + 70, box.h * 0.75, { steps: 5 });
+  await page.mouse.move(box.w * 0.75 + 70, box.h * 0.75, { steps: 5 });
   await page.waitForTimeout(2500);
   await page.mouse.up();
   const swept = await page.evaluate(() => {
@@ -377,7 +379,23 @@ await step('a finished run leaves a ghost, and the next attempt races it', async
     // and this needs a whole run's worth of flight time.
     const real = g.controls.sample.bind(g.controls);
     let t = 0;
-    g.controls.sample = () => ((t += 1 / 120), { roll: Math.sin(t * 0.7) * 0.35, pitch: 0.05, brake: 0, throttle: 1 });
+    // Hold height rather than a fixed stick. The aeroplane used to climb away
+    // hands-off at full power and this flew ninety seconds on that alone; now
+    // that the trim follows the throttle it cruises instead, and cruising due
+    // north out of the Oberland Dash marker meets a mountain.
+    g.controls.sample = () => {
+      t += 1 / 120;
+      return {
+        // Straight and level. The wander used to be harmless because the ship
+        // climbed away from everything at full power; now that it cruises,
+        // ninety seconds of wandering out of the Oberland Dash marker finds a
+        // valley wall. What is under test is the recorder, not the terrain.
+        roll: Math.sin(t * 0.5) * 0.06,
+        pitch: Math.max(-0.4, Math.min(0.7, 0.1 - g.glider.velocity.y * 0.05)),
+        brake: 0,
+        throttle: 0.7,
+      };
+    };
     for (let i = 0; i < 95 * 120 && g.state === 'flying'; i++) g.update(1 / 120);
     g.controls.sample = real;
     const recorded = g.recorder.score.length;

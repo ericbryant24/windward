@@ -358,7 +358,7 @@ function fly(ctx, def, policy, guide) {
   // A real Guns, firing real rounds at the real balloons, scored through the
   // real Challenges — the same rule as everything else this tool measures.
   const guns = new Guns({ add: () => {} }, { uniforms: {} }, spec);
-  guns.reload();
+  guns.reload(def.rounds ?? Infinity);
   const state = {
     ctx,
     def,
@@ -1662,7 +1662,9 @@ for (const mapId of MAPS) {
       const lowest = Math.min(...field.targets.map((t) => t.position.y));
       note(
         `   ${def.targets.count} balloons over ${fmt(lowest, 0)}–${fmt(highest, 0)} m, ` +
-          `${spec.gun.rounds} rounds at ${spec.gun.rate}/s — ${fmt(spec.gun.rounds / spec.gun.rate, 0)} s of trigger in a ${def.window} s window`
+          `${def.rounds ?? '∞'} rounds at ${spec.gun.rate}/s — ${
+          def.rounds ? `${fmt(def.rounds / spec.gun.rate, 0)} s of trigger` : 'unrationed'
+        } in a ${def.window} s window`
       );
     } else {
       policies = deckPolicies(spec);

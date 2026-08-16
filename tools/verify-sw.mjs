@@ -418,9 +418,11 @@ await step('flies with no network', async () => {
     };
     window.__unwatch = () => (gl.update = orig);
   });
-  await page.mouse.move(box.w * 0.2, box.h * 0.75);
+  // The right half: that is where the stick lives now, so that the trigger and
+  // the throttle can sit under the other thumb.
+  await page.mouse.move(box.w * 0.75, box.h * 0.75);
   await page.mouse.down();
-  await page.mouse.move(box.w * 0.2 + 70, box.h * 0.75, { steps: 5 });
+  await page.mouse.move(box.w * 0.75 + 70, box.h * 0.75, { steps: 5 });
   await page.waitForTimeout(3000);
   await page.mouse.up();
   const swept = await page.evaluate(() => {

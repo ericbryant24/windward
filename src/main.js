@@ -346,10 +346,16 @@ async function boot() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && game.state === 'flying') game.togglePause();
   });
+  // Double-tap for the camera, on the half WITHOUT the stick on it. That was
+  // the right; the stick moved there so the trigger and the throttle could go
+  // under the left thumb, and this has to move with it — otherwise every quick
+  // pair of stick inputs cycles the camera. Taps that land on one of the two
+  // controls are not taps on the screen.
   let lastTap = 0;
   addEventListener('touchend', (e) => {
     const t = e.changedTouches[0];
-    if (!t || t.clientX < innerWidth * 0.55 || game.state !== 'flying') return;
+    if (!t || t.clientX > innerWidth * 0.45 || game.state !== 'flying') return;
+    if (e.target?.closest?.('.round-btn, .throttle')) return;
     const now = performance.now();
     if (now - lastTap < 300) game.cycleCamera();
     lastTap = now;

@@ -533,7 +533,17 @@ export class Glider {
     // Trim holds a speed, not an attitude: fly faster than trim and the wing
     // asks for a little more alpha, which damps the phugoid instead of leaving
     // the player porpoising across the valley.
-    const speedTrim = THREE.MathUtils.clamp((V - cfg.trimSpeed) * cfg.speedStability, -3.5, 5.0);
+    //
+    // On a powered ship the trim follows the throttle, which is what a pilot
+    // does by hand after every power change. Without it the aeroplane holds
+    // one speed whatever the lever is doing and every watt of excess goes into
+    // climb — measured, the Shrike sat at 61 m/s from idle to full and only
+    // the vertical speed moved, from -7.2 to +10.9. That is correct, it is
+    // what "throttle controls altitude, elevator controls speed" means, and in
+    // a game with no trim wheel it means you can never simply cruise.
+    const trimV = cfg.trimSpeed * (1 + (cfg.throttleTrim ?? 0) * this.throttle);
+    const trimA = cfg.trimAlphaDeg - (cfg.throttleAlpha ?? 0) * this.throttle;
+    const speedTrim = THREE.MathUtils.clamp((V - trimV) * cfg.speedStability, -3.5, 5.0);
 
     // Banking without pulling unloads the wing, and an unloaded bank barely
     // turns — which made the natural diagonal thumb gesture a spiral dive
@@ -546,13 +556,9 @@ export class Glider {
     if (this.looping) {
       pitchRate = Math.sign(input.pitch) * cfg.maxPitchRate * speedAuthority * stiff;
     } else {
-      const span = input.pitch > 0 ? cfg.alphaMaxDeg - cfg.trimAlphaDeg : cfg.trimAlphaDeg - cfg.alphaMinDeg;
+      const span = input.pitch > 0 ? cfg.alphaMaxDeg - trimA : trimA - cfg.alphaMinDeg;
       const alphaTarget = THREE.MathUtils.degToRad(
-        THREE.MathUtils.clamp(
-          cfg.trimAlphaDeg + speedTrim + loadTrim + input.pitch * span,
-          cfg.alphaMinDeg,
-          cfg.alphaMaxDeg
-        )
+        THREE.MathUtils.clamp(trimA + speedTrim + loadTrim + input.pitch * span, cfg.alphaMinDeg, cfg.alphaMaxDeg)
       );
       pitchRate = THREE.MathUtils.clamp((alphaTarget - alpha) * 3.4, -1.6, 1.6) * speedAuthority * stiff;
     }

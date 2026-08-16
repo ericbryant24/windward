@@ -499,9 +499,11 @@ export class Hud {
     const behind = p.z > 1;
     this.gunsight.classList.toggle('behind', behind);
     this.gunsight.style.transform = `translate(-50%, -50%) translate(${((p.x * 0.5 + 0.5) * innerWidth).toFixed(1)}px, ${((-p.y * 0.5 + 0.5) * innerHeight).toFixed(1)}px)`;
-    this.gunAmmo.textContent = guns.rounds;
-    this.gunsight.classList.toggle('dry', guns.rounds <= 0);
-    this.gunsight.classList.toggle('low', guns.rounds > 0 && guns.rounds < 60);
+    // No number at all unless a challenge is counting. An ammo readout that
+    // never moves is furniture.
+    this.gunAmmo.textContent = guns.rounds == null ? '' : guns.rounds;
+    this.gunsight.classList.toggle('dry', guns.rounds != null && guns.rounds <= 0);
+    this.gunsight.classList.toggle('low', guns.rounds != null && guns.rounds > 0 && guns.rounds < 60);
   }
 
   /** Chevron that points at the next gate when it is off screen. */

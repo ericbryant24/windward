@@ -43,7 +43,10 @@ export class Guns {
     this.vz = new Float32Array(MAX_ROUNDS);
     this.age = new Float32Array(MAX_ROUNDS);
 
-    this.rounds = spec.gun?.rounds ?? 0;
+    // Infinity unless something says otherwise. Free flight has no counter and
+    // no reason for one — counting rounds is a rule a CHALLENGE imposes, and
+    // outside one it is a number on the screen that only ever gets in the way.
+    this.rounds = Infinity;
     this._since = 0;
     this._barrel = 0;
 
@@ -94,13 +97,21 @@ export class Guns {
   setAircraft(spec) {
     this.spec = spec;
     this.n = 0;
-    this.rounds = spec.gun?.rounds ?? 0;
+    this.rounds = Infinity;
   }
 
-  /** A full magazine. Called on every takeoff and every retry. */
-  reload() {
-    this.rounds = this.spec.gun?.rounds ?? 0;
+  /**
+   * Fill up. Unlimited by default; a challenge that counts rounds passes its
+   * own magazine and gets a counter on the HUD for the duration.
+   */
+  reload(magazine = Infinity) {
+    this.rounds = this.spec.gun ? magazine : 0;
     this.n = 0;
+  }
+
+  /** Whether there is a number worth showing. */
+  get counted() {
+    return isFinite(this.rounds);
   }
 
   get armed() {

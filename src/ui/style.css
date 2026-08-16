@@ -708,9 +708,14 @@ body {
    why it is translucent — you read it between inputs, not during them. The
    canvas draws its own rim, so there is no panel here to square off a picture
    that is round. */
+/* Bottom RIGHT, opposite the two controls. The whole bottom-left corner
+   belongs to the left thumb now — see .button-stack — and the map is the one
+   thing down here that is only ever read, never pressed, so it is the thing
+   that moves out of the way. It sits inside the stick zone and does not block
+   it: pointer-events are off. */
 .minimap {
   position: absolute;
-  left: calc(var(--safe-l) + 12px);
+  right: calc(var(--safe-r) + 12px);
   bottom: calc(var(--safe-b) + 12px);
   width: min(34vw, 148px);
   height: min(34vw, 148px);
@@ -998,9 +1003,10 @@ body {
   pointer-events: none;
 }
 
+/* And the stick moves to the right half to make room for them. */
 .stick-zone {
   position: absolute;
-  left: 0;
+  right: 0;
   bottom: 0;
   width: 62%;
   height: min(46%, 340px);
@@ -1041,10 +1047,10 @@ body {
 
 .stick-hint {
   position: absolute;
-  left: 26px;
-  /* Sits above the minimap, which now owns this corner. The hint is only up
-     until your first touch, but that is exactly the moment it would otherwise
-     be printed across the map. */
+  right: 26px;
+  /* Sits above the minimap, which owns this corner. The hint is only up until
+     your first touch, but that is exactly the moment it would otherwise be
+     printed across the map. */
   bottom: calc(var(--safe-b) + 24px + min(34vw, 148px));
   font-size: 11px;
   letter-spacing: 0.16em;
@@ -1053,9 +1059,11 @@ body {
   transition: opacity 0.4s ease;
 }
 
+/* Left thumb. Trigger and throttle are the two things pressed while the other
+   hand is flying, so they live under the hand that is not on the stick. */
 .button-stack {
   position: absolute;
-  right: calc(var(--safe-r) + 14px);
+  left: calc(var(--safe-l) + 14px);
   bottom: calc(var(--safe-b) + 22px);
   display: flex;
   flex-direction: column;

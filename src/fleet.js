@@ -242,6 +242,11 @@ export const FLEET = [
     trimAlphaDeg: 3.04, // holds 58 m/s at this wing loading, engine off
     trimSpeed: 58,
     speedStability: 0.18,
+    // Autotrim with the lever — see the pitch law in flight.js. At full power
+    // it trims for half again the speed and two degrees less alpha, so hands
+    // off at cruise is a cruise instead of a climb.
+    throttleTrim: 0.5,
+    throttleAlpha: 1.2,
     // 420 degrees a second, which is the real figure for the class and five
     // times the ballasted nineteen-metre. A pinned stick is a continuous roll
     // in a fifth of a second rather than as a slow deliberate event.
@@ -269,10 +274,11 @@ export const FLEET = [
     power: 152000,
     staticThrust: 6200,
     // Two wing guns. `muzzle` is m/s and `rate` is rounds a second for the
-    // pair; `rounds` is what a run gets and there is no reload, so a held
-    // trigger is seventeen seconds of a sixty second window and trigger
-    // discipline is part of the score. See src/guns.js.
-    gun: { muzzle: 620, rate: 18, spread: 0.0032, rounds: 300, tracer: 26, mount: 1.7, nose: 1.1 },
+    // pair. There is no magazine here on purpose: ammunition is unlimited
+    // unless a CHALLENGE rations it, because counting rounds is a rule a task
+    // imposes and outside one it is a number on the screen doing nothing. See
+    // src/guns.js and `rounds` on the gunnery tasks in regions.js.
+    gun: { muzzle: 620, rate: 18, spread: 0.0032, tracer: 26, mount: 1.7, nose: 1.1 },
     look: {
       span: 3.72,
       chord: 1.45,

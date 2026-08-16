@@ -252,6 +252,9 @@ export class Game {
    */
   #beginChallenge(def) {
     this.setAircraft(shipFor(def).id, false);
+    // A magazine only when the task asks for one. Everywhere else the gun just
+    // works, which is the difference between a rule and an irritation.
+    this.guns.reload(def.rounds ?? Infinity);
     this.challenges.arm(def);
     this.recorder.reset();
     // Both clocks start here, so the ghost is always at the same point of its
@@ -424,7 +427,11 @@ export class Game {
         camera: this.camera,
         challenge: this.#challengeHud(),
         guns: this.guns.armed
-          ? { armed: true, rounds: this.guns.rounds, aim: this.guns.aimPoint(this.glider, this._gunAim) }
+          ? {
+              armed: true,
+              rounds: this.guns.counted ? this.guns.rounds : null,
+              aim: this.guns.aimPoint(this.glider, this._gunAim),
+            }
           : null,
       });
       this.audio?.update(dt, {

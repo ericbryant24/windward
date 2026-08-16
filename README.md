@@ -4,8 +4,9 @@ A browser flight game set over the real Jungfrau region of the Bernese Alps.
 You fly an unlimited aerobatic monoplane — three hundred horsepower, seven
 metres of wing, and it will hold any attitude you put it in.
 
-Portrait phone is the primary target — one thumb on the stick, one on the
-throttle — but it plays fine in landscape and on a desktop keyboard.
+Portrait phone is the primary target — the right thumb flies, the left works
+the trigger and the throttle — but it plays fine in landscape and on a desktop
+keyboard.
 
 Play it at **https://ericbryant24.github.io/windward/** — the branch deploys
 itself to GitHub Pages on every push.
@@ -80,11 +81,11 @@ between reaching the next ridge and not.
 
 | | Touch | Keyboard |
 |---|---|---|
-| Bank | Drag anywhere on the left half | ← → or A D |
+| Bank | Drag anywhere on the right half | ← → or A D |
 | Pitch | Same stick, up/down | ↑ ↓ or W S |
-| Throttle | Lever on the right, grab it anywhere | Shift / Ctrl, or + / − |
+| Throttle | Lever bottom-left, grab it anywhere | Shift / Ctrl, or + / − |
 | Guns | FIRE button | Space or Enter |
-| Camera | Double-tap the right half | C |
+| Camera | Double-tap the left half | C |
 | Pause | ❚❚ | Esc or P |
 
 The stick moves **surfaces**. Sideways is aileron and on the Shrike it is a
