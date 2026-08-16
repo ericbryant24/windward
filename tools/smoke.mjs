@@ -99,24 +99,42 @@ await step('glider stays airborne and controllable', async () => {
   }));
   // hold the stick over to the right for a couple of seconds
   const box = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+  // Watch the roll axis for the duration of the hold rather than reading the
+  // bank at the end of it. On a rate stick three seconds of full deflection is
+  // three and a half rolls, and where that leaves the wings is arbitrary — it
+  // landed on 2.9 degrees once, which looked exactly like an aeroplane that
+  // had ignored the stick. What is actually being asked is whether the roll
+  // axis moved, and that is the same question for either control law.
+  await page.evaluate(() => {
+    const gl = window.WINDWARD.game.glider;
+    window.__swept = 0;
+    let prev = gl.bankRad;
+    const orig = gl.update.bind(gl);
+    gl.update = (dt, input) => {
+      orig(dt, input);
+      let d = gl.bankRad - prev;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      window.__swept += Math.abs(d);
+      prev = gl.bankRad;
+    };
+    window.__unwatch = () => (gl.update = orig);
+  });
   await page.mouse.move(box.w * 0.2, box.h * 0.75);
   await page.mouse.down();
   await page.mouse.move(box.w * 0.2 + 70, box.h * 0.75, { steps: 5 });
   await page.waitForTimeout(2500);
   await page.mouse.up();
+  const swept = await page.evaluate(() => {
+    const s = (window.__swept * 180) / Math.PI;
+    window.__unwatch?.();
+    return s;
+  });
   const after = await page.evaluate(() => window.WINDWARD.stats());
-  const heading = await page.evaluate(() => window.WINDWARD.game.glider.headingDeg);
-  const bank = await page.evaluate(() => window.WINDWARD.game.glider.bankDeg);
-  const turned = Math.abs(((heading - before.hdg + 540) % 360) - 180);
   console.log(
-    `        alt ${before.alt}->${after.alt} m, speed ${after.speed} km/h, bank ${bank.toFixed(0)}deg, turned ${turned.toFixed(0)}deg`
+    `        alt ${before.alt}->${after.alt} m, speed ${after.speed} km/h, ${swept.toFixed(0)}deg of roll swept`
   );
-  // The stick is a roll rate, not a bank angle: held over for two and a half
-  // seconds it can go all the way round, so the sign and the magnitude of the
-  // bank at the end are not the question. Whether the aeroplane responded is.
-  if (Math.abs(bank) < 12 && turned < 25) {
-    throw new Error(`stick right produced bank ${bank.toFixed(1)}deg, turn ${turned.toFixed(1)}deg`);
-  }
+  if (swept < 25) throw new Error(`right stick swept only ${swept.toFixed(1)}deg of roll`);
   if (!isFinite(after.alt) || after.alt < 400) throw new Error(`altitude ${after.alt}`);
 });
 

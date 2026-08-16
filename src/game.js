@@ -458,9 +458,27 @@ export class Game {
    * profile, never said again.
    */
   #hints() {
-    if (this.state !== 'flying' || this.challenges.active) return;
+    if (this.state !== 'flying') return;
     const seen = this.progress.hints;
-    if (seen.includes('marker')) return;
+
+    // The redline, said once in English at the moment it first matters. The
+    // warning used to read "VNE" — velocity never exceed — which is the right
+    // term and told nobody anything, and the speed readout had no red band at
+    // all, so there was nothing on screen that explained itself.
+    if (!seen.includes('redline') && this.glider.buffet > 0.12) {
+      seen.push('redline');
+      saveProgress(this.progress);
+      this.hud.toast(
+        `<b>${Math.round(this.spec.vne * 3.6)} km/h is the redline</b><br>` +
+          `Past it the airframe starts coming apart, and it does not mend. ${
+            this.spec.power ? 'Ease off and pull up.' : 'Ease off, or open the boards.'
+          }`,
+        'discovery'
+      );
+      return;
+    }
+
+    if (seen.includes('marker') || this.challenges.active) return;
     for (const m of this.challenges.markers) {
       if (!m.mesh.visible) continue;
       if (m.position.distanceToSquared(this.glider.position) > 2200 * 2200) continue;

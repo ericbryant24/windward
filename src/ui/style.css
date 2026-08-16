@@ -1609,6 +1609,17 @@ body {
   color: var(--accent-warm);
 }
 
+/* The band at the top. Amber inside the buffet, red past the redline — the
+   same escalation the warning text uses, in a place the eye is already on. */
+.gauge b.fast {
+  color: #ff9d4a;
+}
+
+.gauge b.over {
+  color: var(--danger);
+  animation: pulse 0.6s ease-in-out infinite;
+}
+
 /* ---- impact ------------------------------------------------------------- */
 /* Kept out of the layer tree entirely between crashes: a full-screen gradient
    costs a full-screen composite every frame even at zero opacity, and this one

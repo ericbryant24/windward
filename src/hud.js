@@ -281,9 +281,15 @@ export class Hud {
 
   /** The instruments follow whatever is actually bolted on, chosen or issued. */
   setShip(spec) {
+    this.spec = spec;
     this.polar = polar(spec);
     this.ship.textContent = spec.name;
-    this.shipPolar.textContent = `${this.polar.bestLD.toFixed(0)}:1 · ↓${this.polar.minSink.toFixed(1)}`;
+    // Best glide, minimum sink, and the redline — the speed the airframe comes
+    // apart above, which is the one number on this card a player can actually
+    // hit and the one that was never written down anywhere. In km/h, like the
+    // speed readout right above it, rather than in the m/s the model thinks in.
+    this.shipPolar.textContent =
+      `${this.polar.bestLD.toFixed(0)}:1 · ↓${this.polar.minSink.toFixed(1)} · max ${Math.round(spec.vne * 3.6)}`;
   }
 
   showResults(title, lines, buttons) {
@@ -348,8 +354,8 @@ export class Hud {
     const say = text || '';
     this.warn.textContent = say;
     this.warn.classList.toggle('on', !!say);
-    this.warn.classList.toggle('buzz', say === 'STALL' || say === 'VNE');
-    this.warn.classList.toggle('grave', say === 'OVERSPEED' || say.startsWith('AIRFRAME'));
+    this.warn.classList.toggle('buzz', say === 'STALL' || say === 'SLOW DOWN');
+    this.warn.classList.toggle('grave', !!say && say !== 'STALL' && say !== 'SLOW DOWN');
   }
 
   /** A hit felt through the screen: harder impacts flash longer and redder. */
@@ -378,6 +384,12 @@ export class Hud {
     const best = this.polar.bestLDSpeed * thin;
     this.spd.classList.toggle('glide', Math.abs(glider.airspeed - best) < best * 0.07);
     this.spd.classList.toggle('slow', glider.airspeed < this.polar.stallSpeed * thin * 1.08);
+    // And a band at the top, which there never was: until now the only thing
+    // saying the ship was past its limit was a word, and the word was VNE. A
+    // number going red needs no vocabulary at all.
+    const red = this.spec?.vne ?? Infinity;
+    this.spd.classList.toggle('fast', glider.airspeed > red * 0.86 && glider.airspeed <= red);
+    this.spd.classList.toggle('over', glider.airspeed > red);
 
     // The airframe never mends inside a flight, so this bar only ever fills.
     // That is the point of showing it: the second dive is not the first one.

@@ -354,12 +354,23 @@ export class Glider {
   /**
    * What the ship most wants to tell the pilot, worst first. Overspeed outranks
    * the stall because you have less time to do something about it.
+   *
+   * In words a pilot would use to a passenger, not words a pilot would use to
+   * another pilot. This used to say VNE — velocity never exceed, the redline —
+   * which is exactly right and told nobody anything. A warning that has to be
+   * looked up is not a warning. The escalation has to read as an escalation
+   * too: ease off, then you are past it, then it is coming apart.
    */
   get warning() {
-    if (this.broken) return 'AIRFRAME FAILED';
-    if (this.damage > 0.6) return 'AIRFRAME';
-    if (this.airspeed > this.spec.vne) return 'OVERSPEED';
-    if (this.buffet > 0.12) return 'VNE';
+    if (this.broken) return 'WING FAILED';
+    if (this.damage > 0.6) return 'AIRFRAME DAMAGED';
+    if (this.airspeed > this.spec.vne) return 'TOO FAST · BREAKING UP';
+    // Gated on actually being fast, not on the buffet alone. Buffet is damped
+    // and decays over a few seconds, so after a dive it is still reading while
+    // the ship is back at cruise — under the old wording that put a cryptic
+    // "VNE" on screen at fifty knots, which was merely odd. "SLOW DOWN" at
+    // fifty knots is wrong, and renaming it is what made that visible.
+    if (this.buffet > 0.12 && this.airspeed > this.spec.vne * 0.8) return 'SLOW DOWN';
     return this.stalled ? 'STALL' : '';
   }
 
