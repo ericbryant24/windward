@@ -7,11 +7,17 @@ name: Deploy to GitHub Pages
 # Settings -> Pages -> Build and deployment -> Source: GitHub Actions. The
 # workflow token is not allowed to create the Pages site itself, on public or
 # private repositories, so asking it to only produced a confusing failure.
+#
+# Only the default branch can deploy. GitHub creates the github-pages
+# environment with its deployment branch policy pinned to whatever the default
+# branch is, so a push to any other branch listed here fails in a way that
+# looks like nothing at all: the deploy job is refused a runner and finishes in
+# a second with no steps and no logs, while verify passes. If that happens,
+# the branch is the problem, not the build.
 
 on:
   push:
     branches:
-      - claude/jungfrau-flight-game-808sr9
       - main
   workflow_dispatch:
 
