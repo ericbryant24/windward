@@ -305,6 +305,13 @@ export const PLACES = {
  *   distance   ninety seconds. How far from the hoop can you be at the end?
  *   deck       sixty seconds, a corridor and a ceiling. How much of the window
  *              can you hold down on the deck inside it?
+ *   gunnery    sixty seconds and a field of barrage balloons. How many?
+ *
+ * A gunnery task carries a `targets` block: how many balloons, the height band
+ * they hang in, how far either side of the path they scatter, and the path.
+ * Where each one ends up is generated from the challenge id, so the field is
+ * identical for every player on every device — which medals and ghosts both
+ * require — without ten hand-typed positions per task.
  *
  * A deck run carries a `deck` block: `ceiling` metres above the ground,
  * `width` metres either side of `path`, and the path itself as lat/lon. Both
@@ -484,6 +491,32 @@ export const CHALLENGES = {
       // that. Every line that tried climbed away from the deck instead.
       medals: [25, 35, 45],
     },
+    {
+      // The Grindelwald basin: an open bowl with the Eiger down one side and
+      // the Wetterhorn at the head of it, and the only large piece of the map
+      // no other task uses. The floor falls two hundred metres along the line,
+      // so the field is not at one height and neither is the run.
+      id: 'grindelwald-balloons',
+      type: 'gunnery',
+      name: 'The Grindelwald Field',
+      where: 'The basin under the Wetterhorn',
+      blurb: 'Fourteen balloons over the bowl. Sixty seconds, three hundred rounds, no reload.',
+      needs: 0,
+      marker: { lat: 46.6335, lon: 8.0205, agl: 500, heading: 112 },
+      window: 60,
+      targets: {
+        count: 14,
+        height: [150, 430],
+        spread: 150,
+        path: [
+          [46.6335, 8.0205],
+          [46.628, 8.0405],
+          [46.6225, 8.057],
+        ],
+      },
+      // Measured: the best line the calibrator flew popped 10 of the 14.
+      medals: [5, 7, 9],
+    },
   ],
 
   chicago: [
@@ -635,6 +668,43 @@ export const CHALLENGES = {
       // it is ever going to have, and every joule spent on drag is a second
       // short at the far end.
       medals: [20, 30, 40],
+    },
+    {
+      // Moored out in the harbour off the Loop, which is the one large open
+      // volume on this map and the only place a fast aeroplane can turn round
+      // without a building in the way. The skyline is the backdrop rather than
+      // the obstacle — this is where you learn the gun, and the Grindelwald
+      // field is where the terrain starts arguing.
+      id: 'harbour-balloons',
+      type: 'gunnery',
+      name: 'The Harbour Line',
+      where: 'Moored off the lakefront',
+      blurb: 'Fourteen balloons over open water, with the whole skyline behind them.',
+      needs: 2,
+      marker: { lat: 41.8695, lon: -87.6095, agl: 400, heading: 9 },
+      window: 60,
+      targets: {
+        count: 14,
+        height: [120, 380],
+        spread: 150,
+        path: [
+          [41.8695, -87.6095],
+          [41.8785, -87.6075],
+          [41.8875, -87.6062],
+          [41.8945, -87.605],
+        ],
+      },
+      // Carried over from the Grindelwald field rather than measured, and
+      // that is a deliberate exception to how every other number in this table
+      // was arrived at. The calibrator's gunnery pilot pops 10 of 14 over
+      // Grindelwald and 4 here — over open water, no obstacles, the same
+      // count, the same spacing, and the easier of the two sites by any
+      // reading. A four is an artefact of the autopilot, not a fact about the
+      // challenge, and shipping it as gold would be worse than saying so.
+      // Re-cut this against real play.
+      calibrated: false,
+      uncalibrated: 'the tool tracks this field badly — 4 of 14 against 10 on an identical harder one',
+      medals: [4, 6, 8],
     },
   ],
 };

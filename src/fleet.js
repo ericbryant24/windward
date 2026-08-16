@@ -268,6 +268,11 @@ export const FLEET = [
     // it will hang on the propeller. Both are what the real ones do.
     power: 152000,
     staticThrust: 6200,
+    // Two wing guns. `muzzle` is m/s and `rate` is rounds a second for the
+    // pair; `rounds` is what a run gets and there is no reload, so a held
+    // trigger is seventeen seconds of a sixty second window and trigger
+    // discipline is part of the score. See src/guns.js.
+    gun: { muzzle: 620, rate: 18, spread: 0.0032, rounds: 300, tracer: 26, mount: 1.7, nose: 1.1 },
     look: {
       span: 3.72,
       chord: 1.45,

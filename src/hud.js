@@ -36,6 +36,8 @@ export class Hud {
     this.netto = this.el('[data-netto]');
     this.windArrow = this.el('.wind i');
     this.windSpeed = this.el('[data-wind]');
+    this.gunsight = this.el('.gunsight');
+    this.gunAmmo = this.el('.gunsight u');
     this.arrow = this.el('.gate-arrow');
     this.arrowGlyph = this.el('.gate-arrow i');
     this.arrowName = this.el('.gate-arrow b');
@@ -436,6 +438,8 @@ export class Hud {
     this.glide.textContent = !isFinite(glideNow) ? '↑' : `${Math.min(99, glideNow).toFixed(0)}:1`;
     this.glide.classList.toggle('good', glideNow >= this.polar.bestLD * 0.8);
 
+    this.#sight(state.guns, camera);
+
     this.task.classList.toggle('on', !!challenge);
     if (challenge) {
       this.taskName.textContent = challenge.name;
@@ -447,7 +451,7 @@ export class Hud {
       // The figure the medal ladder is flown against: it says which rung you
       // are still on for while there is time to fly differently. Remaining
       // only becomes interesting when it is about to end the run.
-      this.taskClock.textContent = formatClock(challenge.clock);
+      this.taskClock.textContent = challenge.clockText;
       this.taskClock.dataset.standing = challenge.standing ?? '';
       this.taskTime.textContent = `−${formatClock(challenge.remaining)}`;
       this.taskTime.classList.toggle('low', challenge.remaining < 10);
@@ -460,6 +464,32 @@ export class Hud {
         this.taskGhost.classList.toggle('ahead', d >= 0);
       }
     }
+  }
+
+  /**
+   * The gunsight, drawn where the rounds will actually be at harmonisation
+   * range rather than in the middle of the screen.
+   *
+   * That difference is the entire skill. Every round leaves the wing carrying
+   * the aeroplane's own velocity, so in a turn — or in any sideslip at all —
+   * the stream goes somewhere the nose is not pointing, and a fixed cross in
+   * the centre of the display would be a lie told sixty times a second. The
+   * pipper wanders, and watching it wander is how a player learns to stop
+   * skidding.
+   */
+  #sight(guns, camera) {
+    if (!guns?.armed) {
+      this.gunsight.hidden = true;
+      return;
+    }
+    this.gunsight.hidden = false;
+    const p = this._v.copy(guns.aim).project(camera);
+    const behind = p.z > 1;
+    this.gunsight.classList.toggle('behind', behind);
+    this.gunsight.style.transform = `translate(-50%, -50%) translate(${((p.x * 0.5 + 0.5) * innerWidth).toFixed(1)}px, ${((-p.y * 0.5 + 0.5) * innerHeight).toFixed(1)}px)`;
+    this.gunAmmo.textContent = guns.rounds;
+    this.gunsight.classList.toggle('dry', guns.rounds <= 0);
+    this.gunsight.classList.toggle('low', guns.rounds > 0 && guns.rounds < 60);
   }
 
   /** Chevron that points at the next gate when it is off screen. */
@@ -629,6 +659,7 @@ const TEMPLATE = /* html */ `
     <u class="ghost" data-taskghost></u>
   </div>
   <div class="warn"></div>
+  <div class="gunsight" hidden><i></i><b></b><u></u></div>
   <div class="gate-arrow"><i>➤</i><b></b></div>
 
   <button class="icon-btn pause" data-action="pause" aria-label="Pause">❚❚</button>

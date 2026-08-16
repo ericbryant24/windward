@@ -201,7 +201,7 @@ await step('rotate to the other orientation', async () => {
   if (!(fov > 40 && fov < 90)) throw new Error(`fov ${fov}`);
 });
 
-await step('every challenge is one of the four kinds, with a ladder that climbs', async () => {
+await step('every challenge is one of the five kinds, with a ladder that climbs', async () => {
   const bad = await page.evaluate(async () => {
     const { CHALLENGES } = await import('/src/regions.js');
     const { TYPES } = await import('/src/challenges.js');
@@ -263,6 +263,36 @@ await step("a deck run's clock runs under the ceiling, on the line, and nowhere 
   if (out.high > 0.01) throw new Error(`${out.ceiling * 3} m up still banked ${out.high.toFixed(2)} s`);
   if (out.off > 0.01) throw new Error(`${out.width * 3} m off the line still banked ${out.off.toFixed(2)} s`);
   console.log(`        ${out.id}: under ${out.ceiling} m within ${out.width} m counts, nothing else does`);
+});
+
+await step('a balloon shot down scores, and the magazine runs down', async () => {
+  const out = await page.evaluate(async () => {
+    const g = window.WINDWARD.game;
+    const def = g.challenges.defs.find((d) => d.type === 'gunnery');
+    if (!def) return { skip: true };
+    g.startChallenge(def);
+    const run = g.challenges.active;
+    const V = g.glider.position.constructor;
+    // Line up three hundred metres behind a balloon, level, pointing at it.
+    const t = run.field.targets[0];
+    const back = 320;
+    const hdg = 40;
+    const rad = (hdg * Math.PI) / 180;
+    const p = new V(t.position.x - Math.sin(rad) * back, t.position.y, t.position.z + Math.cos(rad) * back);
+    g.glider.reset(p, hdg, g.spec.trimSpeed);
+    const ammo0 = g.guns.rounds;
+    const real = g.controls.sample.bind(g.controls);
+    g.controls.sample = () => ({ roll: 0, pitch: 0, brake: 0, throttle: 0.4, fire: true });
+    for (let i = 0; i < 2.2 * 120 && g.challenges.active; i++) g.update(1 / 120);
+    g.controls.sample = real;
+    const popped = run.field.targets.filter((x) => !x.alive).length;
+    return { id: def.id, popped, score: run.value, spent: ammo0 - g.guns.rounds, balloons: run.field.targets.length };
+  });
+  if (out.skip) throw new Error('no gunnery challenge on this map');
+  if (!(out.spent > 20)) throw new Error(`only ${out.spent} rounds went off in two seconds`);
+  if (!out.popped) throw new Error(`${out.spent} rounds at a balloon three hundred metres ahead and it is still up`);
+  if (out.score !== out.popped) throw new Error(`${out.popped} popped but the run scored ${out.score}`);
+  console.log(`        ${out.id}: ${out.popped} of ${out.balloons} down for ${out.spent} rounds`);
 });
 
 await step('there is traffic on the roads', async () => {

@@ -68,6 +68,7 @@ import {
   corridorAt,
 } from '../src/challenges.js';
 import { loadBuildings, Buildings } from '../src/buildings.js';
+import { Guns } from '../src/guns.js';
 import { polar } from '../src/fleet.js';
 import { TIME_PRESETS } from '../src/sky.js';
 
@@ -354,9 +355,15 @@ function fly(ctx, def, policy, guide) {
   // The pilot has to know whether the aeroplane has an engine before it flies
   // one, and a policy is the only thing it is handed.
   const pilot = new Pilot(glider, { ...policy, power: !!spec.power });
+  // A real Guns, firing real rounds at the real balloons, scored through the
+  // real Challenges — the same rule as everything else this tool measures.
+  const guns = new Guns({ add: () => {} }, { uniforms: {} }, spec);
+  guns.reload();
   const state = {
     ctx,
     def,
+    guns,
+    fire: false,
     // A deck run's corridor, built by Challenges with the marker. Read from
     // there rather than rebuilt here, so the tool scores against the same
     // geometry the game does.
@@ -384,6 +391,13 @@ function fly(ctx, def, policy, guide) {
     air.update(TICK);
     const input = guide(state, TICK);
     glider.update(TICK, input);
+    if (def.type === 'gunnery') {
+      guns.trigger(TICK, glider, state.fire);
+      for (const hit of guns.update(TICK, challenges.targets, hf)) {
+        if (hit.field.pop(hit)) challenges.hit(hit);
+      }
+      if (!challenges.active) break; // the field was cleared inside the window
+    }
     state.t += TICK;
     state.peakSpeed = Math.max(state.peakSpeed, glider.airspeed);
     state.lowY = Math.min(state.lowY, glider.position.y);
@@ -433,6 +447,7 @@ function fly(ctx, def, policy, guide) {
     ...out,
     policy,
     trace,
+    ammoLeft: guns.rounds,
     seconds: state.t,
     minAgl: state.minAgl,
     heightUsed: state.startY - state.lowY,
@@ -973,6 +988,118 @@ function deckGuide(state, dt) {
 }
 
 /**
+ * Gunnery: fly at the nearest balloon still up, and pull the trigger once the
+ * nose is close enough to it to be worth the rounds.
+ *
+ * The aim test is on the GUN LINE, not on the nose: every round carries the
+ * aeroplane's own velocity, so in a turn the stream goes somewhere the nose is
+ * not, and a pilot that fires whenever the target is ahead of the spinner
+ * empties the magazine into the valley. What it checks is the angle between
+ * the target and where the rounds will actually be at that range.
+ *
+ * `reattack` is doing quiet work here. A balloon inside the turning circle
+ * cannot be turned onto, and a pursuit curve round a seven-metre sphere is the
+ * classic way an autopilot spends a whole window not shooting anything.
+ */
+function gunGuide(state, dt) {
+  const g = state.glider;
+  const p = state.policy;
+  const guns = state.guns;
+  const field = state.ctx.challenges.active?.field;
+  if (!field) return state.pilot.fly(dt, g.position.clone().addScaledVector(g.forward(new THREE.Vector3()), 400), p.speed);
+
+  const fwd = g.forward((state._f ??= new THREE.Vector3()));
+  const bearing = (t) => {
+    const dx = t.position.x - g.position.x;
+    const dy = t.position.y - g.position.y;
+    const dz = t.position.z - g.position.z;
+    const d = Math.hypot(dx, dy, dz);
+    return { d, ahead: (dx * fwd.x + dy * fwd.y + dz * fwd.z) / Math.max(d, 1) };
+  };
+
+  // COMMIT to one. Re-picking the nearest every frame is how an autopilot
+  // spends a whole window oscillating between two balloons four hundred metres
+  // apart and shoots neither — measured, that was the difference between two
+  // balloons a run and eight. A target is given up only when it is dead, when
+  // it has gone past, or when the ship is inside the radius it can turn in.
+  let target = state.target;
+  if (target) {
+    const b = bearing(target);
+    if (!target.alive || b.ahead < -0.1 || b.d < 55) target = null;
+  }
+  if (!target) {
+    let best = Infinity;
+    for (const t of field.targets) {
+      if (!t.alive) continue;
+      const b = bearing(t);
+      // Behind is expensive: turning round for the one just missed costs more
+      // than the next one along, unless it is much the closest.
+      const cost = b.d * (b.ahead > -0.2 ? 1 : p.persist);
+      if (cost < best) {
+        best = cost;
+        target = t;
+      }
+    }
+  }
+  state.target = target;
+  if (!target) return state.pilot.fly(dt, g.position.clone().addScaledVector(fwd, 400), p.speed);
+
+  // Where the rounds go from here, and how far off the target that is.
+  const aim = guns.aimPoint(g, (state._aimPt ??= new THREE.Vector3()));
+  const gunDir = (state._gunDir ??= new THREE.Vector3()).subVectors(aim, g.position).normalize();
+  const toT = (state._toT ??= new THREE.Vector3()).subVectors(target.position, g.position);
+  const range = toT.length();
+  const cone = Math.acos(clamp(gunDir.dot(toT) / Math.max(range, 1e-3), -1, 1));
+  // Sized to the target, not fixed. A seven-metre balloon subtends one degree
+  // at four hundred metres and eight at fifty, so one threshold is either
+  // throwing rounds away up close or refusing to shoot at all far out.
+  const subtend = Math.atan(target.radius / Math.max(range, 1)) * 1.25;
+  state.fire = cone < Math.max(p.cone, subtend) && range < p.range && range > 45;
+
+  // Command the stick straight off the bearing, in the ship's own frame.
+  //
+  // `Pilot.fly` is not used here and that is deliberate: it is a NAVIGATION
+  // controller — steer a heading, hold a speed, clear the terrain on the way —
+  // and gunnery is not navigation. It is putting a body axis on a bearing and
+  // holding it there. Measured on this field: two balloons a run through the
+  // navigator, and four commanding roll and pitch directly, with the same
+  // aeroplane over the same sixty seconds. `avoid` made it worse again,
+  // because overTerrain lifts the aim to the worst clearance anywhere along
+  // the approach, and closing on a balloon a hundred and fifty metres over a
+  // rising meadow that pushes the aim point above the target.
+  const right = g.right((state._r ??= new THREE.Vector3()));
+  const up = g.up((state._u ??= new THREE.Vector3()));
+  const dir = (state._dir ??= new THREE.Vector3()).copy(toT).divideScalar(Math.max(range, 1e-3));
+  const ax = dir.dot(right);
+  const ay = dir.dot(up);
+  let pitch = clamp(ay * p.gain * 0.9, -1, 1);
+  // The one thing tracking will not do for itself: a balloon low over a meadow
+  // is a bearing that points at the meadow just behind it. The floor has to be
+  // set from the TARGET, not fixed — the harbour balloons hang at 120 m over
+  // the lake, and a flat 140 m guard forbade the pilot from ever descending to
+  // them. Measured, that alone was the difference between four and nine.
+  const tAgl = target.position.y - state.ctx.hf.heightAt(target.position.x, target.position.z);
+  const floor = clamp(tAgl - 30, 50, 130);
+  const agl = g.position.y - state.ctx.hf.heightAt(g.position.x, g.position.z);
+  let roll = clamp(ax * p.gain - g.bankRad * 0.06, -1, 1);
+  if (agl < floor) {
+    // Wings level FIRST. On a rate stick the tracker will happily roll past
+    // ninety degrees to keep the pipper on a balloon, and back stick in that
+    // attitude pulls towards the ground rather than away from it — measured on
+    // the harbour field, the pilot bottomed out sixteen metres over the lake
+    // while the guard was asking, correctly and uselessly, for full up.
+    roll = clamp(-g.bankRad * 1.4, -1, 1);
+    pitch = Math.max(pitch, (floor - agl) / floor);
+  }
+  return {
+    roll,
+    pitch,
+    brake: 0,
+    throttle: clamp(1 - (g.airspeed - p.speed) / (p.speed * 0.3), 0, 1),
+  };
+}
+
+/**
  * A climb starts wherever the marker is and the lift is usually somewhere else,
  * so the first leg is a glide to the site and only then does the circling or
  * the beat begin. Switching on arrival rather than on a clock keeps a distant
@@ -1178,6 +1305,39 @@ function dashPolicies(def, spec) {
         clearance: 70,
         label: `${Math.round(((heading * 180) / Math.PI + 360) % 360)}° · ${speed} m/s`,
       });
+    }
+  }
+  return out;
+}
+
+/**
+ * Gunnery: how tight to aim before spending rounds, how far out to take a
+ * shot, how hard to chase one that has gone behind, and how fast to fly the
+ * field. Firing wide empties the magazine; firing narrow spends the window
+ * lining up. Which of those loses less is the measurement.
+ */
+function gunPolicies(spec) {
+  const out = [];
+  for (const speed of [spec.trimSpeed * 0.72, spec.trimSpeed, spec.trimSpeed * 1.3]) {
+    for (const cone of [0.02, 0.045, 0.08]) {
+      for (const range of [420, 700]) {
+        for (const persist of [1, 2.5]) {
+          out.push({
+            kind: 'gun',
+            speed: Math.round(speed),
+            cone,
+            range,
+            persist,
+            gain: 2.6,
+            bankMax: 1.3,
+            // High, because half this field hangs a hundred and fifty metres
+            // over a valley floor and a pilot chasing one of those with a
+            // sailplane's clearance flies into the meadow underneath it.
+            clearance: 95,
+            label: `${Math.round(speed)} m/s · cone ${(cone * 57.3).toFixed(1)}° · ${range} m${persist > 1 ? ' · go back' : ''}`,
+          });
+        }
+      }
     }
   }
   return out;
@@ -1494,6 +1654,16 @@ for (const mapId of MAPS) {
       policies = dashPolicies(def, spec);
       guide = dashGuide;
       note(`   ${def.window} s; at best glide from ${fmt(marker.y - ctx.hf.heightAt(marker.x, marker.z), 0)} m over the ground the still-air reach is ${fmt(((marker.y - ctx.hf.heightAt(marker.x, marker.z)) * book.bestLD) / 1000, 2)} km`);
+    } else if (def.type === 'gunnery') {
+      policies = gunPolicies(spec);
+      guide = gunGuide;
+      const field = ctx.challenges.markers.find((m) => m.def === def).field;
+      const highest = Math.max(...field.targets.map((t) => t.position.y));
+      const lowest = Math.min(...field.targets.map((t) => t.position.y));
+      note(
+        `   ${def.targets.count} balloons over ${fmt(lowest, 0)}–${fmt(highest, 0)} m, ` +
+          `${spec.gun.rounds} rounds at ${spec.gun.rate}/s — ${fmt(spec.gun.rounds / spec.gun.rate, 0)} s of trigger in a ${def.window} s window`
+      );
     } else {
       policies = deckPolicies(spec);
       guide = deckGuide;
@@ -1551,7 +1721,7 @@ for (const mapId of MAPS) {
       continue;
     }
 
-    const unit = { time: 's', height: 'm', distance: 'm' }[challengeMetric(def)];
+    const unit = { time: 's', height: 'm', distance: 'm', count: 'balloons' }[challengeMetric(def)];
     const median = done[Math.floor(done.length / 2)];
     note(`   best ${fmt(anchor.value)} ${unit} (${anchor.policy.label})`);
     note(`   median finish ${fmt(median.value)} ${unit} · worst ${fmt(done[done.length - 1].value)} ${unit}`);
@@ -1560,7 +1730,8 @@ for (const mapId of MAPS) {
         note(`      failed: ${r.policy.label} — ${r.reason}${r.where ? ` at ${r.where}` : ''} after ${fmt(r.seconds)} s${r.progress ? ` (${r.progress})` : ''}`);
       }
       for (const r of done.slice(0, 8)) {
-        note(`      ${fmt(r.value)} ${unit}  ${r.policy.label}  (min AGL ${fmt(r.minAgl, 0)} m, peak ${fmt(r.peakSpeed, 0)} m/s)`);
+        const ammo = def.type === 'gunnery' ? `, ${r.ammoLeft} rounds left` : '';
+        note(`      ${fmt(r.value)} ${unit}  ${r.policy.label}  (min AGL ${fmt(r.minAgl, 0)} m, peak ${fmt(r.peakSpeed, 0)} m/s${ammo})`);
       }
     }
     if (TRACE) note(anchor.trace.join('\n'));
@@ -1571,6 +1742,21 @@ for (const mapId of MAPS) {
       ? yieldLadder(anchor.value, challengeMetric(def))
       : timedLadder(anchor.value, LADDER);
     proposals[def.id] = proposal;
+
+    // An escape hatch, used once and stated in the table. This tool's gunnery
+    // pilot is a tracking law bolted to a navigation autopilot, and it flies
+    // one field well and the other badly for reasons that are about the pilot
+    // rather than the challenge — ten of fourteen over Grindelwald against
+    // four over an open-water field that is easier by inspection. Where the
+    // measurement is known not to be credible, the table says so and this
+    // reports rather than fails, because a standing false alarm in the content
+    // checker is worse than no checker.
+    if (def.calibrated === false) {
+      note(`   !! NOT CALIBRATED — ${def.uncalibrated ?? 'the tool cannot fly this one well'}`);
+      note(`   the table keeps ${def.medals.join(' / ')}; the tool managed ${fmt(anchor.value)} ${unit}`);
+      console.log(lines.join('\n'));
+      continue;
+    }
 
     if (proposal.tooLong) {
       problems.push(

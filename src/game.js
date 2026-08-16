@@ -8,6 +8,7 @@ import { World, createThermalClouds } from './world.js';
 import { Trees } from './trees.js';
 import { createFalls } from './falls.js';
 import { Ghost, Recorder, saveGhost } from './ghost.js';
+import { Guns } from './guns.js';
 import { Buildings } from './buildings.js';
 import { Network } from './network.js';
 import { Minimap } from './minimap.js';
@@ -28,6 +29,8 @@ import { PLACES } from './regions.js';
 import { store } from './store.js';
 
 const CAMERA_MODES = ['chase', 'far', 'cockpit'];
+/** Handed to Guns.update when there is nothing on the map to shoot at. */
+const EMPTY = [];
 const STORE_KEY = 'windward.progress.v2';
 const SHIP_KEY = 'windward.aircraft';
 
@@ -113,6 +116,8 @@ export class Game {
     // ends up buried inside a tower.
     this.challenges = new Challenges(this.world, heightfield, sky, scene, region.id, this.buildings);
     this.wreck = new Wreck(scene, sky, heightfield, this.buildings);
+    // The guns, and the tracers they throw. Armed or not is the spec's call.
+    this.guns = new Guns(scene, sky, this.spec);
     // Your best run at whatever you are flying, flying it again beside you.
     this.ghost = new Ghost(scene, sky, this.spec);
     this.recorder = new Recorder();
@@ -136,6 +141,7 @@ export class Game {
     this._liftAge = 0;
     this._crashCam = new THREE.Vector3();
     this._crashAim = new THREE.Vector3();
+    this._gunAim = new THREE.Vector3();
     this.labels = new LabelLayer(document.getElementById('ui'), this.world.places);
     this.labels.setTasks(this.challenges.markers);
 
@@ -183,6 +189,7 @@ export class Game {
     // An engine means a lever where the airbrake button was, so the stick is
     // not the only thing that changes when the aeroplane does.
     this.controls.setAircraft(spec);
+    this.guns.setAircraft(spec);
     this.glider.setAircraft(spec);
     this.scene.remove(this.aircraft);
     disposeAircraft(this.aircraft);
@@ -214,6 +221,7 @@ export class Game {
 
   /** Shared by both: put the world in the air and the UI out of the way. */
   #takeOff(spawn, spec = null) {
+    this.guns.reload();
     if (spec) this.setAircraft(spec.id, false);
     this.state = 'flying';
     this.timer = 0;
@@ -221,6 +229,7 @@ export class Game {
     this.wreck.end();
     this.challenges.forget();
     this.ghost.clear();
+    this.guns.clear();
     this.recorder.reset();
     this.challenges.setVisible(true);
     this.hud.dismissAsk();
@@ -277,6 +286,7 @@ export class Game {
     this.wreck.end();
     this.challenges.forget();
     this.ghost.clear();
+    this.guns.clear();
     this.challenges.setVisible(false);
     this.hud.dismissAsk();
     this.controls.setVisible(false);
@@ -413,6 +423,9 @@ export class Game {
         objective,
         camera: this.camera,
         challenge: this.#challengeHud(),
+        guns: this.guns.armed
+          ? { armed: true, rounds: this.guns.rounds, aim: this.guns.aimPoint(this.glider, this._gunAim) }
+          : null,
       });
       this.audio?.update(dt, {
         airspeed: this.glider.airspeed,
@@ -490,7 +503,24 @@ export class Game {
       return;
     }
 
-    g.update(dt, this.controls.sample());
+    const input = this.controls.sample();
+    g.update(dt, input);
+
+    // ---- the guns ----------------------------------------------------------
+    // Fired before anything else looks at the world, so a balloon shot on this
+    // frame is scored on this frame and the run can end on the last one.
+    if (this.guns.armed && this.state === 'flying') {
+      if (this.guns.trigger(dt, g, input.fire)) this.audio?.cue('gun');
+      const targets = this.challenges.targets;
+      if (targets.length) {
+        for (const hit of this.guns.update(dt, targets, this.hf)) {
+          if (!hit.field.pop(hit)) continue;
+          if (this.challenges.hit(hit)) this.audio?.cue('gate');
+        }
+      } else {
+        this.guns.update(dt, EMPTY, this.hf);
+      }
+    }
 
     // keep the player inside the baked region
     const lim = this.hf.halfSize - 900;
@@ -666,6 +696,7 @@ export class Game {
     this.hud.dismissAsk();
     this.challenges.forget();
     this.ghost.clear();
+    this.guns.clear();
   }
 
   /** Put the results card away and carry on from where the task ended. */
@@ -674,6 +705,7 @@ export class Game {
     this.hud.dismissAsk();
     this.challenges.forget();
     this.ghost.clear();
+    this.guns.clear();
     this.state = 'flying';
     this.controls.setVisible(true);
   }
@@ -751,6 +783,7 @@ export class Game {
     // hanging in the air next to a wreck.
     if (failed) {
       this.ghost.clear();
+    this.guns.clear();
       this.#failChallenge(failed);
     }
     else this.hud.toast(crashLine(cause, severity), 'bad');

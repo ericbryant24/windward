@@ -6,7 +6,7 @@
 export class Controls {
   constructor(root) {
     this.root = root;
-    this.state = { roll: 0, pitch: 0, brake: 0, throttle: 1 };
+    this.state = { roll: 0, pitch: 0, brake: 0, throttle: 1, fire: false };
     /**
      * Which of the two right-hand controls is fitted. A sailplane gets the
      * airbrake button; anything with an engine gets a lever instead, because
@@ -40,6 +40,9 @@ export class Controls {
         <div class="stick-hint">drag to fly</div>
       </div>
       <div class="button-stack">
+        <button class="round-btn fire" data-btn="fire" aria-label="Guns" hidden>
+          <span class="glyph">◉</span><span class="label">FIRE</span>
+        </button>
         <button class="round-btn brake" data-btn="brake" aria-label="Airbrakes">
           <span class="glyph">◤◥</span><span class="label">BRAKE</span>
         </button>
@@ -54,6 +57,7 @@ export class Controls {
     this.knobEl = el.querySelector('.stick-knob');
     this.hintEl = el.querySelector('.stick-hint');
     this.brakeBtn = el.querySelector('[data-btn="brake"]');
+    this.fireBtn = el.querySelector('[data-btn="fire"]');
     this.throttleEl = el.querySelector('.throttle');
     this.throttleFill = el.querySelector('.throttle-track u');
     this.throttleText = el.querySelector('.throttle-label b');
@@ -65,8 +69,10 @@ export class Controls {
    */
   setAircraft(spec) {
     this.powered = !!spec?.power;
+    this.armed = !!spec?.gun;
     this.brakeBtn.hidden = this.powered;
     this.throttleEl.hidden = !this.powered;
+    this.fireBtn.hidden = !this.armed;
     this._throttle = this.powered ? 1 : 0;
   }
 
@@ -179,6 +185,7 @@ export class Controls {
       });
     };
     hold(this.brakeBtn, () => (this._brakeHeld = true), () => (this._brakeHeld = false));
+    hold(this.fireBtn, () => (this._fireHeld = true), () => (this._fireHeld = false));
   }
 
   #knob(x, y) {
@@ -227,6 +234,7 @@ export class Controls {
       this.stick.y = 0;
       this.stickEl.hidden = true;
       this._brakeHeld = false;
+      this._fireHeld = false;
       this._leverId = null;
     }
   }
@@ -286,6 +294,12 @@ export class Controls {
     } else {
       this.state.throttle = 0;
     }
+
+    // The trigger. Space is free on this aeroplane — it was the airbrakes, and
+    // an aerobatic monoplane has none — and it is where a thumb already goes.
+    this.state.fire =
+      this.armed &&
+      !!(this._fireHeld || k.has('Space') || k.has('Enter') || pad?.buttons?.[5]?.pressed || pad?.buttons?.[0]?.pressed);
     return this.state;
   }
 }

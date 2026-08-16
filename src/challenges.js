@@ -3,6 +3,7 @@ import { makeLitMaterial } from './materials.js';
 import { CHALLENGES, REGIONS } from './regions.js';
 import { getAircraft, ISSUED_AIRCRAFT, polar } from './fleet.js';
 import { store } from './store.js';
+import { BalloonField, fieldPositions } from './balloons.js';
 
 /**
  * The challenge layer: markers standing in the world, the rules for the four
@@ -24,6 +25,9 @@ import { store } from './store.js';
  * lakefront.
  */
 
+/** What `targets` answers before any marker has been unlocked. */
+const EMPTY_TARGETS = [];
+
 /** The ring you fly through to start one, in metres — see markerGeometry. */
 const MARKER_RADIUS = 52;
 /** And how far back out before it will trigger again. */
@@ -42,7 +46,7 @@ const MEDAL_TINTS = [
 ];
 
 /**
- * The four kinds of challenge, and what each one is scored on.
+ * The five kinds of challenge, and what each one is scored on.
  *
  *   slalom     a run of gates threaded through the terrain, against the clock.
  *              The only type where the run ends when you finish it, and the
@@ -52,14 +56,17 @@ const MEDAL_TINTS = [
  *   deck       sixty seconds, a corridor and a ceiling: how much of the window
  *              can you spend down on the deck inside it? The only score in the
  *              game that is a measure of nerve.
+ *   gunnery    sixty seconds and a field of barrage balloons. The only task
+ *              that scores what the NOSE did rather than what the flight path
+ *              did, which is a whole axis the game did not have.
  *
- * Three of the four are fixed windows, and that is the shape of the whole set:
+ * Four of the five are fixed windows, and that is the shape of the whole set:
  * the clock is the task rather than a deadline attached to one. You cannot fail
  * them except by hitting something — the window closes and whatever you have is
  * the score — which is what makes them worth pressing Retry on.
  *
  * `wins` is which direction is better. A slalom is seconds and lower wins; the
- * other three are quantities and more is better. Everything downstream — the
+ * rest are quantities and more is better. Everything downstream — the
  * medal rule, the running standing on the HUD, the calibrator's ladder — reads
  * this rather than knowing the types.
  */
@@ -68,6 +75,7 @@ export const TYPES = {
   height: { wins: 'high', unit: 'height', windowed: true },
   distance: { wins: 'high', unit: 'distance', windowed: true },
   deck: { wins: 'high', unit: 'time', windowed: true },
+  gunnery: { wins: 'high', unit: 'count', windowed: true },
 };
 
 /** Which medal a result earns. Thresholds are [bronze, silver, gold]. */
@@ -113,6 +121,8 @@ export function formatMetric(def, value) {
       return `${Math.round(value)} m`;
     case 'distance':
       return value >= 1000 ? `${(value / 1000).toFixed(2)} km` : `${Math.round(value)} m`;
+    case 'count':
+      return `${Math.round(value)}`;
     default:
       return formatClock(value);
   }
@@ -354,11 +364,16 @@ export class Challenges {
       // rather than when the task arms: the minimap and the HUD arrow both want
       // it, and the calibrator wants it without flying anything.
       const line = def.type === 'deck' ? buildCorridor(world, def) : null;
+      // A gunnery task's balloons stand in the world the moment the marker
+      // does, not only while the clock is running. Half the value of a field
+      // of targets is being able to go and shoot at it for no reason.
+      const field =
+        def.type === 'gunnery' ? new BalloonField(scene, sky, fieldPositions(world, heightfield, def)) : null;
       // `ground` is where the light column stands. The label layer wants it: a
       // hoop four hundred metres up projects off the top of the screen while
       // its column is still filling the middle of it, and a column nobody has
       // put a name on is the thing players ask about.
-      return { def, position, ground, normal, radius: MARKER_RADIUS, mesh, beacon, facing, line, locked: false };
+      return { def, position, ground, normal, radius: MARKER_RADIUS, mesh, beacon, facing, line, field, locked: false };
     });
     this.refreshUnlocks();
 
@@ -387,7 +402,9 @@ export class Challenges {
       if (open && m.mesh.visible === false) opened.push(m.def);
       m.mesh.visible = open;
       m.beacon.visible = open;
+      m.field?.setVisible(open);
     }
+    this.#retarget();
     return opened;
   }
 
@@ -408,6 +425,54 @@ export class Challenges {
   // ------------------------------------------------------------- state ---
   setVisible(show) {
     this.group.visible = show;
+    for (const m of this.markers) m.field?.setVisible(show && m.mesh.visible);
+  }
+
+  /**
+   * Every balloon on the map, so the guns have something to test against.
+   * Cached, because this is read once a frame and rebuilding it would be a
+   * small allocation sixty times a second for a list that changes when a
+   * marker unlocks and at no other time.
+   */
+  #retarget() {
+    this._targets = [];
+    for (const m of this.markers) {
+      // Unlocked, or the one being flown right now. The second half matters:
+      // a task started any way other than by crossing its own hoop — the level
+      // select, a retry, the calibrator — can arm a field whose marker is
+      // still hidden, and without this its balloons are not in the world as
+      // far as the guns are concerned. Measured, that was a whole challenge
+      // scoring zero for every line flown.
+      if (m.field && (m.mesh.visible || this.active?.field === m.field)) this._targets.push(...m.field.targets);
+    }
+  }
+
+  get targets() {
+    return this._targets ?? EMPTY_TARGETS;
+  }
+
+  /**
+   * A balloon went down. Only the running task's own field scores — shooting
+   * up the Chicago field while flying the Jungfrau one is not a thing that can
+   * happen, but shooting a NEIGHBOURING field's balloons during a run is, and
+   * it must not count.
+   */
+  hit(target) {
+    const run = this.active;
+    if (!run || run.def.type !== 'gunnery') return false;
+    if (!run.field.targets.includes(target)) return false;
+    run.value += 1;
+    this.events.push({
+      kind: 'note',
+      def: run.def,
+      text: `${run.value} of ${run.field.targets.length}`,
+      cue: 'gate',
+    });
+    // Cleared the field with time to spare: there is nothing left to shoot, so
+    // ending here rather than making the player watch the clock is the same
+    // rule a slalom already has.
+    if (run.value >= run.field.targets.length) this.#finish(run.value);
+    return true;
   }
 
   /** Where a retry drops you: back at the marker, lined up on the task. */
@@ -438,6 +503,11 @@ export class Challenges {
       run.startY = marker.position.y;
     } else if (def.type === 'distance') {
       run.from = marker.position.clone();
+    } else if (def.type === 'gunnery') {
+      run.field = marker.field;
+      run.field.reset();
+      run.field.setVisible(true);
+      this.#retarget();
     } else if (def.type === 'deck') {
       run.line = marker.line;
       run.on = false;
@@ -451,8 +521,13 @@ export class Challenges {
 
   /** Put the world back the way plain flying expects it. */
   abort() {
+    const was = this.active;
     this.active = null;
     this.world.clearCourse();
+    if (was?.field) {
+      was.field.setVisible(this.markers.find((m) => m.field === was.field)?.mesh.visible ?? false);
+      this.#retarget();
+    }
   }
 
   /**
@@ -489,6 +564,7 @@ export class Challenges {
     }
     for (const m of this.materials) m.uniforms.uPulse.value += dt * 2.6;
     for (const m of this.beaconMaterials) m.uniforms.uPulse.value += dt * 2.6;
+    for (const m of this.markers) if (m.field && m.mesh.visible) m.field.update(dt);
 
     if (this.active) this.#step(dt, position, prevPos, agl);
     else this.#checkMarkers(position, prevPos);
@@ -608,6 +684,22 @@ export class Challenges {
       // task where not knowing where the line goes next is the whole failure.
       // So the arrow gets a point on it, six hundred metres on — far enough to
       // be a direction rather than a twitch, near enough to show the bend.
+      // The nearest balloon still up, so a field spread across a valley is a
+      // route rather than a hunt. Off screen it becomes the rim chevron, which
+      // is exactly the thing that says "there is one behind you".
+      if (run.def.type === 'gunnery') {
+        let near = null;
+        let bestD = Infinity;
+        for (const t of run.field.targets) {
+          if (!t.alive) continue;
+          const d = t.position.distanceToSquared(position);
+          if (d < bestD) {
+            bestD = d;
+            near = t;
+          }
+        }
+        return near ? { name: run.def.name, position: near.position } : null;
+      }
       if (run.def.type === 'deck') {
         const p = corridorAt(run.line, run.at + CORRIDOR_LOOKAHEAD, this._ahead ??= {});
         const at = (this._aheadPos ??= new THREE.Vector3());
@@ -643,6 +735,7 @@ export class Challenges {
     if (def.type === 'slalom') progress = `Gate ${run.gateIndex}/${def.gates.length}`;
     else if (def.type === 'height') progress = `${run.value > 0 ? '+' : ''}${Math.round(run.value)} m`;
     else if (def.type === 'distance') progress = `${(run.value / 1000).toFixed(2)} km`;
+    else if (def.type === 'gunnery') progress = `${run.field.remaining} left`;
     else {
       // Why the clock is or is not running, in three words, because there are
       // exactly two ways to be off the deck and they want opposite
@@ -662,11 +755,18 @@ export class Challenges {
       name: def.name,
       progress,
       flag,
-      // The big tinted figure. Time into the run for everything else, because
-      // that is the number those tasks are read against — and for a deck run
-      // the seconds actually banked, because those are the score and the
-      // elapsed clock is already on screen counting down beside it.
-      clock: def.type === 'deck' ? run.value : run.elapsed,
+      // The big tinted figure, already written out — the band cannot format it
+      // itself without knowing the type, and "4.0 s" is what a count of four
+      // balloons looks like when something guesses. Time into the run for the
+      // tasks that are read against a clock; the score itself for the two that
+      // are not, because for those the elapsed time is already on screen
+      // counting down beside it.
+      clockText:
+        def.type === 'deck'
+          ? formatClock(run.value)
+          : def.type === 'gunnery'
+            ? `${run.value}`
+            : formatClock(run.elapsed),
       standing: medalFor(def, scored),
       remaining: Math.max(0, run.limit - run.elapsed),
     };
@@ -677,6 +777,7 @@ export class Challenges {
       m.uniforms.uSunRadiance.value.copy(sunRadiance);
       m.uniforms.uSkyAmbient.value.copy(skyAmbient);
     }
+    for (const m of this.markers) m.field?.setLighting(sunRadiance, skyAmbient);
   }
 }
 

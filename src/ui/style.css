@@ -865,6 +865,74 @@ body {
   }
 }
 
+/* ---------------------------------------------------------- gunsight --- */
+/* Drawn where the rounds go, not in the middle of the screen — see #sight in
+   hud.js. A ring, a centre pip and the round count under it. */
+.gunsight {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  pointer-events: none;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 207, 112, 0.75);
+  box-shadow: 0 0 10px rgba(4, 9, 15, 0.6), inset 0 0 8px rgba(4, 9, 15, 0.35);
+}
+
+/* Behind you. The projection flips, so the ring would sit at the mirror of
+   where the rounds are going; better to say nothing than to point backwards. */
+.gunsight.behind {
+  opacity: 0;
+}
+
+.gunsight i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  background: var(--accent-warm);
+}
+
+/* Four ticks off the ring, so it reads as an instrument rather than a bubble. */
+.gunsight b {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  border-top-color: rgba(255, 207, 112, 0.7);
+  border-bottom-color: rgba(255, 207, 112, 0.7);
+}
+
+.gunsight u {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 8px);
+  transform: translateX(-50%);
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: rgba(226, 240, 252, 0.85);
+  text-shadow: 0 1px 8px rgba(4, 9, 15, 0.95);
+}
+
+.gunsight.low u {
+  color: var(--accent-warm);
+}
+
+.gunsight.dry {
+  border-color: rgba(255, 107, 94, 0.6);
+}
+
+.gunsight.dry u {
+  color: var(--danger);
+}
+
 /* The chevron that points at the objective when it is off screen — and, next
    to it, what it is pointing at. Unlabelled it was a cyan arrow with its reason
    written at the opposite end of the display, in the objective chip. */
@@ -1033,6 +1101,18 @@ body {
   transform: scale(0.94);
   background: rgba(40, 92, 124, 0.7);
   border-color: var(--accent);
+}
+
+/* The trigger is warm where everything else on this HUD is cold, because it is
+   the one control that does something to the world rather than to the ship. */
+.round-btn.fire .glyph {
+  color: var(--accent-warm);
+  font-size: 19px;
+}
+
+.round-btn.fire.down {
+  background: rgba(150, 74, 26, 0.72);
+  border-color: var(--accent-warm);
 }
 
 /* ---------------------------------------------------------- throttle --- */

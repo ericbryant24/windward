@@ -111,7 +111,11 @@ export class Audio {
 
   cue(kind) {
     if (!this.started || !this.enabled) return;
-    if (kind === 'gate') {
+    if (kind === 'gun') {
+      // Short, dry and low. A burst is a dozen of these on top of each other,
+      // so any tail at all turns into a drone.
+      this.#beep(150 + Math.random() * 40, 0.045, 0.05, 'square');
+    } else if (kind === 'gate') {
       this.#beep(880, 0.13, 0.09);
       setTimeout(() => this.#beep(1320, 0.16, 0.075), 70);
     } else if (kind === 'discovery') {

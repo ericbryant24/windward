@@ -83,6 +83,7 @@ between reaching the next ridge and not.
 | Bank | Drag anywhere on the left half | ← → or A D |
 | Pitch | Same stick, up/down | ↑ ↓ or W S |
 | Throttle | Lever on the right, grab it anywhere | Shift / Ctrl, or + / − |
+| Guns | FIRE button | Space or Enter |
 | Camera | Double-tap the right half | C |
 | Pause | ❚❚ | Esc or P |
 
@@ -109,9 +110,9 @@ puts you in the air over whichever level the list is pointing at, with no clock
 and nothing to accumulate but the map itself — nineteen landmarks to find, and
 whatever you can reach before you run out of height.
 
-Everything else is a **challenge** — twelve of them, six per level, standing out
-in the world as hoops with a light column under them. Fly through one and it
-starts; or press it on the level select and you are taken to it. Four kinds, and
+Everything else is a **challenge** — fourteen of them, seven per level, standing
+out in the world as hoops with a light column under them. Fly through one and it
+starts; or press it on the level select and you are taken to it. Five kinds, and
 nothing runs longer than ninety seconds:
 
 | | |
@@ -120,6 +121,7 @@ nothing runs longer than ninety seconds:
 | height | sixty seconds — how much of it can you turn into altitude? |
 | distance | ninety seconds — how far from the hoop can you be at the end? |
 | deck | sixty seconds, a corridor and a ceiling — how much of the window can you hold down on the deck? |
+| gunnery | sixty seconds, three hundred rounds and a field of barrage balloons |
 
 A slalom is seconds and lower wins. The other three are quantities and more is
 better, and all three are fixed windows: the clock closing IS the score, so they
@@ -171,6 +173,35 @@ the centroid of everything within forty metres of the lowest ground. Under the
 Falls stops at Zweilütschinen because the 25 m grid bridges the gorge there and
 bakes a sixty metre step at a 25 per cent grade, which measurably nothing can
 climb from the deck.
+
+### The guns, and the balloons
+
+Two wing guns, and the rounds are real objects rather than a raycast. A round
+leaves the wing at 620 m/s **with the aeroplane's own velocity already in it**,
+it falls on the way, and it takes half a second to reach anything worth
+shooting at. That is the whole design decision and the rest follows from it:
+where the nose points is not where the rounds go, so the sight is drawn at the
+place the stream will actually be at harmonisation range, and in a turn it sits
+well off the nose. Watching the pipper wander is how you learn to stop skidding.
+
+Three hundred rounds a run at eighteen a second — seventeen seconds of trigger
+inside a sixty second window — and no reload, so bursts beat holding it down.
+
+A **balloon field** is generated rather than authored: a path, a lateral
+spread, a height band and a count, scattered by a generator seeded off the
+challenge id. The field is therefore identical for every player on every
+device, which is what medals and ghosts need, without ten hand-typed positions
+per task. They stand on visible tethers, and the tether does most of the work
+of making them readable — a bright shape hanging in front of a valley wall is
+very hard to range, and the same shape on a string to a point on the ground is
+not. See `src/guns.js` and `src/balloons.js`.
+
+> The **Harbour Line**'s medals are the one set in this game that were not
+> measured. The calibrator's gunnery pilot pops 10 of 14 over Grindelwald and 4
+> over the harbour — open water, no obstacles, same count, the easier site by
+> any reading — so the four is an artefact of the autopilot rather than a fact
+> about the challenge. The table says `calibrated: false` and gives the reason,
+> and the tool reports instead of failing on it. Re-cut it against real play.
 
 ### The waterfalls
 
