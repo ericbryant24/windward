@@ -39,6 +39,7 @@ export const FLEET = [
     // rad/s per radian of bank — about five seconds from forty-five degrees.
     // Slower than it wants to be on purpose: any quicker and it argues with
     // you every second you are trying to hold a thermalling turn.
+    maxBankDeg: 72, // full stick deflection, before the pinned-stick roll
     rollStability: 0.30,
     maxPitchRate: 1.5, // rad/s at full elevator
     // Sized off the dive, not the circuit: fully out, these hold a vertical
@@ -86,6 +87,7 @@ export const FLEET = [
     trimSpeed: 24,
     speedStability: 0.42,
     maxRollRate: 2.6,
+    maxBankDeg: 60,
     rollStability: 0.44, // a trainer is built to right itself
     maxPitchRate: 1.6,
     brakeDragFactor: 11.0, // barn doors, and the ship they are bolted to is slow
@@ -130,6 +132,7 @@ export const FLEET = [
     speedStability: 0.3,
     // All that span and all that water does not snap from bank to bank.
     maxRollRate: 1.45,
+    maxBankDeg: 68,
     rollStability: 0.20, // nineteen metres of wing takes its time
     maxPitchRate: 1.15,
     brakeDragFactor: 9.5,
@@ -175,6 +178,7 @@ export const FLEET = [
     trimSpeed: 22,
     speedStability: 0.5,
     maxRollRate: 2.0,
+    maxBankDeg: 55,
     rollStability: 0.48, // light, short-span, very stable
     maxPitchRate: 1.8,
     brakeDragFactor: 5.0,
@@ -238,6 +242,7 @@ export const FLEET = [
     // else here and still turns like a barge, because a six-hundred-metre
     // circle at trim is arithmetic and no amount of aileron argues with it.
     maxRollRate: 2.8,
+    maxBankDeg: 80, // it will hold a knife-edge if you ask
     rollStability: 0.16, // almost no dihedral: it stays where you put it
     maxPitchRate: 1.1,
     brakeDragFactor: 11.0, // proper speedbrake panels, and it needs them

@@ -152,21 +152,22 @@ function trimSpeedAt(spec, rho) {
 /**
  * A full circle, flown the way a pilot flies one.
  *
- * The stick commands a roll RATE, so holding it over does not hold a bank — it
- * keeps rolling, right past inverted. A turn is entered with aileron, held with
- * small corrections, and paid for with back pressure. Measuring it any other
- * way measures a barrel roll.
+ * The stick asks for a bank ANGLE, so a turn is flown by putting it at the
+ * fraction of full deflection that bank represents and leaving it there. Do
+ * not pin it: past PIN_STICK the axis promotes to a rate and the measurement
+ * becomes a barrel roll.
  */
 const BANK = (45 * Math.PI) / 180;
+const bankStick = (spec) => Math.min(0.9, 45 / spec.maxBankDeg);
 
 function turn360(g) {
   g.reset(new THREE.Vector3(0, START, 0), 0, g.spec.trimSpeed);
   sim(g, {}, 4);
-  // roll in
+  // roll in and settle on the commanded bank
+  const stick = bankStick(g.spec);
   for (let i = 0; i < 600; i++) {
-    const err = BANK - g.bankRad;
-    if (Math.abs(err) < 0.02) break;
-    sim(g, { roll: Math.max(-1, Math.min(1, err * 3)), pitch: 0.28 }, dt);
+    if (Math.abs(BANK - g.bankRad) < 0.02) break;
+    sim(g, { roll: stick, pitch: 0.28 }, dt);
   }
   const y0 = g.position.y;
   let t = 0;
@@ -175,8 +176,7 @@ function turn360(g) {
   let bankSum = 0;
   let prev = g.headingDeg;
   while (t < 150) {
-    const err = BANK - g.bankRad;
-    sim(g, { roll: Math.max(-0.4, Math.min(0.4, err * 2)), pitch: 0.28 }, dt);
+    sim(g, { roll: stick, pitch: 0.28 }, dt);
     t += dt;
     // Ground track rather than the speed at the finish line: a ship that is
     // still settling into the turn flies a circle its last-instant speed does
@@ -545,20 +545,57 @@ show('full LEFT stick 10 s');
 g.reset(new THREE.Vector3(0, 3000, 0), 90, 45);
 sim(g, {}, 3);
 // Roll in and hold, rather than pinning the stick — see turn360.
-for (let i = 0; i < 600; i++) {
-  const err = BANK - g.bankRad;
-  if (Math.abs(err) < 0.02) break;
-  sim(g, { roll: Math.max(-1, Math.min(1, err * 3)), pitch: 0.25 }, dt);
-}
-for (let i = 0; i < 14 / dt; i++) {
-  sim(g, { roll: Math.max(-0.4, Math.min(0.4, (BANK - g.bankRad) * 2)), pitch: 0.25 }, dt);
-}
+const holdStick = bankStick(g.spec);
+for (let i = 0; i < 14 / dt; i++) sim(g, { roll: holdStick, pitch: 0.25 }, dt);
 show('45 deg turn, held 14 s');
 if (g.bankDeg < 20) problems.push('right stick did not produce a right bank');
 // Rolling costs speed control, and the Vela does go past its redline holding
 // full aileron for ten seconds. That is the ship, not a bug — but a roll must
 // not be a death sentence, and the wear it leaves must be worth noticing.
 if (g.broken) problems.push('rolling the ship tore it apart');
+
+// ------------------------------------------------------------ two laws ---
+// The whole point of the control model: a stick short of the stop HOLDS a bank,
+// and only a stick pinned to it rolls. If the first were false the game would
+// be twitchy to fly with a thumb; if the second were, there would be no barrel
+// roll. Both have been broken by a refactor before, in opposite directions.
+console.log('\ntwo laws — hold a bank, pin the stick to roll');
+{
+  const step = 1 / 120;
+  for (const spec of FLEET) {
+    const held = new Glider(air, spec);
+    held.reset(new THREE.Vector3(0, 3000, 0), 0, spec.trimSpeed * 1.2);
+    const stick = Math.min(0.85, 45 / spec.maxBankDeg);
+    let peak = 0;
+    for (let i = 0; i < 20 / step; i++) {
+      held.update(step, { roll: stick, pitch: 0.25, brake: 0, boost: false });
+      peak = Math.max(peak, Math.abs(held.bankDeg));
+    }
+
+    const pinned = new Glider(air, spec);
+    pinned.reset(new THREE.Vector3(0, 3000, 0), 0, spec.trimSpeed * 1.2);
+    let prev = pinned.bankRad;
+    let swept = 0;
+    for (let i = 0; i < 6 / step; i++) {
+      pinned.update(step, { roll: 1, pitch: 0, brake: 0, boost: false });
+      let d = pinned.bankRad - prev;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      swept += d;
+      prev = pinned.bankRad;
+    }
+    const revs = Math.abs(swept) / (2 * Math.PI);
+
+    const holdsOk = peak < 78 && Math.abs(held.bankDeg) > 25;
+    const rollsOk = revs > 1;
+    if (!holdsOk) problems.push(`${spec.name}: a held stick did not hold a bank (settled ${held.bankDeg.toFixed(0)}, peak ${peak.toFixed(0)})`);
+    if (!rollsOk) problems.push(`${spec.name}: a pinned stick did not roll right over (${revs.toFixed(2)} turns in 6 s)`);
+    console.log(
+      `  ${holdsOk && rollsOk ? 'ok  ' : 'FAIL'} ${spec.name.padEnd(9)} holds ${held.bankDeg.toFixed(0).padStart(3)} deg   pinned: ${revs.toFixed(1)} rolls in 6 s`
+    );
+  }
+}
+
 
 if (problems.length) {
   console.log('\nFAILURES:\n' + problems.map((p) => ' - ' + p).join('\n'));
