@@ -6,6 +6,7 @@ import { AirViz } from './airviz.js';
 import { Wreck } from './wreck.js';
 import { World, createThermalClouds } from './world.js';
 import { Trees } from './trees.js';
+import { createFalls } from './falls.js';
 import { Buildings } from './buildings.js';
 import { Network } from './network.js';
 import { Minimap } from './minimap.js';
@@ -91,6 +92,10 @@ export class Game {
       this.trees = new Trees(heightfield, sky, { ...quality?.treeOptions, ...region.trees });
       scene.add(this.trees.mesh);
     }
+    // The waterfalls the map is named for. Two triangles and a noise field
+    // each, so they go on at every quality tier that draws anything at all.
+    this.falls = createFalls(heightfield, sky, region.falls);
+    scene.add(this.falls);
     if (networkData) {
       this.network = new Network(heightfield, sky, networkData, quality?.networkOptions);
       scene.add(this.network.group);
@@ -365,6 +370,7 @@ export class Game {
     }
 
     this.trees?.update(dt, this.camera.position);
+    this.falls.userData.update(dt);
     this.buildings?.update(this.camera.position);
     this.network?.update(dt, this.camera.position);
     this.wreck.tick(dt);
@@ -388,11 +394,9 @@ export class Game {
         camera: this.camera,
         challenge: this.challenges.hudState(),
       });
-      this.controls.setBoostCharge(this.glider.boost);
       this.audio?.update(dt, {
         airspeed: this.glider.airspeed,
         vario: this.glider.varioSmooth,
-        boosting: this.glider.boosting,
         brake: this.glider.brake,
       });
       this.labels.update(this.camera, this.glider.position, this.progress.discovered, (def) =>
@@ -737,7 +741,7 @@ export class Game {
 
     // Speed reads as speed relative to what this ship calls fast.
     const rush = (g.airspeed - this.spec.trimSpeed) * (8 / this.spec.trimSpeed);
-    const target = THREE.MathUtils.clamp(this._baseFov + rush + (g.boosting ? 5 : 0), this._baseFov - 3, this._baseFov + 12);
+    const target = THREE.MathUtils.clamp(this._baseFov + rush, this._baseFov - 3, this._baseFov + 12);
     this.camera.fov = snap ? target : THREE.MathUtils.damp(this.camera.fov, target, 3, dt);
     this.camera.updateProjectionMatrix();
   }
@@ -815,6 +819,7 @@ export class Game {
     this.clouds.userData.setLighting(sunRadiance, skyAmbient);
     this.airviz.setLighting(sunRadiance, skyAmbient);
     this.trees?.setLighting(sunRadiance, skyAmbient);
+    this.falls?.userData.setLighting(sunRadiance, skyAmbient);
     this.buildings?.setLighting(sunRadiance, skyAmbient);
     this.network?.setLighting(sunRadiance, skyAmbient);
     for (const m of this.aircraft.userData.materials) {

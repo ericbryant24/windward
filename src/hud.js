@@ -30,7 +30,7 @@ export class Hud {
     this.objective = this.el('.objective');
     this.objectiveName = this.el('[data-objective]');
     this.objectiveDist = this.el('[data-objdist]');
-    this.timer = this.el('[data-timer]');
+    this.glide = this.el('[data-glide]');
     this.compassTape = this.el('.compass-tape');
     this.varioAir = this.el('.vario-air');
     this.netto = this.el('[data-netto]');
@@ -364,6 +364,7 @@ export class Hud {
     this.alt.textContent = Math.round(glider.position.y);
     this.agl.textContent = `${Math.max(0, Math.round(glider.position.y - ground))} agl`;
     this.spd.textContent = Math.round(glider.airspeed * 3.6);
+    const horizontal = Math.hypot(glider.velocity.x, glider.velocity.z);
 
     // The polar is quoted at sea level; thinner air up here means the same
     // wing needs more true airspeed for the same lift coefficient, so the
@@ -423,7 +424,14 @@ export class Hud {
       this.arrow.style.opacity = '0';
     }
 
-    this.timer.textContent = `${Math.round(glider.boost * 100)}%`;
+    // What the ship is actually achieving, against the book figure written
+    // underneath it. There is no engine any more, so how far the height in
+    // hand will carry you is the whole of the tactical question — and the
+    // difference between 36:1 on the card and 19:1 through the sink you are
+    // in is the thing a vario alone will not tell you.
+    const glideNow = glider.varioSmooth < -0.05 ? horizontal / -glider.varioSmooth : Infinity;
+    this.glide.textContent = !isFinite(glideNow) ? '↑' : `${Math.min(99, glideNow).toFixed(0)}:1`;
+    this.glide.classList.toggle('good', glideNow >= this.polar.bestLD * 0.8);
 
     this.task.classList.toggle('on', !!challenge);
     if (challenge) {
@@ -551,7 +559,7 @@ const TEMPLATE = /* html */ `
       </div>
     </div>
 
-    <p class="hint">Keyboard: arrows or WASD to fly · Space boost · B airbrakes · C camera · R respawn</p>
+    <p class="hint">Keyboard: arrows or WASD to fly · B or Space airbrakes · C camera · R respawn</p>
     <p class="credit">
       Terrain from public elevation data · buildings ©
       <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
@@ -578,7 +586,7 @@ const TEMPLATE = /* html */ `
     </div>
     <div class="gauge right">
       <b data-spd>0</b><span class="unit">km/h</span>
-      <em data-timer>0:00.0</em>
+      <em class="glide" data-glide>—</em>
       <em class="ship"><b data-ship>—</b><span data-shippolar>—</span><i class="wear"><u></u></i></em>
     </div>
   </div>

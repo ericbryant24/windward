@@ -431,8 +431,19 @@ export class Buildings {
       fresnel: 0.4,
     });
     const limestone = makeLitMaterial(sky, { color: new THREE.Color(0.50, 0.47, 0.41), roughness: 0.85, fresnel: 0.1 });
+    // Thrown water, seen from above and from a long way off: nearly white, very
+    // rough, and half transparent so the stone shows through the bottom of it.
+    const water = makeLitMaterial(sky, {
+      color: new THREE.Color(0.86, 0.91, 0.96),
+      emissive: new THREE.Color(0.5, 0.56, 0.62),
+      emissiveStrength: 0.35,
+      roughness: 0.95,
+      opacity: 0.55,
+      transparent: true,
+      side: THREE.DoubleSide,
+    });
     const mirror = makeMirrorMaterial(sky);
-    this.landmarkMaterials = [concrete, glass, steel, limestone, mirror];
+    this.landmarkMaterials = [concrete, glass, steel, limestone, water, mirror];
 
     const meta = this.hf.meta;
     const mLon = 111320 * Math.cos((meta.centerLat * Math.PI) / 180);
@@ -448,6 +459,7 @@ export class Buildings {
       glass,
       steel,
       limestone,
+      water,
       mirror,
     };
 
@@ -685,6 +697,77 @@ const LANDMARKS = {
     );
     dome.position.set(x, Math.max(roof, ground + 8) - 1.6, z);
     return dome;
+  },
+
+  /**
+   * Buckingham Fountain, in the middle of Grant Park and directly on the line
+   * of the Loop circuit. OSM has it as a pond outline and nothing else, which
+   * from the air is a grey disc in a lawn — but the thing that makes it
+   * legible from a thousand feet is the centre jet, which throws water 46 m
+   * and is the tallest thing for four hundred metres in any direction.
+   *
+   * Three tiers, a rim, and the plume. The plume is a cone rather than
+   * particles: it is seen from above and from a long way off, where a cone of
+   * white against grass is exactly what a fountain looks like and a particle
+   * system is a frame budget.
+   */
+  'buckingham-fountain': ({ hf, local, limestone, water }) => {
+    const { x, z } = local(41.875779, -87.618937);
+    const ground = standOn(hf, x, z, 90);
+    const g = new THREE.Group();
+    const stone = new THREE.Mesh(
+      mergeParts([
+        // The outer basin, 85 m across, and the three tiers stepping up it.
+        new THREE.CylinderGeometry(42.5, 43.5, 1.6, 30, 1, true),
+        new THREE.TorusGeometry(42.5, 1.1, 5, 30).rotateX(Math.PI / 2).translate(0, 1.0, 0),
+        new THREE.CylinderGeometry(17.0, 19.0, 2.4, 22).translate(0, 1.4, 0),
+        new THREE.CylinderGeometry(8.4, 10.2, 2.6, 18).translate(0, 3.6, 0),
+        new THREE.CylinderGeometry(3.4, 4.8, 3.0, 14).translate(0, 6.0, 0),
+      ]),
+      limestone
+    );
+    g.add(stone);
+    const plume = new THREE.Mesh(new THREE.ConeGeometry(4.2, 46, 12, 1, true), water);
+    plume.position.y = 30;
+    g.add(plume);
+    g.position.set(x, ground, z);
+    return g;
+  },
+
+  /**
+   * The Chicago Harbor Lighthouse, out at the end of the breakwater. It is the
+   * first thing off the wingtip when a free flight opens over the lake, it is
+   * the only structure in four square kilometres of water, and OSM has no
+   * footprint for it at all — so without this there is simply nothing there.
+   */
+  'harbor-lighthouse': ({ hf, local, limestone, steel }) => {
+    const { x, z } = local(41.889569, -87.590556);
+    // Standing on the breakwater rather than in the lake: the DEM has the lake
+    // floor under it, so the pier deck is authored.
+    const deck = Math.max(hf.heightAt(x, z), 176.5) + 2.0;
+    const g = new THREE.Group();
+    g.add(
+      new THREE.Mesh(
+        mergeParts([
+          new THREE.BoxGeometry(26, 3.2, 13).translate(0, 1.6, 0),
+          new THREE.CylinderGeometry(3.1, 3.9, 17.0, 14).translate(0, 11.5, 0),
+          new THREE.CylinderGeometry(4.3, 4.3, 1.4, 14).translate(0, 20.6, 0),
+          // The keeper's house alongside, which is most of its silhouette.
+          new THREE.BoxGeometry(9.5, 6.4, 7.0).translate(-8.5, 6.4, 0),
+        ]),
+        limestone
+      )
+    );
+    const lantern = new THREE.Mesh(
+      mergeParts([
+        new THREE.CylinderGeometry(2.6, 2.6, 3.4, 10, 1, true).translate(0, 22.9, 0),
+        new THREE.ConeGeometry(3.0, 2.6, 10).translate(0, 25.9, 0),
+      ]),
+      steel
+    );
+    g.add(lantern);
+    g.position.set(x, deck, z);
+    return g;
   },
 };
 

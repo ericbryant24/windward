@@ -20,18 +20,15 @@
  *      a rule, so a rule change in the game shows up here as a different
  *      measurement rather than as agreement with a stale copy.
  *   3. Sweeps a fixed set of pilot policies — cruise speed, bank limit, line
- *      choice, motor or no motor — and keeps every outcome, because the spread
- *      between the best and the worst run is what says whether a ladder has
- *      room in it.
+ *      choice — and keeps every outcome, because the spread between the best
+ *      and the worst run is what says whether a ladder has room in it.
  *   4. Proposes bronze, silver, gold and the fail limit off the best SOARED
  *      run, and prints enough of the working for a human to disagree.
  *
- * Anchoring on the best run flown WITHOUT the motor is deliberate. Every ship
- * has thrust and a player may hold the button down; a ladder measured off a
- * motor run would quietly make the motor compulsory, which is the opposite of
- * the deal ("the motor as the margin rather than the entry fee"). Where a task
- * genuinely cannot be flown without thrust, the report says so and anchors on
- * the powered run instead.
+ * There is no thrust to sweep any more. The ladder is anchored on the best
+ * glide anybody flew, because a glide is the only thing anybody can fly — which
+ * is also why six of these had to be re-cut when the boost button went: their
+ * best measured lines had all been flown with a thumb on it.
  *
  *   node tools/calibrate-challenges.mjs                  both maps
  *   node tools/calibrate-challenges.mjs --map=chicago
@@ -79,6 +76,8 @@ const VERBOSE = flag('verbose');
 const TRACE = flag('trace');
 const AS_JSON = flag('json');
 const TIME_OF_DAY = arg('time', 'afternoon');
+/** Fly only the policies whose label contains this, for looking at one line. */
+const POLICY = arg('policy');
 
 /** The physics step the game runs at. Anything coarser is a different game. */
 const TICK = 1 / 120;
@@ -208,8 +207,15 @@ class Pilot {
     this.f = new THREE.Vector3();
   }
 
-  /** @returns the control input for this step, aimed at `target`. */
-  fly(dt, target, speedTarget, { boost = false } = {}) {
+  /**
+   * @param {THREE.Vector3} target where to point
+   * @param {number} speedTarget the speed to hold
+   * @param {{bank?: number}} [opts] a bank angle to hold instead of steering at
+   *   the target — circling, where the radius is arithmetic rather than
+   *   something to feed back towards.
+   * @returns the control input for this step.
+   */
+  fly(dt, target, speedTarget, opts = {}) {
     const g = this.g;
     const spec = g.spec;
     const f = g.forward(this.f);
@@ -230,8 +236,18 @@ class Pilot {
     const book = this.book ?? (this.book = polar(spec));
     const margin = Math.min(1, (book.stallSpeed * 1.18 / Math.max(g.airspeed, 1)) ** 2);
     const bankMax = Math.min(this.p.bankMax, Math.acos(clamp(margin, 0.08, 1)));
-    const bankCmd = clamp(err * 2.1, -bankMax, bankMax);
-    const roll = clamp((bankCmd - bank) * 1.9 - bankRate * 0.32, -1, 1);
+    const bankCmd = clamp(opts.bank ?? err * 2.1, -bankMax, bankMax);
+    // The stick is a bank-angle command scaled by the ship's own maxBankDeg —
+    // see the roll law in flight.js — so the honest way to ask for a bank is to
+    // divide by it, and let a small error term take out the lag. Feeding back
+    // on bank error alone, as this did, leaves a steady-state offset that the
+    // gain can never close: the ballasted ship settled 16 degrees shallow of
+    // every command, which turns a 180 m circle into a 330 m one and flies
+    // every corner of every course wide. Kept clear of the pinned-stick
+    // threshold, which is the aerobatic roll and not something a pilot wants
+    // to trigger by asking for a steep turn.
+    const stickForBank = bankCmd / THREE.MathUtils.degToRad(spec.maxBankDeg);
+    const roll = clamp(stickForBank + (bankCmd - bank) * 0.7 - bankRate * 0.12, -0.92, 0.92);
 
     // ---- pitch: the line to the target, corrected for the speed we want ---
     // Fast means nose down and slow means nose up, so the speed error goes in
@@ -272,7 +288,7 @@ class Pilot {
     const brake = holdOnStick
       ? vneGuard
       : Math.max(vneGuard, steeper, clamp((g.airspeed - speedTarget * 1.05) / (speedTarget * 0.3), 0, 1));
-    return { roll, pitch, brake, boost: boost && g.boost > 0.05 };
+    return { roll, pitch, brake };
   }
 }
 
@@ -349,7 +365,12 @@ function fly(ctx, def, policy, guide) {
     // A run nobody can watch is hard to argue with, so --trace keeps a coarse
     // log of the winning line: where it was, how high, how fast, how far on.
     if (TRACE && step % Math.round(2 / TICK) === 0) {
-      trace.push(`      t${state.t.toFixed(0).padStart(4)}s  ${(glider.position.y).toFixed(0).padStart(5)} m (${agl.toFixed(0).padStart(4)} agl)  ${glider.airspeed.toFixed(0).padStart(3)} m/s  ${(challenges.hudState()?.progress ?? '').padEnd(12)} boost ${(glider.boost * 100).toFixed(0)}%`);
+      const off = Math.hypot(glider.position.x - spawn.position.x, glider.position.z - spawn.position.z);
+      trace.push(
+        `      t${state.t.toFixed(0).padStart(4)}s  ${glider.position.y.toFixed(0).padStart(5)} m (${agl.toFixed(0).padStart(4)} agl)  ` +
+          `${glider.airspeed.toFixed(0).padStart(3)} m/s  air ${glider.nettoSmooth.toFixed(1).padStart(5)}  ` +
+          `${off.toFixed(0).padStart(5)} m out  ${challenges.hudState()?.progress ?? ''}`
+      );
     }
     if (agl < 3.5) {
       out = { reason: hf.isWater(glider.position.x, glider.position.z) ? 'water' : 'ground' };
@@ -466,7 +487,7 @@ function courseGuide(state, dt) {
     state.escape = null;
   }
   target = avoid(state, reattack(state, target, run?.def.type === 'slalom' ? challenges.world.gates[run.gateIndex] : null));
-  return state.pilot.fly(dt, target, cornerSpeed(state, next), { boost: wantsBoost(state, target) });
+  return state.pilot.fly(dt, target, cornerSpeed(state, next));
 }
 
 /**
@@ -686,29 +707,71 @@ function reattack(state, target, gate) {
 }
 
 /**
- * When the motor earns its noise: below the line to the next thing, or slower
- * than the policy wants to be flying. Policies that fly unpowered never call it.
+ * Circling. Two things it has to get right, and the old version got neither.
+ *
+ * The bank. A circle of radius r at speed v is a bank of atan(v^2 / g r) and
+ * nothing else — it is arithmetic, not a thing to feed back towards. Steering
+ * at a point on the rim through a proportional heading loop settles at whatever
+ * error balances the gain: measured, a policy asking for a 140 m circle flew a
+ * 340 m one at a steady 38 degrees and spent every turn outside the thermal,
+ * which is why every climb on the ladder read as impossible the moment the
+ * motor was taken away. The bank is commanded outright now.
+ *
+ * The centre. A column leans, breathes and is never quite where the survey put
+ * it, and a bank-commanded circle starts tangent to wherever the ship entered
+ * rather than around anything. Both are answered by the heuristic every pilot
+ * is taught: remember where in the turn the air was going up hardest, and shove
+ * the circle that way. Netto rather than the ship's own vario — vario is mostly
+ * the last pitch correction, and centring on it chases the phugoid.
  */
-function wantsBoost(state, target) {
-  if (!state.policy.boost) return false;
-  const g = state.glider;
-  if (g.airspeed < state.policy.speed * 0.94) return true;
-  const dy = target.y - g.position.y;
-  const D = Math.hypot(target.x - g.position.x, target.z - g.position.z);
-  return dy > -D / 22;
-}
-
-/** Circling: chase a point around the rim of the lift, a little ahead of the ship. */
 function orbitGuide(state, dt) {
   const g = state.glider;
   const p = state.policy;
-  const ang = Math.atan2(g.position.z - p.centre.z, g.position.x - p.centre.x) + p.lead;
+  const c = (state.orbit ??= { cx: p.centre.x, cz: p.centre.z, bestW: -Infinity, bx: 0, bz: 0, last: null, swept: 0 });
+
+  // Two corrections, and both are needed. A bank-commanded circle is tangent
+  // to wherever the ship entered, so its centre starts a full radius off the
+  // core and the far side of the first turn is two radii out — which for a
+  // 300 m thermal is outside it. So: pull the centre towards the ship
+  // continuously while the air is going up, which keeps the circle where the
+  // lift is found rather than where the survey said it was...
+  if (g.nettoSmooth > 0.8) {
+    const k = Math.min(1, g.nettoSmooth / 3) * dt * 0.5;
+    c.cx += (g.position.x - c.cx) * k;
+    c.cz += (g.position.z - c.cz) * k;
+  }
+  // ...and once a turn, shove it at the best air of that turn, which is the
+  // correction a pilot makes and the one that finds a core the circle is only
+  // clipping. Netto rather than the ship's own vario: vario is mostly the last
+  // pitch correction, and centring on it chases the phugoid.
+  if (g.nettoSmooth > c.bestW) {
+    c.bestW = g.nettoSmooth;
+    c.bx = g.position.x;
+    c.bz = g.position.z;
+  }
+  const ang = Math.atan2(g.position.z - c.cz, g.position.x - c.cx);
+  if (c.last == null) c.last = ang;
+  c.swept += Math.abs(wrap(ang - c.last));
+  c.last = ang;
+  if (c.swept > Math.PI) {
+    c.swept = 0;
+    if (isFinite(c.bestW)) {
+      c.cx += (c.bx - c.cx) * 0.5;
+      c.cz += (c.bz - c.cz) * 0.5;
+    }
+    c.bestW = -Infinity;
+  }
+
+  // Nose a little above the horizon so the pitch loop has a line to hold; the
+  // speed it is asked for does the rest.
+  const f = g.forward(new THREE.Vector3());
   const target = new THREE.Vector3(
-    p.centre.x + Math.cos(ang) * p.radius,
-    g.position.y + 18,
-    p.centre.z + Math.sin(ang) * p.radius
+    g.position.x + f.x * 140,
+    g.position.y + 20,
+    g.position.z + f.z * 140
   );
-  return state.pilot.fly(dt, avoid(state, target), p.speed, { boost: p.boost });
+  const bank = Math.atan((g.airspeed * g.airspeed) / (9.80665 * p.radius));
+  return state.pilot.fly(dt, avoid(state, target), p.speed, { bank });
 }
 
 /**
@@ -724,7 +787,7 @@ function beatGuide(state, dt) {
   if (Math.hypot(end.x - g.position.x, end.z - g.position.z) < 160) state.leg = 1 - state.leg;
   const to = p.ends[state.leg];
   const target = new THREE.Vector3(to.x, g.position.y + 18, to.z);
-  return state.pilot.fly(dt, avoid(state, target), p.speed, { boost: p.boost });
+  return state.pilot.fly(dt, avoid(state, target), p.speed);
 }
 
 /**
@@ -774,10 +837,7 @@ function lowGuide(state, dt) {
     ahead + p.deck,
     g.position.z - Math.cos(bestHeading) * reach
   );
-  // The ultralight holds a deck on the throttle, which is what it is for; the
-  // sailplanes have to arrive with the height already spent.
-  const low = g.position.y - hf.heightAt(g.position.x, g.position.z) < p.deck * 1.1;
-  return state.pilot.fly(dt, avoid(state, target), p.speed, { boost: p.boost && low });
+  return state.pilot.fly(dt, avoid(state, target), p.speed);
 }
 
 /**
@@ -790,12 +850,12 @@ function climbGuide(state, dt) {
   const g = state.glider;
   const p = state.policy;
   const d = Math.hypot(p.centre.x - g.position.x, p.centre.z - g.position.z);
-  if (!state.arrived && d > (p.kind === 'beat' ? 260 : p.radius * 1.35)) {
+  if (!state.arrived && d > (p.type === 'beat' ? 260 : p.radius * 1.35)) {
     const target = new THREE.Vector3(p.centre.x, Math.max(g.position.y, p.centre.y ?? g.position.y), p.centre.z);
-    return state.pilot.fly(dt, avoid(state, target), p.transitSpeed, { boost: p.boost });
+    return state.pilot.fly(dt, avoid(state, target), p.transitSpeed);
   }
   state.arrived = true;
-  return p.kind === 'beat' ? beatGuide(state, dt) : orbitGuide(state, dt);
+  return p.type === 'beat' ? beatGuide(state, dt) : orbitGuide(state, dt);
 }
 
 // ------------------------------------------------------------ the survey ---
@@ -965,13 +1025,45 @@ function coursePolicies(def, spec) {
   for (const speed of speedLadder(spec)) {
     for (const bankMax of [1.0, 1.2, 1.4]) {
       for (const order of orders) {
-        for (const boost of [false, true]) {
-          out.push({ kind: 'course', speed, bankMax, order, boost, label: `${speed} m/s · ${Math.round((bankMax * 180) / Math.PI)}° · ${order}${boost ? ' · motor' : ''}` });
-        }
+        out.push({ kind: 'course', speed, bankMax, order, label: `${speed} m/s · ${Math.round((bankMax * 180) / Math.PI)}° · ${order}` });
       }
     }
   }
   return out;
+}
+
+/**
+ * How fast to fly a circle of a given radius, which is not min-sink speed.
+ *
+ * A turn costs load factor, and load factor costs stall speed: the ballasted
+ * ship stalls at 26 m/s wings-level and at 33 in a fifty-degree bank. Circling
+ * at the book's 28 m/s minimum-sink speed therefore does not circle — it
+ * mushes, and the ship comes down inside the strongest thermal on the map.
+ * That is what made every climb on the ladder measure as impossible the moment
+ * the motor was taken away, and it had been hidden for as long as there was a
+ * motor to push through it with.
+ *
+ * Steady turn: tan(bank) = v^2 / (g r), load factor n = 1/cos(bank), and the
+ * stall speed goes as sqrt(n). Solved by iteration because v appears on both
+ * sides, then flown a quarter over the stall it lands on.
+ */
+function circlingSpeed(spec, radius) {
+  const book = polar(spec);
+  let v = book.minSinkSpeed;
+  for (let i = 0; i < 40; i++) {
+    const n = Math.sqrt(1 + (v * v / (9.80665 * radius)) ** 2);
+    const want = Math.max(book.minSinkSpeed, book.stallSpeed * Math.sqrt(n) * 1.25);
+    v += (want - v) * 0.4;
+  }
+  const n = Math.sqrt(1 + (v * v / (9.80665 * radius)) ** 2);
+  // Past about sixty-five degrees the sum runs away — every extra knot the
+  // stall demands buys the bank that demands the next one — which is the
+  // arithmetic saying this ship cannot hold a circle that small at all. The
+  // ballasted nineteen-metre bottoms out near a 120 m radius, so a thermal
+  // narrower than a quarter of a kilometre is no use to it whatever it says on
+  // the vario. Radii it cannot fly are dropped rather than flown badly.
+  if (n > 2.4 || v > spec.vne * 0.62) return null;
+  return v;
 }
 
 function climbPolicies(ctx, def, spec, survey, marker) {
@@ -998,22 +1090,23 @@ function climbPolicies(ctx, def, spec, survey, marker) {
     // whole reason a 350 m climb in 5.6 m/s of lift took five and a half
     // minutes. At best-sink speed and sixty-three degrees the ballasted ship
     // turns inside sixty metres, so the tight circles belong on the list.
-    for (const boost of [false, true]) {
-      for (const radius of [90, 130, 170, 240, 320]) {
+    {
+      for (const radius of [110, 140, 180, 240, 320]) {
+        const speed = circlingSpeed(spec, radius);
+        if (speed === null) continue;
         out.push({
           kind: 'climb',
           type: 'orbit',
           centre,
           radius,
           lead: 0.95,
-          speed: Math.round(book.minSinkSpeed * 1.12),
+          speed: Math.round(speed),
           transitSpeed: Math.round(book.bestLDSpeed),
           bankMax: 1.1,
           brakes: false,
           clearance: 90,
-          boost,
           site,
-          label: `orbit ${Math.round(site.distance)} m out · r${radius}${boost ? ' · motor' : ''}`,
+          label: `orbit ${Math.round(site.distance)} m out · r${radius}`,
         });
       }
       // A face is beaten, not circled: half of a circle over a ridge is spent in
@@ -1034,14 +1127,13 @@ function climbPolicies(ctx, def, spec, survey, marker) {
               { x: site.x + axis.x * half, z: site.z + axis.z * half },
               { x: site.x - axis.x * half, z: site.z - axis.z * half },
             ],
-            speed: Math.round(book.minSinkSpeed * 1.2),
+            speed: Math.round(circlingSpeed(spec, 320) ?? book.bestLDSpeed),
             transitSpeed: Math.round(book.bestLDSpeed),
             bankMax: 1.15,
             brakes: false,
             clearance: 90,
-            boost,
             site,
-            label: `beat ${Math.round(site.distance)} m out · ±${half}${boost ? ' · motor' : ''}`,
+            label: `beat ${Math.round(site.distance)} m out · ±${half}`,
           });
         }
       }
@@ -1063,7 +1155,7 @@ function lowpassPolicies(def, spec) {
   for (const deck of [10, 16, 24, 34, 44, 60, 80]) {
     if (deck > def.ceiling * 0.95) continue;
     for (const speed of speeds) {
-      for (const boost of [false, true]) {
+      {
         out.push({
           kind: 'low',
           deck,
@@ -1072,8 +1164,7 @@ function lowpassPolicies(def, spec) {
           clearance: 0,
           spread: 0.7,
           bankMax: 0.7,
-          boost,
-          label: `deck ${deck} m · ${speed} m/s${boost ? ' · motor' : ''}`,
+          label: `deck ${deck} m · ${speed} m/s`,
         });
       }
     }
@@ -1192,7 +1283,7 @@ for (const mapId of MAPS) {
       // are course-design errors rather than pilot errors, and neither shows up
       // as anything but a pile of identical crashes once you start flying.
       for (const bad of blockedLegs(ctx, def, marker, points)) note(`   → ${bad}`);
-      if (cost > budget) note(`   → short by ${fmt(cost - budget, 0)} m on the glide alone: it has to come off the air or the motor`);
+      if (cost > budget) note(`   → short by ${fmt(cost - budget, 0)} m on the glide alone: it has to come off the air`);
       policies = coursePolicies(def, spec);
       guide = courseGuide;
     } else if (def.type === 'climb') {
@@ -1206,10 +1297,10 @@ for (const mapId of MAPS) {
     }
 
     // ---- fly it -----------------------------------------------------------
+    if (POLICY) policies = policies.filter((p) => p.label.includes(POLICY));
     const results = policies.map((p) => fly(ctx, def, p, guide));
     const done = results.filter((r) => r.finished).sort((a, b) => a.value - b.value);
-    const soared = done.filter((r) => !r.policy.boost);
-    const anchor = soared[0] ?? done[0] ?? null;
+    const anchor = done[0] ?? null;
     const failures = {};
     for (const r of results) if (!r.finished) failures[r.reason] = (failures[r.reason] ?? 0) + 1;
 
@@ -1218,15 +1309,22 @@ for (const mapId of MAPS) {
       problems.push(`${def.id}: not one of ${results.length} lines finished — the challenge is not completable as authored`);
       note('   !! NOT COMPLETABLE as authored');
       if (VERBOSE) for (const r of results.slice(0, 6)) note(`      ${r.policy.label}: ${r.reason}${r.where ? ` at ${r.where}` : ''} after ${fmt(r.seconds)} s${r.progress ? ` (${r.progress})` : ''}`);
+      // The run that got furthest, said out loud. A challenge nobody finished
+      // is the one place a trace is most worth having, and printing only the
+      // winner's meant --trace went silent exactly when it was needed.
+      if (TRACE) {
+        const nearest = [...results].sort((a, b) => b.seconds - a.seconds)[0];
+        note(`   the longest line was ${nearest.policy.label} — ${nearest.reason} after ${fmt(nearest.seconds)} s`);
+        note(nearest.trace.join('\n'));
+      }
       console.log(lines.join('\n'));
       continue;
     }
 
     const unit = challengeMetric(def) === 'height' ? 'm' : 's';
     const median = done[Math.floor(done.length / 2)];
-    note(`   best ${fmt(anchor.value)} ${unit} (${anchor.policy.label})${soared.length ? '' : ' — only with the motor'}`);
+    note(`   best ${fmt(anchor.value)} ${unit} (${anchor.policy.label})`);
     note(`   median finish ${fmt(median.value)} ${unit} · worst ${fmt(done[done.length - 1].value)} ${unit}`);
-    if (soared.length && done[0] !== soared[0]) note(`   the motor is worth ${fmt(soared[0].value - done[0].value)} ${unit} here`);
     if (VERBOSE) {
       for (const r of results.filter((x) => !x.finished).slice(0, 6)) {
         note(`      failed: ${r.policy.label} — ${r.reason}${r.where ? ` at ${r.where}` : ''} after ${fmt(r.seconds)} s${r.progress ? ` (${r.progress})` : ''}`);

@@ -231,7 +231,7 @@ for (const id of ids) {
   let windBad = 0;
   for (let i = 0; i < 600; i++) {
     before.copy(glider.position);
-    glider.update(1 / 120, { roll: 0.15, pitch: 0, brake: 0, boost: false });
+    glider.update(1 / 120, { roll: 0.15, pitch: 0, brake: 0 });
     air.sample(before, v);
     if (v.distanceTo(glider.wind) > 1e-9) windBad++;
   }

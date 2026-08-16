@@ -30,10 +30,16 @@ export const REGIONS = {
     start: { lat: 46.5853, lon: 7.9614, agl: 780, heading: 104 },
     air: {
       cloudBase: 2950,
-      thermalCount: 46,
+      thermalCount: 40,
       groundMin: 570,
       groundMax: 2750,
-      radius: [250, 490],
+      // Wide, because the ship has to be able to turn inside one. Measured,
+      // the ballasted nineteen-metre flies a 45-degree circle at a 267 m
+      // radius and loses 71 m going round — so a column 250 m across is one
+      // the game says you can climb in and no aeroplane in it can. These are
+      // sized so a full turn fits inside the working part with room to
+      // re-centre, which is what makes thermalling a skill rather than a lie.
+      radius: [450, 720],
       strength: [2.6, 4.4],
       ridgeLift: true,
       waterSink: 0,
@@ -41,6 +47,31 @@ export const REGIONS = {
       wind: { x: 0.55, z: 0.84, speed: 6.5 },
     },
     menuCamera: { focus: 'Eiger', radius: 5200, height: 3950, lookAtScale: 0.86 },
+    /**
+     * The Lauterbrunnen valley is named for its waterfalls — seventy-two of
+     * them come off those walls — and a 25 m heightfield cannot hold a ribbon
+     * of water two metres wide down a vertical face, so they are placed by
+     * hand. `faces` is the compass direction the water is thrown, `reach` how
+     * far out from the lip it lands, and the drop itself is read off the baked
+     * terrain rather than authored. See src/falls.js.
+     */
+    falls: [
+      // 297 m, and the tallest free-falling fall in Switzerland. Standing just
+      // out from the west wall opposite the village, its lip level with the
+      // Mürren terrace. Most of it is airborne long before it lands, which is
+      // what "dust brook" means and what the shader is written around.
+      { name: 'Staubbach', lat: 46.5917, lon: 7.9062, faces: 90, drop: 320, lean: 60, width: 24, spread: 2.2, rate: 1.0 },
+      // Off the Mürren terrace further south, on the same wall.
+      { name: 'Mürrenbach', lat: 46.5772, lon: 7.9066, faces: 90, drop: 300, lean: 55, width: 18, spread: 1.8, rate: 1.1 },
+      // The Trümmelbach runs inside the rock for most of its height; what shows
+      // from the air is the last of it coming out of the cliff just above the
+      // valley floor. Short and hard rather than tall and soft.
+      { name: 'Trümmelbach', lat: 46.5758, lon: 7.9074, faces: 78, drop: 90, lean: 14, width: 11, spread: 0.9, rate: 1.6 },
+      // The Sefinen Lütschine coming off the hanging valley to the south-west.
+      { name: 'Sefinen', lat: 46.5614, lon: 7.9016, faces: 84, drop: 210, lean: 45, width: 16, spread: 1.7, rate: 1.1 },
+      // The Schmadribach at the head of the valley, off the Breithorn cirque.
+      { name: 'Schmadribach', lat: 46.5192, lon: 7.9055, faces: 0, drop: 260, lean: 55, width: 20, spread: 2.0, rate: 1.0 },
+    ],
     trees: {},
     buildings: { maxDistance: 2600, bands: [], roofClutter: false, landmarks: ['sphinx', 'pizgloria'] },
     // Ground colours are tuned for rock, snow and pasture in terrain.js.
@@ -65,10 +96,14 @@ export const REGIONS = {
       // A Midwest summer afternoon: lower cloudbase than the Alps, but the city
       // is one big heat island and the roofs cook.
       cloudBase: 1500,
-      thermalCount: 54,
+      thermalCount: 38,
       groundMin: 176,
       groundMax: 220,
-      radius: [220, 420],
+      // See the alpine note: sized so the issued ship's circle fits inside one.
+      // A city thermal on a hot afternoon is a kilometre across anyway, and
+      // there are fewer of them than there were because each is now much
+      // bigger — the map should not be wall-to-wall lift.
+      radius: [430, 680],
       strength: [2.4, 4.2],
       // Flat: there is no slope to force air up, so ridge lift is switched off
       // entirely rather than left to produce noise from DEM roughness.
@@ -99,7 +134,14 @@ export const REGIONS = {
       roofClutter: true,
       // Things a plan-view footprint cannot describe: a ferris wheel, a
       // mirrored ellipsoid and a row of columns all bake into slabs.
-      landmarks: ['centennial-wheel', 'cloud-gate', 'soldier-field-colonnade', 'grand-ballroom'],
+      landmarks: [
+        'centennial-wheel',
+        'cloud-gate',
+        'soldier-field-colonnade',
+        'grand-ballroom',
+        'buckingham-fountain',
+        'harbor-lighthouse',
+      ],
     },
     palette: 'city',
   },
@@ -116,7 +158,6 @@ export const PLACES = {
     { name: 'Schilthorn', lat: 46.5556, lon: 7.8347, kind: 'peak', height: 2970 },
     { name: 'Männlichen', lat: 46.6142, lon: 7.9394, kind: 'peak', height: 2343 },
     { name: 'Schynige Platte', lat: 46.6553, lon: 7.9067, kind: 'peak', height: 2076 },
-    { name: 'Niesen', lat: 46.6456, lon: 7.6519, kind: 'peak', height: 2362 },
     { name: 'Jungfraujoch', lat: 46.5474, lon: 7.9806, kind: 'landmark', height: 3454 },
     { name: 'Kleine Scheidegg', lat: 46.5853, lon: 7.9614, kind: 'landmark', height: 2061 },
     { name: 'Staubbach Falls', lat: 46.5906, lon: 7.9058, kind: 'landmark', height: 900 },
@@ -127,6 +168,28 @@ export const PLACES = {
     { name: 'Mürren', lat: 46.5586, lon: 7.8925, kind: 'town', height: 1638 },
     { name: 'Thunersee', lat: 46.6805, lon: 7.7365, kind: 'water', height: 558 },
     { name: 'Brienzersee', lat: 46.7245, lon: 7.9705, kind: 'water', height: 564 },
+    // Summit coordinates are the ones the baked terrain agrees with rather than
+    // the ones a gazetteer prints: on a 25 m grid a peak is a cell, and a name
+    // pinned to the wrong cell is a label hanging over a valley. Checked — the
+    // heights below all read within the grid's own rounding of the surveyed
+    // figure, the same margin the original list holds to.
+    { name: 'Blüemlisalp', lat: 46.4906, lon: 7.7736, kind: 'peak', height: 3661 },
+    { name: 'Schwarzhorn', lat: 46.6855, lon: 8.0751, kind: 'peak', height: 2928 },
+    { name: 'Faulhorn', lat: 46.6655, lon: 8.0114, kind: 'peak', height: 2681 },
+    // The Lauberhorn, whose downhill course runs off the far side of it into
+    // Wengen and is the reason anyone outside Switzerland knows the name.
+    { name: 'Lauberhorn', lat: 46.6002, lon: 7.9498, kind: 'peak', height: 2472 },
+    // Where the Aletsch begins: four ice streams meeting at Concordia Place,
+    // the head of the longest glacier in the Alps.
+    { name: 'Konkordiaplatz', lat: 46.5033, lon: 8.05, kind: 'landmark', height: 2780 },
+    { name: 'Grosse Scheidegg', lat: 46.6558, lon: 8.1042, kind: 'landmark', height: 1962 },
+    { name: 'First', lat: 46.6589, lon: 8.0544, kind: 'landmark', height: 2166 },
+    { name: 'Harder Kulm', lat: 46.7003, lon: 7.8639, kind: 'landmark', height: 1322 },
+    { name: 'Trümmelbach Falls', lat: 46.5758, lon: 7.9074, kind: 'landmark', height: 810 },
+    { name: 'Gimmelwald', lat: 46.5464, lon: 7.8925, kind: 'town', height: 1367 },
+    { name: 'Wilderswil', lat: 46.6633, lon: 7.8636, kind: 'town', height: 584 },
+    { name: 'Oeschinensee', lat: 46.4989, lon: 7.7269, kind: 'water', height: 1578 },
+    { name: 'Bachalpsee', lat: 46.6697, lon: 8.0322, kind: 'water', height: 2265 },
   ],
   chicago: [
     { name: 'Willis Tower', lat: 41.8789, lon: -87.6359, kind: 'landmark', height: 442 },
@@ -154,6 +217,30 @@ export const PLACES = {
     { name: 'Lake Michigan', lat: 41.888, lon: -87.575, kind: 'water', height: 176 },
     { name: 'Chicago River', lat: 41.8887, lon: -87.6386, kind: 'water', height: 176 },
     { name: 'Cloud Gate', lat: 41.8827, lon: -87.6233, kind: 'landmark', height: 10 },
+    // The rest of what a pilot over this city can actually see and name. Heights
+    // are the structure rather than the ground, which is the convention the
+    // entries above already use — Chicago is flat enough that the ground is
+    // 180 m everywhere and says nothing.
+    { name: 'Lake Point Tower', lat: 41.8938, lon: -87.6127, kind: 'landmark', height: 197 },
+    { name: 'Board of Trade', lat: 41.8779, lon: -87.6324, kind: 'landmark', height: 184 },
+    { name: 'Tribune Tower', lat: 41.8904, lon: -87.6234, kind: 'landmark', height: 141 },
+    { name: 'Wrigley Building', lat: 41.8888, lon: -87.6285, kind: 'landmark', height: 130 },
+    { name: 'Union Station', lat: 41.8789, lon: -87.6398, kind: 'landmark', height: 65 },
+    // One of four buildings inside the burnt district to survive 1871, and the
+    // only one anybody looks at.
+    { name: 'Water Tower', lat: 41.8971, lon: -87.6247, kind: 'landmark', height: 47 },
+    { name: 'United Center', lat: 41.8807, lon: -87.6742, kind: 'landmark', height: 43 },
+    { name: 'Shedd Aquarium', lat: 41.8676, lon: -87.614, kind: 'landmark', height: 30 },
+    // At the end of the breakwater, a kilometre off Navy Pier — and the first
+    // thing off the wingtip when a free flight opens over the lake.
+    { name: 'Harbor Lighthouse', lat: 41.8896, lon: -87.5906, kind: 'landmark', height: 24 },
+    { name: 'Buckingham Fountain', lat: 41.8758, lon: -87.6189, kind: 'landmark', height: 12 },
+    { name: 'Northerly Island', lat: 41.8618, lon: -87.6086, kind: 'landmark', height: 5 },
+    { name: 'Old Town', lat: 41.91, lon: -87.635, kind: 'town', height: 181 },
+    { name: 'Pilsen', lat: 41.856, lon: -87.657, kind: 'town', height: 182 },
+    { name: 'Bronzeville', lat: 41.833, lon: -87.618, kind: 'town', height: 180 },
+    { name: 'Humboldt Park', lat: 41.903, lon: -87.701, kind: 'landmark', height: 185 },
+    { name: 'Belmont Harbor', lat: 41.9394, lon: -87.635, kind: 'water', height: 177 },
   ],
 };
 
@@ -219,8 +306,8 @@ export const CHALLENGES = {
       // than the twenty-four they were cut at for the Vela, and with thirty
       // metres more air under each one — the ballasted ship arrives faster and
       // sinks harder, and half the measured lines were landing short.
-      limit: 190,
-      medals: [140, 120, 100],
+      limit: 171,
+      medals: [126, 106, 91],
       gates: [
         { name: 'Trümmelbach', lat: 46.562, lon: 7.906, agl: 237, radius: 80 },
         { name: 'Mürren Cliff', lat: 46.568, lon: 7.9114, agl: 220, radius: 80 },
@@ -265,8 +352,8 @@ export const CHALLENGES = {
       ship: 'draco',
       needs: 2,
       marker: { lat: 46.5861, lon: 8.011, agl: 420, heading: 270 },
-      limit: 179,
-      medals: [132, 111, 96],
+      limit: 163,
+      medals: [120, 101, 87],
       // Every one of these is about 300 m higher than it was. The first marker
       // used to hang 29 m clear of the north face on the line in from the hoop,
       // which is not a margin — it is why sixty-four of seventy-two measured
@@ -285,7 +372,7 @@ export const CHALLENGES = {
       type: 'climb',
       name: 'Wetterhorn Boomer',
       where: 'The wall above Grindelwald',
-      blurb: 'Three hundred and fifty metres off the face. Nothing else on this side of the map.',
+      blurb: 'Two hundred and fifty metres off the face. Nothing else on this side of the map.',
       ship: 'cadet',
       needs: 5,
       // This stood on the Männlichen flank above Wengen for as long as the game
@@ -296,9 +383,9 @@ export const CHALLENGES = {
       // of the Grindelwald basin surveys at 4.2, it is the strongest air on the
       // eastern half of the map, and nothing else on the ladder goes there.
       marker: { lat: 46.6, lon: 8.0294, agl: 280, heading: 232 },
-      gain: 350,
-      limit: 230,
-      medals: [170, 140, 110],
+      gain: 250,
+      limit: 350,
+      medals: [255, 210, 170],
     },
     {
       id: 'jungfraujoch-descent',
@@ -315,8 +402,8 @@ export const CHALLENGES = {
       // medals somewhere else first.
       needs: 0,
       marker: { lat: 46.545, lon: 7.988, agl: 350, heading: 326 },
-      limit: 172,
-      medals: [127, 107, 92],
+      limit: 171,
+      medals: [126, 106, 91],
       // Heights are set so the straight line between any two gates clears the
       // glacier below it by at least a hundred metres.
       gates: [
@@ -342,8 +429,8 @@ export const CHALLENGES = {
       // South-west of the Joch on the course axis, out over the Jungfraufirn
       // with enough height to reach the first gate on the glide.
       marker: { lat: 46.5375, lon: 7.9743, agl: 495, heading: 24 },
-      limit: 1280,
-      medals: [950, 800, 680],
+      limit: 1340,
+      medals: [990, 830, 710],
       // Re-cut again, and this time against the terrain rather than against a
       // map. In the authored order nine of the eleven legs ran into a mountain:
       // Wengen to Grindelwald crossed a 2,192 m ridge from 1,539 m, and
@@ -385,7 +472,7 @@ export const CHALLENGES = {
       type: 'climb',
       name: 'Oberland Ceiling',
       where: 'Off the deck at Interlaken',
-      blurb: 'Four hundred and fifty metres off the lowest ground on the map, in the thinnest band.',
+      blurb: 'Three hundred metres off the lowest ground on the map, in the thinnest band.',
       ship: 'cadet',
       needs: 7,
       // On the windward slope above the Thunersee rather than over the town:
@@ -408,9 +495,9 @@ export const CHALLENGES = {
       // thirty metres across, and at 150 m over a 30-degree slope most of that
       // circle is inside the hill.
       marker: { lat: 46.6679, lon: 7.8438, agl: 480, heading: 316 },
-      gain: 450,
-      limit: 435,
-      medals: [320, 260, 210],
+      gain: 300,
+      limit: 770,
+      medals: [570, 460, 370],
     },
   ],
 
@@ -433,8 +520,8 @@ export const CHALLENGES = {
       // On the river axis at the mouth, and clear of the line the free flight
       // start already runs down, so arriving from the lake is a choice.
       marker: { lat: 41.8889, lon: -87.614, agl: 250, heading: 268 },
-      limit: 71,
-      medals: [53, 44, 38],
+      limit: 70,
+      medals: [52, 44, 38],
       // Two things were wrong with this course and both were measured rather
       // than argued about.
       //
@@ -475,8 +562,8 @@ export const CHALLENGES = {
       // task says on the tin: arriving underneath the Willis marker meant
       // opening the run with a climb the ballasted ship has no way to make.
       marker: { lat: 41.876, lon: -87.646, agl: 700, heading: 40 },
-      limit: 205,
-      medals: [150, 125, 110],
+      limit: 200,
+      medals: [150, 125, 105],
       // High to low, in the order they are actually flown: Willis, out to
       // Trump, back along Michigan Avenue, then down over Marina City to the
       // Mart. It used to run Willis, Aon, St Regis, Trump, which asks for 78 m
@@ -514,14 +601,14 @@ export const CHALLENGES = {
       ceiling: 110,
       hold: 22,
       limit: 65,
-      medals: [88, 65, 42],
+      medals: [88, 69, 49],
     },
     {
       id: 'heat-island',
       type: 'climb',
       name: 'Heat Island',
       where: 'The hot roofs north of the river',
-      blurb: 'No hills. Find the roof that is cooking and take 300 m off it.',
+      blurb: 'No hills. Find the roof that is cooking and take 200 m off it.',
       ship: 'cadet',
       needs: 6,
       // air.seedThermals is deterministic, so the good column is at a fixed
@@ -531,9 +618,9 @@ export const CHALLENGES = {
       // now stands on the core itself, surveyed at 5.8 m/s, and high enough
       // that a circle of the ballasted ship's radius has nothing in it.
       marker: { lat: 41.9123, lon: -87.6265, agl: 430, heading: 190 },
-      gain: 300,
-      limit: 152,
-      medals: [112, 91, 74],
+      gain: 200,
+      limit: 345,
+      medals: [250, 205, 165],
     },
     {
       id: 'museum-campus',
@@ -555,8 +642,8 @@ export const CHALLENGES = {
       // the ground gives any back — the marker is the entire budget, and 180 m
       // of it left nothing for a mistake.
       marker: { lat: 41.885, lon: -87.618, agl: 380, heading: 172 },
-      limit: 177,
-      medals: [131, 111, 95],
+      limit: 205,
+      medals: [150, 125, 110],
       picks: [
         { lat: 41.8758, lon: -87.6189, agl: 334 },
         { lat: 41.8663, lon: -87.6169, agl: 269 },
@@ -591,8 +678,8 @@ export const CHALLENGES = {
       // A kilometre east over the park, above everything the city has, on the
       // axis of the run that opens the course.
       marker: { lat: 41.8789, lon: -87.625, agl: 1130, heading: 270 },
-      limit: 860,
-      medals: [630, 530, 460],
+      limit: 470,
+      medals: [345, 290, 250],
       gates: [
         { name: 'Willis Tower', lat: 41.8789, lon: -87.6359, agl: 1068, radius: 115 },
         { name: 'Union Station', lat: 41.8789, lon: -87.6398, agl: 1046, radius: 95 },
@@ -631,8 +718,8 @@ export const CHALLENGES = {
       // whole climb below it. Three fifty tops out just under the ceiling.
       marker: { lat: 41.8713, lon: -87.6185, agl: 330, heading: 350 },
       gain: 250,
-      limit: 565,
-      medals: [415, 335, 275],
+      limit: 217,
+      medals: [160, 130, 105],
     },
   ],
 };

@@ -276,20 +276,17 @@ export function createAircraft(sky, spec = getAircraft()) {
 
   group.userData.materials = materials;
   group.userData.spec = spec;
-  /** Only the engine moves, and only when there is fuel going through it. */
+  /**
+   * Nothing on this aeroplane is driven any more — there is no thrust in the
+   * game. A propeller still turns because the air is going through it, which is
+   * what a dead engine's prop does, and a jet pipe is just a hole.
+   */
   group.userData.animate = (dt, glider) => {
     if (prop) {
-      const rate = glider.boosting ? 46 : 6 + glider.airspeed * 0.3;
-      prop.rotation.z += rate * dt;
-      discMat.uniforms.uOpacity.value = glider.boosting ? 0.34 : 0.08;
+      prop.rotation.z += (2 + glider.airspeed * 0.22) * dt;
+      discMat.uniforms.uOpacity.value = 0.06;
     }
-    if (flame) {
-      // Lit or out, with nothing in between, and never quite steady while lit.
-      flameMat.uniforms.uPulse.value += dt * 47;
-      const want = glider.boosting ? 0.62 : 0;
-      flameMat.uniforms.uOpacity.value = THREE.MathUtils.damp(flameMat.uniforms.uOpacity.value, want, 14, dt);
-      flame.visible = flameMat.uniforms.uOpacity.value > 0.01;
-    }
+    if (flame) flame.visible = false;
   };
   return group;
 }

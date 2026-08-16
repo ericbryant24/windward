@@ -566,6 +566,20 @@ body {
   color: var(--dim);
 }
 
+/* What the ship is getting right now, against the book figure under it. Lit
+   when the air is giving back most of what the polar promises, which is the
+   moment worth noticing — there is no engine to make up the difference. */
+.gauge em.glide {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(226, 240, 252, 0.82);
+}
+
+.gauge em.glide.good {
+  color: var(--lift);
+}
+
 .centre {
   flex: 1;
   display: flex;
@@ -954,29 +968,6 @@ body {
   transform: scale(0.94);
   background: rgba(40, 92, 124, 0.7);
   border-color: var(--accent);
-}
-
-.round-btn.boost .glyph {
-  color: var(--accent-warm);
-}
-
-.round-btn.boost.empty {
-  opacity: 0.45;
-}
-
-.boost-ring {
-  position: absolute;
-  inset: -2px;
-  transform: rotate(-90deg);
-  pointer-events: none;
-}
-
-.boost-ring circle {
-  fill: none;
-  stroke: var(--accent-warm);
-  stroke-width: 3;
-  opacity: 0.85;
-  transition: stroke-dashoffset 0.15s linear;
 }
 
 /* ------------------------------------------------------------ toasts --- */

@@ -22,6 +22,9 @@ const OPEN_WATER = 260;
 // Pinning the stick to the stop for this long promotes that axis from an
 // attitude command to a rate, which is what makes a roll or a loop possible
 // without making one reachable by accident.
+/** How much of the free-stream wind a thermal's column keeps out. See sample(). */
+const THERMAL_SHELTER = 1.0;
+
 const PIN_STICK = 0.94;
 const PIN_DELAY = 0.35;
 
@@ -189,6 +192,8 @@ export class Air {
 
     // ---- thermals --------------------------------------------------------
     let lift = 0;
+    /** How deep inside a working column we are, 0..1. See the shelter below. */
+    let core0 = 0;
     for (const t of this.thermals) {
       const dx = pos.x - t.x;
       const dz = pos.z - t.z;
@@ -205,11 +210,35 @@ export class Air {
       const ramp = smoothstep(0, 180, above);
       const breathe = 0.82 + 0.18 * Math.sin(this.time * 0.35 + t.phase);
       lift += t.strength * core * cap * ramp * breathe;
+      // Sheltered across the whole plume, not just the strong middle of it: a
+      // thermal is a column of air on the move, and the ship circling inside
+      // it is in that air whether or not it is in the best of it.
+      core0 = Math.max(core0, smoothstep(1.5, 0.8, Math.sqrt(r2) / R) * cap * ramp);
       // gentle sink in the collar around a working thermal
       const collar = Math.exp(-((Math.sqrt(r2) - R * 1.9) ** 2) / (R * R * 0.55));
       lift -= t.strength * 0.16 * collar * cap;
     }
     out.y += lift;
+
+    // A thermal here is a standing column: it forms over one patch of sunlit
+    // ground, it stays over it, and the air inside it is going up rather than
+    // downwind. Without that the free stream blows a circling glider straight
+    // out of it — six and a half metres a second is a three-hundred-metre
+    // column crossed inside a single turn — and every thermal on both maps is
+    // scenery. Measured, that is exactly what was happening: no climb on the
+    // ladder could be finished without holding the motor down, and taking the
+    // motor away made four of them impossible. The columns were never the
+    // problem, and the fix belongs here rather than in the challenge table.
+    //
+    // Real thermals drift with the airmass and are modelled that way in
+    // cross-country sims, where the pilot drifts with them. These are tied to
+    // the slopes that make them, so they are the standing kind — and a standing
+    // column has to hold its own air or it is not standing at all.
+    if (core0 > 0) {
+      const shelter = 1 - THERMAL_SHELTER * core0;
+      out.x *= shelter;
+      out.z *= shelter;
+    }
 
     // background sink and a little texture in the air
     out.y -= 0.42;
@@ -257,8 +286,6 @@ export class Glider {
     this.pitchPin = 0;
     this.rolling = false;
     this.looping = false;
-    this.boost = 1;
-    this.boosting = false;
     this.brake = 0;
     this.vario = 0;
     this.varioSmooth = 0;
@@ -290,7 +317,6 @@ export class Glider {
    */
   setAircraft(spec) {
     this.spec = spec;
-    this.boost = 1;
     this.brake = 0;
     this.stalled = false;
     this.#mend();
@@ -325,7 +351,6 @@ export class Glider {
     this.quaternion.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ'));
     this.forward(this._f);
     this.velocity.copy(this._f).multiplyScalar(speed);
-    this.boost = 1;
     this.brake = 0;
     this.stalled = false;
     this.vario = 0;
@@ -365,7 +390,7 @@ export class Glider {
   }
 
   /**
-   * @param {{roll:number, pitch:number, brake:number, boost:boolean}} input
+   * @param {{roll:number, pitch:number, brake:number}} input
    */
   update(dt, input) {
     const cfg = this.spec;
@@ -535,15 +560,9 @@ export class Glider {
       this.loadFactor = lift / (cfg.mass * G);
     }
 
-    // ---- boost -----------------------------------------------------------
-    this.boosting = !!input.boost && this.boost > 0.02;
-    if (this.boosting) {
-      this.boost = Math.max(0, this.boost - cfg.boostBurn * dt);
-      force.addScaledVector(this.forward(this._up), cfg.boostThrust);
-    } else {
-      this.boost = Math.min(1, this.boost + cfg.boostRecharge * dt);
-    }
-
+    // No thrust. The only forces on the ship are the air and its own weight,
+    // which is what makes every metre of height something that had to be found
+    // rather than bought.
     force.y -= cfg.mass * G;
 
     this.velocity.addScaledVector(force, dt / cfg.mass);

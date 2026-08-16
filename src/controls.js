@@ -6,7 +6,7 @@
 export class Controls {
   constructor(root) {
     this.root = root;
-    this.state = { roll: 0, pitch: 0, brake: 0, boost: false };
+    this.state = { roll: 0, pitch: 0, brake: 0 };
     this.keys = new Set();
     this.enabled = true;
     this.tilt = null;
@@ -36,19 +36,13 @@ export class Controls {
         <button class="round-btn brake" data-btn="brake" aria-label="Airbrakes">
           <span class="glyph">◤◥</span><span class="label">BRAKE</span>
         </button>
-        <button class="round-btn boost" data-btn="boost" aria-label="Boost">
-          <span class="glyph">▲</span><span class="label">BOOST</span>
-          <svg class="boost-ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45"/></svg>
-        </button>
       </div>`;
     this.root.appendChild(el);
     this.el = el;
     this.stickEl = el.querySelector('.stick');
     this.knobEl = el.querySelector('.stick-knob');
     this.hintEl = el.querySelector('.stick-hint');
-    this.boostRing = el.querySelector('.boost-ring circle');
     this.brakeBtn = el.querySelector('[data-btn="brake"]');
-    this.boostBtn = el.querySelector('[data-btn="boost"]');
   }
 
   #bindTouch() {
@@ -126,7 +120,6 @@ export class Controls {
       });
     };
     hold(this.brakeBtn, () => (this._brakeHeld = true), () => (this._brakeHeld = false));
-    hold(this.boostBtn, () => (this._boostHeld = true), () => (this._boostHeld = false));
   }
 
   #knob(x, y) {
@@ -166,14 +159,6 @@ export class Controls {
     if (this.tilt) this.tiltZero = { ...this.tilt };
   }
 
-  setBoostCharge(fraction) {
-    if (!this.boostRing) return;
-    const c = 2 * Math.PI * 45;
-    this.boostRing.style.strokeDasharray = `${c}`;
-    this.boostRing.style.strokeDashoffset = `${c * (1 - fraction)}`;
-    this.boostBtn.classList.toggle('empty', fraction < 0.08);
-  }
-
   setVisible(v) {
     this.el.style.display = v ? '' : 'none';
     this.enabled = v;
@@ -183,7 +168,6 @@ export class Controls {
       this.stick.y = 0;
       this.stickEl.hidden = true;
       this._brakeHeld = false;
-      this._boostHeld = false;
     }
   }
 
@@ -215,8 +199,13 @@ export class Controls {
     const s = this.sensitivity;
     this.state.roll = clamp(roll * s, -1, 1);
     this.state.pitch = clamp((this.invertPitch ? -pitch : pitch) * s, -1, 1);
-    this.state.brake = this._brakeHeld || k.has('KeyB') || k.has('ShiftLeft') ? 1 : 0;
-    this.state.boost = !!this._boostHeld || k.has('Space') || !!pad?.buttons?.[0]?.pressed;
+    // Space and the gamepad's bottom face button are the airbrakes' second
+    // home: they were the boost, they are where a thumb already goes, and
+    // there is nothing else left for them to do.
+    this.state.brake =
+      this._brakeHeld || k.has('KeyB') || k.has('ShiftLeft') || k.has('Space') || pad?.buttons?.[0]?.pressed
+        ? 1
+        : 0;
     return this.state;
   }
 }

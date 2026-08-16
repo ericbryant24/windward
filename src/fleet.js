@@ -9,6 +9,13 @@
  * trimAlphaDeg is the angle of attack that actually holds trimSpeed at the
  * ship's own wing loading, which is why each one settles where its card says
  * it will instead of drifting off to some other speed the moment you let go.
+ *
+ * None of them has thrust. There used to be a boost button, and it was the one
+ * control that could answer a bad decision with something other than flying:
+ * every task on the ladder ended up measured with a thumb on it, six of the
+ * fourteen could only be finished by holding it down, and a game about height
+ * being the only currency had a button that printed money. What is left is
+ * lift, drag and weight.
  */
 
 const G = 9.80665;
@@ -47,9 +54,6 @@ export const FLEET = [
     // approach, which is what a modern glider's boards really give.
     brakeDragFactor: 9.5,
     brakeLiftLoss: 0.28,
-    boostThrust: 1750, // N — a motorglider's get-out-of-jail card
-    boostBurn: 1 / 7, // full tank lasts 7 s
-    boostRecharge: 1 / 26,
     vne: 74, // m/s
     look: {
       span: 7.55,
@@ -92,9 +96,6 @@ export const FLEET = [
     maxPitchRate: 1.6,
     brakeDragFactor: 11.0, // barn doors, and the ship they are bolted to is slow
     brakeLiftLoss: 0.24,
-    boostThrust: 1200,
-    boostBurn: 1 / 9,
-    boostRecharge: 1 / 22,
     vne: 54,
     look: {
       span: 7.4,
@@ -137,9 +138,6 @@ export const FLEET = [
     maxPitchRate: 1.15,
     brakeDragFactor: 9.5,
     brakeLiftLoss: 0.3,
-    boostThrust: 2600,
-    boostBurn: 1 / 6,
-    boostRecharge: 1 / 30,
     vne: 92,
     look: {
       span: 9.4,
@@ -162,8 +160,8 @@ export const FLEET = [
   {
     id: 'kite',
     name: 'Kite 10',
-    kind: 'Powered ultralight',
-    blurb: 'Glides like a brick, climbs whenever it likes. Wires and a motor.',
+    kind: 'Ultralight',
+    blurb: 'Glides like a brick and floats like one too. Wires, fabric and no engine.',
     mass: 210,
     wingArea: 15.0,
     aspectRatio: 7.0,
@@ -183,13 +181,6 @@ export const FLEET = [
     maxPitchRate: 1.8,
     brakeDragFactor: 5.0,
     brakeLiftLoss: 0.2,
-    // Not a boost at all but an engine: less shove than the gliders get, and
-    // a tank you can run for the better part of a minute.
-    boostThrust: 620,
-    boostBurn: 1 / 45,
-    boostRecharge: 1 / 34,
-    // Wires and struts, but the engine can push it to 142 km/h in level flight
-    // and a redline underneath that would leave it permanently in the buzz.
     vne: 46,
     look: {
       span: 5.05,
@@ -214,8 +205,8 @@ export const FLEET = [
   {
     id: 'javelin',
     name: 'Javelin 9',
-    kind: 'Jet-assisted racer',
-    blurb: 'All turbine and no wing. It accelerates; it does not climb.',
+    kind: 'Clipped-wing racer',
+    blurb: 'All ballast and no wing. It runs downhill fast and does nothing else.',
     // A tonne of aeroplane on nine square metres — nearly three times the
     // Draco's wing loading, which is where every one of its manners comes
     // from. It cannot circle in anything, and it does not need to.
@@ -232,10 +223,9 @@ export const FLEET = [
     alphaMaxDeg: 13,
     alphaMinDeg: -7,
     trimAlphaDeg: 2.74,
-    // 324 km/h hands off and 437 with the turbine lit. Deliberately clear of
-    // the redline: game.js puts a retried challenge back in the air at a third
-    // over trim, and on this ship that has to still be an airspeed, not a
-    // structural event.
+    // 324 km/h hands off, and deliberately clear of the redline: a challenge
+    // arms at a third over trim, and on this ship that has to still be an
+    // airspeed rather than a structural event.
     trimSpeed: 90,
     speedStability: 0.16,
     // Short stiff wings snap between banks — it rolls faster than anything
@@ -247,12 +237,7 @@ export const FLEET = [
     maxPitchRate: 1.1,
     brakeDragFactor: 11.0, // proper speedbrake panels, and it needs them
     brakeLiftLoss: 0.22,
-    // An engine, not a get-out-of-jail card: half a minute of it, and a long
-    // wait afterwards. Thrust is what this ship soars on.
-    boostThrust: 1900,
-    boostBurn: 1 / 34,
-    boostRecharge: 1 / 46,
-    vne: 140, // 504 km/h — flat out and level sits right on the edge of the buzz
+    vne: 140, // 504 km/h — reachable in a dive and nowhere else
     look: {
       span: 4.5,
       chord: 1.75,

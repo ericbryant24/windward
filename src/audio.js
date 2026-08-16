@@ -64,7 +64,7 @@ export class Audio {
     if (this.master) this.master.gain.value = on ? 1 : 0;
   }
 
-  /** @param {{airspeed:number, vario:number, boosting:boolean, brake:number}} s */
+  /** @param {{airspeed:number, vario:number, brake:number}} s */
   update(dt, s) {
     if (!this.started || !this.enabled) return;
     const ctx = this.ctx;
@@ -75,7 +75,7 @@ export class Audio {
     const airy = Math.min(1, (v / 62) ** 2) * (0.16 + s.brake * 0.22) + s.brake * 0.05;
     this.windGain.gain.setTargetAtTime(airy, t, 0.12);
     this.windFilter.frequency.setTargetAtTime(300 + v * 14, t, 0.12);
-    this.rumbleGain.gain.setTargetAtTime(Math.min(0.10, (v / 70) ** 3 * 0.14) + (s.boosting ? 0.09 : 0), t, 0.15);
+    this.rumbleGain.gain.setTargetAtTime(Math.min(0.10, (v / 70) ** 3 * 0.14), t, 0.15);
 
     // ---- variometer -------------------------------------------------------
     const climb = s.vario;

@@ -3,8 +3,8 @@
 A browser flight game set over the real Jungfrau region of the Bernese Alps.
 You fly a sailplane, and the only fuel you have is altitude.
 
-Portrait phone is the primary target — one thumb on the stick, two buttons for
-airbrakes and boost — but it plays fine in landscape and on a desktop keyboard.
+Portrait phone is the primary target — one thumb on the stick, one button for
+the airbrakes — but it plays fine in landscape and on a desktop keyboard.
 
 Play it at **https://ericbryant24.github.io/windward/** — the branch deploys
 itself to GitHub Pages on every push.
@@ -53,21 +53,27 @@ and running the bakers.
 
 ## Flying
 
-Altitude is currency. Straight and level costs you about 1.3 m/s, so the game
-is about finding the places where the air is going up faster than you are going
-down:
+Altitude is currency, and it is the only one — there is no thrust in the game
+at all. Straight and level costs you about 1.3 m/s, so the whole of it is
+finding the places where the air is going up faster than you are going down:
 
 - **Thermals** form over sun-facing slopes and are marked by cumulus at
   cloudbase. Circle inside one and you climb. Where they form depends on which
   slopes the sun is on, which is why the sun does not move: the medal ladder is
   calibrated against one sky, and an hour that halves the lift would quietly be
-  a difficulty setting.
+  a difficulty setting. They are standing columns tied to the ground that makes
+  them, and they hold their own air — the free stream blowing through one would
+  carry a circling glider out of it inside a single turn, which for a long time
+  it silently did.
 - **Ridge lift** runs up any face the wind is hitting. Fly along a windward
   ridge, low, and you can stay up indefinitely without circling.
 - **Sink** is everywhere else, and there is a ring of it around every thermal.
 
 The variometer — the bar on the right, and the beeping — is the instrument that
-matters. Faster, higher beeps mean better lift.
+matters. Faster, higher beeps mean better lift. Next to the speed, the glide
+ratio the ship is actually achieving against the book figure underneath it:
+36:1 on the card and 19:1 through the sink you are in is the difference
+between reaching the next ridge and not.
 
 ### Controls
 
@@ -75,8 +81,7 @@ matters. Faster, higher beeps mean better lift.
 |---|---|---|
 | Bank | Drag anywhere on the left half | ← → or A D |
 | Pitch | Same stick, up/down | ↑ ↓ or W S |
-| Airbrakes | BRAKE button | B or Shift |
-| Boost | BOOST button | Space |
+| Airbrakes | BRAKE button | B, Shift or Space |
 | Camera | Double-tap the right half | C |
 | Pause | ❚❚ | Esc or P |
 
@@ -119,6 +124,16 @@ Two rules make a challenge a designed thing rather than a stopwatch:
 
 Landing counts: put it down slowly on gentle ground and it is a landing rather
 than a wreck.
+
+### The waterfalls
+
+Lauterbrunnen is named for them and there are seventy-two off those walls. A
+25 m heightfield cannot hold a ribbon of water two metres wide down a vertical
+face, so the five that matter are placed by hand in `src/falls.js` — the
+Staubbach at 297 m, the Mürrenbach, the Trümmelbach coming out of the rock at
+the valley floor, the Sefinen and the Schmadribach. Each is one quad and a
+noise field, standing just out from the wall because the DEM bakes the cliff as
+a steep ramp and anything drawn on the rock would be inside it.
 
 ### The aeroplane
 
