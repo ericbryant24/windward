@@ -374,15 +374,19 @@ export class Minimap {
     ctx.closePath();
     ctx.fill();
 
+    // The scale, inside the rim and haloed. It used to sit bare in the square
+    // corner outside the disc, which worked while the widget was opaque and had
+    // its own dark ground under it. It does not now: over the sun glitter on
+    // Lake Michigan a 62 per cent grey on white is nothing at all.
     ctx.font = '600 9px ui-rounded, -apple-system, system-ui, sans-serif';
-    ctx.textAlign = 'right';
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = 'rgba(196, 214, 232, 0.62)';
-    ctx.fillText(
-      `${this.range % 1000 ? (this.range / 1000).toFixed(1) : this.range / 1000} km`,
-      size - 1,
-      size - 1
-    );
+    const km = `${this.range % 1000 ? (this.range / 1000).toFixed(1) : this.range / 1000} km`;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(4, 9, 15, 0.9)';
+    ctx.strokeText(km, c, size - 5);
+    ctx.fillStyle = 'rgba(214, 230, 246, 0.9)';
+    ctx.fillText(km, c, size - 5);
   }
 
   /**

@@ -708,17 +708,21 @@ body {
   color: var(--dim);
 }
 
-/* Down the left side, in the one column of the portrait screen that nothing
-   else wants: clear of the toasts above it and well clear of the thumb stick,
-   which owns the bottom 46%. The canvas draws its own rim, so there is no panel
-   here to square off a picture that is round. */
+/* Bottom left, where a moving map belongs. It sits over the stick zone, which
+   is deliberate and safe: pointer-events are off so the stick still takes every
+   touch, and the stick only draws itself where your thumb actually lands. The
+   cost is that your thumb can cover the map while you are turning, which is
+   why it is translucent — you read it between inputs, not during them. The
+   canvas draws its own rim, so there is no panel here to square off a picture
+   that is round. */
 .minimap {
   position: absolute;
   left: calc(var(--safe-l) + 12px);
-  top: calc(var(--safe-t) + 196px);
+  bottom: calc(var(--safe-b) + 12px);
   width: min(34vw, 148px);
   height: min(34vw, 148px);
   pointer-events: none;
+  opacity: 0.62;
   /* Above the floating place names, which are pinned to the world and will
      otherwise wander across the map and write a mountain over a shoreline. */
   z-index: 2;
@@ -961,7 +965,10 @@ body {
 .stick-hint {
   position: absolute;
   left: 26px;
-  bottom: calc(var(--safe-b) + 26px);
+  /* Sits above the minimap, which now owns this corner. The hint is only up
+     until your first touch, but that is exactly the moment it would otherwise
+     be printed across the map. */
+  bottom: calc(var(--safe-b) + 24px + min(34vw, 148px));
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -1188,12 +1195,15 @@ body {
     top: calc(var(--safe-t) + 98px);
   }
 
-  /* A wide screen is a short one: the map moves up under the task chip and is
-     sized off the height, which is the axis that ran out. */
+  /* A wide screen is a short one, so the map is sized off the height, which is
+     the axis that ran out. It stays in the bottom corner. */
   .minimap {
-    top: calc(var(--safe-t) + 128px);
     width: min(26vh, 148px);
     height: min(26vh, 148px);
+  }
+
+  .stick-hint {
+    bottom: calc(var(--safe-b) + 24px + min(26vh, 148px));
   }
 }
 
