@@ -321,14 +321,8 @@ body {
   color: var(--dim);
 }
 
-.level-travel:not(:empty) {
-  display: flex;
-  margin-bottom: 10px;
-}
-
 /* A build with one map baked in has nowhere to travel to. */
-.menu.single .level-tabs,
-.menu.single .level-travel {
+.menu.single .level-tabs {
   display: none;
 }
 
@@ -416,21 +410,6 @@ body {
   font-size: 13.5px;
 }
 
-/* Which ship it is flown in, said before the player commits rather than
-   discovered when the aeroplane changes underneath them. */
-.task-row u {
-  margin-left: 7px;
-  text-decoration: none;
-  font-size: 10px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--accent);
-  border: 1px solid rgba(97, 210, 255, 0.4);
-  border-radius: 6px;
-  padding: 1px 5px;
-  white-space: nowrap;
-}
-
 .task-row em {
   display: block;
   margin-top: 2px;
@@ -447,7 +426,7 @@ body {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -728,30 +707,8 @@ body {
   z-index: 2;
 }
 
-.score-chip {
-  position: absolute;
-  left: calc(var(--safe-l) + 12px);
-  top: calc(var(--safe-t) + 76px);
-  background: var(--panel);
-  border: 1px solid var(--stroke);
-  border-radius: 10px;
-  padding: 4px 9px;
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-}
-
-.score-chip b {
-  font-size: 15px;
-}
-
-.score-chip span {
-  font-size: 10px;
-  color: var(--dim);
-}
-
-/* The running task, parked under the score so the centre of the screen stays
-   the window you are flying through. */
+/* The running task, parked clear of the objective readout in the middle of the
+   top bar so the centre of the screen stays the window you are flying through. */
 .task {
   position: absolute;
   left: calc(var(--safe-l) + 12px);
@@ -819,25 +776,6 @@ body {
 
 .task i.low {
   color: var(--danger);
-}
-
-.streak {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  top: calc(var(--safe-t) + 116px);
-  padding: 5px 12px;
-  border-radius: 20px;
-  background: rgba(255, 207, 112, 0.18);
-  border: 1px solid rgba(255, 207, 112, 0.5);
-  color: var(--accent-warm);
-  font-size: 12px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.streak.on {
-  opacity: 1;
 }
 
 .warn {
@@ -1181,14 +1119,6 @@ body {
   .stick-zone {
     width: 42%;
     height: 70%;
-  }
-
-  .score-chip {
-    top: calc(var(--safe-t) + 62px);
-  }
-
-  .streak {
-    top: calc(var(--safe-t) + 58px);
   }
 
   .task {

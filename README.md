@@ -88,10 +88,10 @@ steering is available in the menu if you prefer it.
 
 ### Flying, and challenges
 
-There are no game modes. There is one button on the menu and it puts you in the
-air over whichever level is loaded, in whichever aeroplane you picked, with no
-clock: nineteen landmarks to find and a ridge-proximity multiplier that pays for
-flying close to the rock.
+There are no game modes and no scoreboard. There is one button on the menu; it
+puts you in the air over whichever level the list is pointing at, with no clock
+and nothing to accumulate but the map itself — nineteen landmarks to find, and
+whatever you can reach before you run out of height.
 
 Everything else is a **challenge** — fourteen of them, seven per level, standing
 out in the world as hoops with a light column under them. Fly through one and it
@@ -100,25 +100,34 @@ all scored on a single number where lower always wins:
 
 | | |
 |---|---|
-| slalom | a run of gates, timed — from a six-gate trench dash to the sixty-kilometre descent of the whole Oberland |
+| slalom | a run of gates, timed — from a six-gate trench dash to the thirty-three-kilometre descent of the whole Oberland |
 | collect | markers to gather on one arrival, timed |
 | climb | a fixed height gain, timed |
 | lowpass | hold it under a ceiling for a set time, scored on mean height |
 
 Two rules make a challenge a designed thing rather than a stopwatch:
 
-- **The challenge names the aeroplane.** Starting one puts you in that ship —
-  the jet down the Chicago river, the trainer on the thermal climbs, the
-  ballasted nineteen-metre for the long descents. One calibrated set of medal
-  times per challenge instead of one per aircraft per challenge, and every
-  attempt starts at the same place at the same speed. Free flight lets you fly
-  anything.
+- **Every attempt starts identically.** Same place, same heading, same speed,
+  whether you crossed the hoop or pressed the row on the level select — so a
+  time flown off the menu and a time flown off the map are the same time. The
+  entry speed is a third over trim for everything except a climb, which arms at
+  trim: a task scored on metres gained must not be winnable by cashing in the
+  speed it was handed.
 - **They unlock on medals earned anywhere.** Four are open on a fresh save; the
   rest raise their markers as the count climbs, and the count spans both levels,
   so golds over the Alps open the lakefront.
 
-Landing counts: put it down slowly on gentle ground and you get the bonus
-instead of the wreck.
+Landing counts: put it down slowly on gentle ground and it is a landing rather
+than a wreck.
+
+### The aeroplane
+
+There is one, the **Draco 19** — a ballasted nineteen-metre glider that runs and
+does not float. `src/fleet.js` still describes five, and everything that reads a
+spec still reads it, but the game issues this one for free flight and for every
+challenge; there is no hangar and nothing changes aeroplane underneath you.
+Unset `ISSUED_AIRCRAFT` in that file and the fleet comes back — but the medal
+ladder below is measured against the Draco, so it would want re-calibrating.
 
 ## How it renders
 

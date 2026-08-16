@@ -19,8 +19,6 @@ export const REGIONS = {
     name: 'Jungfrau',
     subtitle: 'Bernese Oberland',
     blurb: 'Ridge lift off the big north faces, thermals over the meadows.',
-    tagline: 'Real terrain · 38 × 38 km of the Bernese Oberland',
-    loadingTagline: 'Soaring the Bernese Alps',
     mapSub: '38 × 38 km · Switzerland',
     data: {
       terrain: 'data/jungfrau.png',
@@ -54,8 +52,6 @@ export const REGIONS = {
     name: 'Chicago',
     subtitle: 'Illinois',
     blurb: 'No hills to lean on. Thermals off hot roofs, and the lake kills you.',
-    tagline: '145,386 real buildings · 14 × 14 km of the lakefront',
-    loadingTagline: 'Soaring the Chicago lakefront',
     mapSub: '14 × 14 km · Illinois',
     data: {
       terrain: 'data/chicago.png',
@@ -176,11 +172,12 @@ export const PLACES = {
  * purpose: if the two were equal, finishing and medalling would be the same
  * event and the bottom of the ladder would carry no information.
  *
- * Three fields make a challenge a designed thing rather than a stopwatch:
+ * Two fields make a challenge a designed thing rather than a stopwatch:
  *
- *   ship   The aeroplane it is flown in, always. One calibrated ladder per
- *          challenge instead of one per aircraft per challenge, and the task
- *          gets to be about a particular aeroplane's manners.
+ *   ship   What the task was designed around. It is no longer what you fly it
+ *          in — see ISSUED_AIRCRAFT in fleet.js — but it is kept because it
+ *          says which aeroplane's manners each of these was cut for, and
+ *          because unsetting that constant hands the fleet back.
  *   needs  Medals — anywhere in the game, either map — before it appears. The
  *          count is global on purpose: golds over the Alps open the lakefront.
  *
@@ -190,11 +187,18 @@ export const PLACES = {
  * and the altitude each gate leaves you have to add up to a task that ship can
  * fly without the motor, with the motor as the margin rather than the entry fee.
  *
- * Measured by tools/calibrate-challenges.mjs, which flies every one of these in
- * the ship it names against the real physics and the real air, and prints what
- * it managed. Every number below — the medals, the clocks, and a good deal of
- * the geometry — came out of a run of it. When the flight model moves again,
- * run it again: it will say which of these have stopped being true.
+ * Measured by tools/calibrate-challenges.mjs, which flies every one of these
+ * against the real physics and the real air and prints what it managed. Every
+ * number below — the medals, the clocks, and a good deal of the geometry — came
+ * out of a run of it. When the flight model moves again, run it again: it will
+ * say which of these have stopped being true.
+ *
+ * The whole table was re-cut when the game went to one aeroplane. Nine of the
+ * fourteen had been sited for a ship that could be flown at thirty knots and
+ * turned inside sixty metres, and the ballasted nineteen-metre can do neither:
+ * five could not be finished at all, three of the rest had ladders nobody could
+ * reach. What changed is heights and spacing rather than places — the courses
+ * still go where they went, with the air under them that a heavy ship needs.
  */
 export const CHALLENGES = {
   jungfrau: [
@@ -207,40 +211,48 @@ export const CHALLENGES = {
       ship: 'vela',
       needs: 0,
       marker: { lat: 46.557, lon: 7.902, agl: 260, heading: 29 },
-      // The trench only drops 154 m in 4.3 km, and at a constant height above it
-      // the last three legs asked for 311:1, 224:1 and 2,750:1 from a ship that
-      // glides 35:1 in still air and about 24:1 in this one — the run simply
-      // mushed into the meadow short of the village. The gates now step DOWN
-      // through the trench at about twenty-four to one: the same six places and
-      // the same flying, on a line the ship can actually hold to the end of.
-      limit: 215,
-      medals: [160, 135, 115],
+      // The trench only drops 154 m in 4.3 km, so at a constant height above it
+      // the last three legs asked for a glide no ship has and the run mushed
+      // into the meadow short of the village. The gates step DOWN through the
+      // trench instead, at about twenty to one: the same six places and the
+      // same flying, on a line the ship can hold to the end of. Twenty rather
+      // than the twenty-four they were cut at for the Vela, and with thirty
+      // metres more air under each one — the ballasted ship arrives faster and
+      // sinks harder, and half the measured lines were landing short.
+      limit: 190,
+      medals: [140, 120, 100],
       gates: [
-        { name: 'Trümmelbach', lat: 46.562, lon: 7.906, agl: 210, radius: 75 },
-        { name: 'Mürren Cliff', lat: 46.568, lon: 7.9114, agl: 190, radius: 75 },
-        { name: 'Wengen Wall', lat: 46.574, lon: 7.9078, agl: 175, radius: 75 },
-        { name: 'Staubbach Falls', lat: 46.58, lon: 7.9138, agl: 135, radius: 75 },
-        { name: 'Kirche', lat: 46.586, lon: 7.912, agl: 105, radius: 75 },
-        { name: 'Lauterbrunnen', lat: 46.592, lon: 7.9102, agl: 85, radius: 75 },
+        { name: 'Trümmelbach', lat: 46.562, lon: 7.906, agl: 237, radius: 80 },
+        { name: 'Mürren Cliff', lat: 46.568, lon: 7.9114, agl: 220, radius: 80 },
+        { name: 'Wengen Wall', lat: 46.574, lon: 7.9078, agl: 220, radius: 80 },
+        { name: 'Staubbach Falls', lat: 46.58, lon: 7.9138, agl: 172, radius: 80 },
+        { name: 'Kirche', lat: 46.586, lon: 7.912, agl: 136, radius: 80 },
+        { name: 'Lauterbrunnen', lat: 46.592, lon: 7.9102, agl: 107, radius: 80 },
       ],
     },
     {
-      // Deliberately parked at the far end of the slalom: you come out of the
-      // gates at the village and the next marker is right there.
+      // This ran the other way — north from the village, back up the trench —
+      // and that is the one direction a heavy ship cannot hold a deck in. The
+      // Lauterbrunnen floor climbs 150 m in the four kilometres south, so a
+      // fixed height above it is a shallow climb, and a glider entering at
+      // 58 m/s has nothing to climb with: two of thirty measured lines finished
+      // and the rest mushed into the meadow. Turned round, the floor falls away
+      // under you, which is the only thing a glider does for free — and the
+      // trench is the one corridor on the map straight enough to fly this in.
+      // The ceiling went 70 → 110 m with it: four hundred metres of wall either
+      // side is the drama, and forty is not a margin at this speed.
       id: 'valley-floor',
       type: 'lowpass',
       name: 'Valley Floor',
-      where: 'Lauterbrunnen, running south',
-      blurb: 'Hold it under 70 m back up the trench, against the rising floor.',
-      // The ultralight, because holding a hard deck is a question of flying
-      // slowly and precisely and it does nothing else nearly as well.
+      where: 'The trench, Trümmelbach to the village',
+      blurb: 'Hold it under 110 m down the trench, four hundred metres of wall either side.',
       ship: 'kite',
-      needs: 0,
-      marker: { lat: 46.596, lon: 7.909, agl: 130, heading: 188 },
-      ceiling: 70,
-      hold: 26,
-      limit: 65,
-      medals: [56, 46, 35],
+      needs: 4,
+      marker: { lat: 46.5645, lon: 7.907, agl: 210, heading: 14 },
+      ceiling: 110,
+      hold: 20,
+      limit: 60,
+      medals: [88, 71, 53],
     },
     {
       id: 'eiger-traverse',
@@ -251,60 +263,60 @@ export const CHALLENGES = {
       // A one-way run with height to spend and no need to circle: the ballasted
       // ship's own description of itself.
       ship: 'draco',
-      needs: 3,
-      marker: { lat: 46.5861, lon: 8.011, agl: 380, heading: 270 },
-      limit: 200,
-      medals: [145, 120, 105],
-      // The second one is 60 m lower than it was: from the first it sat at 47:1,
-      // which is flatter than this ship glides in this air, so the shelf run
-      // started by arriving under the marker rather than over it.
+      needs: 2,
+      marker: { lat: 46.5861, lon: 8.011, agl: 420, heading: 270 },
+      limit: 179,
+      medals: [132, 111, 96],
+      // Every one of these is about 300 m higher than it was. The first marker
+      // used to hang 29 m clear of the north face on the line in from the hoop,
+      // which is not a margin — it is why sixty-four of seventy-two measured
+      // lines ended on the wall. They now step down off the face at fourteen to
+      // one with a hundred metres of air under the line the whole way.
       picks: [
-        { lat: 46.5861, lon: 8.0053, agl: 420 },
-        { lat: 46.5804, lon: 7.9896, agl: 340 },
-        { lat: 46.5747, lon: 7.9739, agl: 300 },
-        { lat: 46.58, lon: 7.966, agl: 320 },
-        { lat: 46.5853, lon: 7.9614, agl: 300 },
+        { lat: 46.5861, lon: 8.0053, agl: 699 },
+        { lat: 46.5804, lon: 7.9896, agl: 611 },
+        { lat: 46.5747, lon: 7.9739, agl: 562 },
+        { lat: 46.58, lon: 7.966, agl: 666 },
+        { lat: 46.5853, lon: 7.9614, agl: 699 },
       ],
     },
     {
       id: 'wengen-boomer',
       type: 'climb',
-      name: 'Wengen Boomer',
-      where: 'The Männlichen wall, above Wengen',
-      blurb: 'Beat along the windward face for 250 m. Over the village the air is dead.',
-      // The trainer: weak air is its air, and a beat along a face is exactly
-      // the flying it was built to make easy.
+      name: 'Wetterhorn Boomer',
+      where: 'The wall above Grindelwald',
+      blurb: 'Three hundred and fifty metres off the face. Nothing else on this side of the map.',
       ship: 'cadet',
-      needs: 2,
-      // And it is: nothing within 600 m of Wengen beats the ship's own sink, so
-      // the marker stands instead on the north-west flank of the Männlichen
-      // ridge, which is the windward one. It used to point at the summit — 183
-      // degrees, straight up the slope — and every line flown at it hit the hill
-      // inside eleven seconds. It now points along the contour, which is the
-      // only direction a beat can start in, and sits lower down the face where
-      // the lift is worth 3.7 m/s rather than 3.2.
-      marker: { lat: 46.6251, lon: 7.9402, agl: 150, heading: 264 },
-      gain: 250,
-      limit: 390,
-      medals: [285, 230, 190],
+      needs: 5,
+      // This stood on the Männlichen flank above Wengen for as long as the game
+      // issued a trainer to fly it in. Surveyed for the ballasted ship the face
+      // is worth 1.6 m/s against 0.95 of circling sink, which is a 200 m climb
+      // that takes five minutes and reads as a punishment — and every second
+      // line flown at it went into the hill. The Wetterhorn wall on the far side
+      // of the Grindelwald basin surveys at 4.2, it is the strongest air on the
+      // eastern half of the map, and nothing else on the ladder goes there.
+      marker: { lat: 46.6, lon: 8.0294, agl: 280, heading: 232 },
+      gain: 350,
+      limit: 230,
+      medals: [170, 140, 110],
     },
     {
       id: 'jungfraujoch-descent',
       type: 'slalom',
       name: 'Jungfraujoch Descent',
       where: 'The Joch down to Kleine Scheidegg',
-      blurb: 'Six gates and 1,300 m of glacier, flown in the jet. Nowhere to turn round.',
-      // Thirteen hundred metres of height and a straight line to spend it on is
-      // the one place a wing that cannot circle is the right wing.
+      blurb: 'Six gates and 1,300 m of glacier, straight down. Nowhere to turn round.',
+      // Thirteen hundred metres of height and a straight line to spend it on.
       ship: 'javelin',
-      // Last on this map, and it used to be fifth. A ladder whose headline ship
-      // is a 434 km/h turbine cannot finish on the trainer doing the most
-      // patient task in the game, which is what the two ceiling climbs are —
-      // so the jet takes the top slot and the climb drops to the middle.
-      needs: 6,
+      // Open from the first flight, and it used to be the last thing on the
+      // map. Every one of thirty-six measured lines finishes it, it is a
+      // minute and a half long, and it is the best-looking piece of flying in
+      // the game — which is a hook rather than a reward for grinding out six
+      // medals somewhere else first.
+      needs: 0,
       marker: { lat: 46.545, lon: 7.988, agl: 350, heading: 326 },
-      limit: 102,
-      medals: [75, 63, 54],
+      limit: 172,
+      medals: [127, 107, 92],
       // Heights are set so the straight line between any two gates clears the
       // glacier below it by at least a hundred metres.
       gates: [
@@ -324,14 +336,14 @@ export const CHALLENGES = {
       type: 'slalom',
       name: 'Jungfrau Circuit',
       where: 'The Joch, the Eiger, the whole valley',
-      blurb: 'Thirty-three kilometres and 2,300 m of height, in the ship that runs.',
+      blurb: 'Thirty-three kilometres and 2,300 m of height. The whole map in one glide.',
       ship: 'draco',
-      needs: 5,
+      needs: 9,
       // South-west of the Joch on the course axis, out over the Jungfraufirn
       // with enough height to reach the first gate on the glide.
       marker: { lat: 46.5375, lon: 7.9743, agl: 495, heading: 24 },
-      limit: 1300,
-      medals: [960, 810, 700],
+      limit: 1280,
+      medals: [950, 800, 680],
       // Re-cut again, and this time against the terrain rather than against a
       // map. In the authored order nine of the eleven legs ran into a mountain:
       // Wengen to Grindelwald crossed a 2,192 m ridge from 1,539 m, and
@@ -373,9 +385,9 @@ export const CHALLENGES = {
       type: 'climb',
       name: 'Oberland Ceiling',
       where: 'Off the deck at Interlaken',
-      blurb: 'Four hundred metres off the lowest ground on the map, in the thinnest band.',
+      blurb: 'Four hundred and fifty metres off the lowest ground on the map, in the thinnest band.',
       ship: 'cadet',
-      needs: 4,
+      needs: 7,
       // On the windward slope above the Thunersee rather than over the town:
       // sampled, the town's air runs at -0.3 m/s and the nearest thing that
       // beats the trainer's sink is two and a half kilometres away, which is a
@@ -384,18 +396,21 @@ export const CHALLENGES = {
       // This face is the honest one, and it is a slope rather than a column on
       // purpose: a thermal is a property of the hour, and the one over the
       // Lütschine is worth 2.7 m/s on an afternoon and nothing at all on a
-      // morning. The slope is worth 3.4 m/s at the marker — not the 4.7 this
+      // morning. The slope is worth 3.1 m/s at the marker — not the 4.7 this
       // once claimed, and not the same at every hour either: it surveys 1.9 at
       // midday, which is why the sun is fixed at afternoon and the ladder below
       // is calibrated against that one sky. It also pinches out with height,
       // which is what makes the last hundred metres of this the hard part.
-      marker: { lat: 46.6702, lon: 7.8421, agl: 150, heading: 316 },
-      // Less than the lakefront asks for, because the band is shallower: above
-      // about 550 m over the slope the lift has decayed to the trainer's own
-      // sink and the climb simply stops, whatever the clock says.
-      gain: 400,
-      limit: 670,
-      medals: [500, 400, 330],
+      //
+      // The hoop stands 480 m over the slope rather than the 150 it did for the
+      // trainer. That is not for the lift — it is weaker up there — but for the
+      // turn: a ballasted ship working a face needs a circle a hundred and
+      // thirty metres across, and at 150 m over a 30-degree slope most of that
+      // circle is inside the hill.
+      marker: { lat: 46.6679, lon: 7.8438, agl: 480, heading: 316 },
+      gain: 450,
+      limit: 435,
+      medals: [320, 260, 210],
     },
   ],
 
@@ -407,27 +422,27 @@ export const CHALLENGES = {
       where: 'The mouth to Wolf Point',
       blurb: 'Five gates up the main stem, and finish in the turn at Wolf Point.',
       // Not the jet, which is what this used to be. Nothing about the Javelin
-      // fits an eighty-metre canyon: it enters at 120 m/s because the entry
-      // speed is a multiple of trim, it cannot fly below about 45, and even
-      // there its turn is 175 m wide — half as wide again as the river. Two
-      // hundred lines were flown at it and every one of them ended in a
-      // building. The Vela turns inside sixty metres at cruise, which is what
-      // the bend at Wolf Point actually asks for.
+      // fits an eighty-metre canyon: it entered at 120 m/s, could not fly below
+      // about 45, and even there its turn was 175 m wide — half as wide again
+      // as the river. Two hundred lines were flown at it and every one ended in
+      // a building. The ballasted ship turns inside eighty at cruise and
+      // thirty-three of thirty-six measured lines get round Wolf Point, which
+      // is why this is the first thing the map hands you.
       ship: 'vela',
-      needs: 3,
+      needs: 0,
       // On the river axis at the mouth, and clear of the line the free flight
       // start already runs down, so arriving from the lake is a choice.
       marker: { lat: 41.8889, lon: -87.614, agl: 250, heading: 268 },
-      limit: 93,
-      medals: [69, 58, 50],
+      limit: 71,
+      medals: [53, 44, 38],
       // Two things were wrong with this course and both were measured rather
       // than argued about.
       //
       // The gates sat almost flat — two legs asked for 37:1 and 68:1 from a
-      // ship that glides 35:1 at its very best and nothing like that at racing
+      // ship that glides 36:1 at its very best and nothing like that at racing
       // speed — so the run mushed into the water below Wells Street. They now
-      // step down at about twenty-four to one, which is the Vela's glide in the
-      // low thirties, the speed the bends are flyable at.
+      // step down at about twenty-four to one, which is a glide the ship holds
+      // at the speed the bends are flyable at.
       //
       // And it used to carry on down the South Branch. Measured at the authored
       // heights, that stretch leaves twenty metres between the towers and the
@@ -450,35 +465,37 @@ export const CHALLENGES = {
       id: 'loop-rooftops',
       type: 'collect',
       name: 'Loop Rooftops',
-      where: 'Willis Tower to Streeterville',
+      where: 'Willis Tower back to the river',
       blurb: 'Five markers over the big roofs. You arrive above all of them once.',
       // One arrival, five roofs, no second chance to climb: a ship that runs
       // and does not float is the whole brief.
       ship: 'draco',
-      needs: 2,
-      // Above the lot of them, which is what the task says on the tin: the
-      // Willis marker ends up at 733 m once challenges.js has lifted it clear
-      // of the mast, and arriving underneath it meant opening the run with a
-      // climb the ballasted ship has no way to make.
-      marker: { lat: 41.883, lon: -87.643, agl: 640, heading: 100 },
-      limit: 210,
-      medals: [155, 130, 110],
+      needs: 3,
+      // South-west of the tower and above the lot of them, which is what the
+      // task says on the tin: arriving underneath the Willis marker meant
+      // opening the run with a climb the ballasted ship has no way to make.
+      marker: { lat: 41.876, lon: -87.646, agl: 700, heading: 40 },
+      limit: 205,
+      medals: [150, 125, 110],
       // High to low, in the order they are actually flown: Willis, out to
-      // Trump, then the Michigan Avenue pair, then down to the river. It used
-      // to run Willis, Aon, St Regis, Trump, which asks for 78 m of climb in
-      // the middle of the Loop with nothing under the wing to provide it.
+      // Trump, back along Michigan Avenue, then down over Marina City to the
+      // Mart. It used to run Willis, Aon, St Regis, Trump, which asks for 78 m
+      // of climb in the middle of the Loop with nothing under the wing to
+      // provide it — and it used to put the last two pickups 180 m apart, which
+      // is three seconds at this ship's cruise and rather less than the room it
+      // needs to turn.
       //
-      // Heights are the surveyed roofs plus fifty metres of air, so that a
-      // pickup taken a wingspan low is a miss rather than a wreck. Willis is
-      // the reason for the margin: challenges.js will not leave a pickup inside
-      // a roof, and it lifted the old 470 m one to 25 m above the aerials —
-      // exactly where a ship reaching for it hits the aerials.
+      // Heights step down at eighteen to one with at least ninety metres over
+      // everything the leg passes, checked against the collider rather than
+      // against the roof heights: the tallest thing within a couple of hundred
+      // metres of a line is not what the line has to clear, but the thing
+      // directly under it is.
       picks: [
-        { lat: 41.8789, lon: -87.6359, agl: 590 },
-        { lat: 41.8892, lon: -87.6266, agl: 482 },
-        { lat: 41.8869, lon: -87.6199, agl: 423 },
-        { lat: 41.8858, lon: -87.6215, agl: 400 },
-        { lat: 41.8885, lon: -87.6345, agl: 300 },
+        { lat: 41.8789, lon: -87.6359, agl: 647 },
+        { lat: 41.8892, lon: -87.6266, agl: 574 },
+        { lat: 41.8869, lon: -87.6199, agl: 541 },
+        { lat: 41.8881, lon: -87.6288, agl: 500 },
+        { lat: 41.8885, lon: -87.6354, agl: 467 },
       ],
     },
     {
@@ -486,83 +503,108 @@ export const CHALLENGES = {
       type: 'lowpass',
       name: 'Lakefront Skim',
       where: 'Grant Park to the museums',
-      blurb: 'Thirty seconds under 50 m. The shore band will hold you up.',
+      blurb: 'Twenty-two seconds under 110 m, down the shore. The breeze front will hold you up.',
       ship: 'kite',
-      needs: 0,
+      needs: 4,
+      // Fifty metres for twenty-two seconds was a powered ultralight's task and
+      // not one line in thirty finished it in the ballasted ship — the deck is
+      // a question of how much room there is under you when something goes
+      // wrong, and at 58 m/s fifty metres is none.
       marker: { lat: 41.881, lon: -87.618, agl: 130, heading: 190 },
-      ceiling: 50,
-      hold: 30,
-      limit: 75,
-      medals: [40, 32, 23],
+      ceiling: 110,
+      hold: 22,
+      limit: 65,
+      medals: [88, 65, 42],
     },
     {
       id: 'heat-island',
       type: 'climb',
       name: 'Heat Island',
-      where: 'North Michigan Avenue',
-      blurb: 'No hills. Find the roof that is cooking and take 250 m off it.',
+      where: 'The hot roofs north of the river',
+      blurb: 'No hills. Find the roof that is cooking and take 300 m off it.',
       ship: 'cadet',
-      needs: 4,
+      needs: 6,
       // air.seedThermals is deterministic, so the good column is at a fixed
       // address and the marker can be authored onto it. Over the West Loop,
       // where this used to stand, the ship sits in the sink collar of a
-      // thermal it cannot reach and the task simply cannot be completed.
-      marker: { lat: 41.9018, lon: -87.6265, agl: 230, heading: 190 },
-      gain: 250,
-      limit: 142,
-      medals: [105, 85, 69],
+      // thermal it cannot reach and the task simply cannot be completed. It
+      // now stands on the core itself, surveyed at 5.8 m/s, and high enough
+      // that a circle of the ballasted ship's radius has nothing in it.
+      marker: { lat: 41.9123, lon: -87.6265, agl: 430, heading: 190 },
+      gain: 300,
+      limit: 152,
+      medals: [112, 91, 74],
     },
     {
       id: 'museum-campus',
       type: 'collect',
       name: 'Museum Campus',
-      where: 'Field Museum to Soldier Field',
-      blurb: 'Five markers low between the museums. Tight and quick.',
+      where: 'Grant Park round the museum campus',
+      blurb: 'Five markers round the campus. One arrival, and the ground is flat.',
       ship: 'vela',
-      needs: 0,
-      marker: { lat: 41.871, lon: -87.62, agl: 180, heading: 170 },
-      limit: 142,
-      medals: [105, 89, 76],
+      needs: 1,
+      // A lap of the campus rather than a knot inside it. The Field Museum,
+      // the Shedd and the Adler sit inside eight hundred metres of each other,
+      // which is a course with two legs shorter than this ship's turning
+      // circle: one measured line in seventy-two finished, and the rest spent
+      // the clock going round again for a pickup they had just missed. Spread
+      // over Grant Park and Northerly Island, every leg is over five hundred
+      // metres and eleven lines in seventy-two get round.
+      //
+      // The other half of it is height. The lakefront is flat, so nothing on
+      // the ground gives any back — the marker is the entire budget, and 180 m
+      // of it left nothing for a mistake.
+      marker: { lat: 41.885, lon: -87.618, agl: 380, heading: 172 },
+      limit: 177,
+      medals: [131, 111, 95],
       picks: [
-        { lat: 41.8663, lon: -87.6169, agl: 90 },
-        { lat: 41.8676, lon: -87.614, agl: 80 },
-        { lat: 41.8663, lon: -87.6072, agl: 70 },
-        { lat: 41.8639, lon: -87.6078, agl: 60 },
-        { lat: 41.8623, lon: -87.6167, agl: 95 },
+        { lat: 41.8758, lon: -87.6189, agl: 334 },
+        { lat: 41.8663, lon: -87.6169, agl: 269 },
+        { lat: 41.8663, lon: -87.6072, agl: 229 },
+        { lat: 41.86, lon: -87.6088, agl: 199 },
+        { lat: 41.8623, lon: -87.6167, agl: 172 },
       ],
     },
     {
-      // The old race mode, all eleven gates kept, re-cut the same way as the
-      // alpine one: it starts over the Willis mast and never has to climb back
-      // to it. The whole downtown is flat, so the height it opens with is the
-      // height it has, and eleven kilometres of gates is 480 m of it — which is
-      // why the gates step down from the tower instead of sitting on the water.
-      // Authored flat and low, four of the legs went through buildings and the
-      // rest asked for a glide no ship in the hangar has.
+      // The old race mode, re-cut the same way as the alpine one: it starts
+      // over the Willis mast and never has to climb back to it. The whole
+      // downtown is flat, so the height it opens with is the height it has.
+      //
+      // The gate that had to go is South Branch. It sat last, south-west of
+      // Soldier Field, and getting to it meant a leg back north through the
+      // Loop from the lowest point on the course: measured, it asked for 116:1
+      // from a ship that glides 36:1 at its very best. Shedd Aquarium takes its
+      // place, on the lakefront run south, and the course now falls all the way
+      // from the tower to Soldier Field with no leg that climbs.
+      //
+      // It opens at 1,130 m over Grant Park, which is most of the way to
+      // cloudbase and deliberate: ten kilometres of gates at a glide this ship
+      // can hold flat out is seven hundred metres of height, and a hoop you
+      // have to climb to is the right way to gate the longest thing on the map.
       id: 'loop-circuit',
       type: 'slalom',
       name: 'The Loop Circuit',
       where: 'The tower, the river, the museums',
       blurb: 'Over the Willis mast, down the river, out to the pier, back through the museums.',
       ship: 'vela',
-      needs: 5,
+      needs: 10,
       // A kilometre east over the park, above everything the city has, on the
       // axis of the run that opens the course.
-      marker: { lat: 41.8789, lon: -87.625, agl: 640, heading: 270 },
-      limit: 670,
-      medals: [500, 420, 360],
+      marker: { lat: 41.8789, lon: -87.625, agl: 1130, heading: 270 },
+      limit: 860,
+      medals: [630, 530, 460],
       gates: [
-        { name: 'Willis Tower', lat: 41.8789, lon: -87.6359, agl: 560, radius: 110 },
-        { name: 'Union Station', lat: 41.8789, lon: -87.6398, agl: 545, radius: 85 },
-        { name: 'Wolf Point', lat: 41.8887, lon: -87.6386, agl: 495, radius: 90 },
-        { name: 'Michigan Avenue Bridge', lat: 41.8887, lon: -87.6247, agl: 443, radius: 80 },
-        { name: 'Navy Pier', lat: 41.8917, lon: -87.6086, agl: 380, radius: 90 },
-        { name: 'Lake Point Tower', lat: 41.8938, lon: -87.6127, agl: 361, radius: 85 },
-        { name: 'Millennium Park', lat: 41.8826, lon: -87.6226, agl: 293, radius: 95 },
-        { name: 'Buckingham Fountain', lat: 41.8758, lon: -87.6189, agl: 256, radius: 90 },
-        { name: 'Adler Planetarium', lat: 41.8663, lon: -87.6072, agl: 205, radius: 95 },
-        { name: 'Soldier Field', lat: 41.8623, lon: -87.6167, agl: 175, radius: 100 },
-        { name: 'South Branch', lat: 41.867, lon: -87.63, agl: 165, radius: 90 },
+        { name: 'Willis Tower', lat: 41.8789, lon: -87.6359, agl: 1068, radius: 115 },
+        { name: 'Union Station', lat: 41.8789, lon: -87.6398, agl: 1046, radius: 95 },
+        { name: 'Wolf Point', lat: 41.8887, lon: -87.6386, agl: 970, radius: 95 },
+        { name: 'Michigan Avenue Bridge', lat: 41.8887, lon: -87.6247, agl: 893, radius: 90 },
+        { name: 'Navy Pier', lat: 41.8917, lon: -87.6086, agl: 789, radius: 95 },
+        { name: 'Lake Point Tower', lat: 41.8938, lon: -87.6127, agl: 765, radius: 90 },
+        { name: 'Millennium Park', lat: 41.8826, lon: -87.6226, agl: 654, radius: 100 },
+        { name: 'Buckingham Fountain', lat: 41.8758, lon: -87.6189, agl: 600, radius: 95 },
+        { name: 'Shedd Aquarium', lat: 41.8672, lon: -87.614, agl: 512, radius: 95 },
+        { name: 'Adler Planetarium', lat: 41.8663, lon: -87.6072, agl: 474, radius: 100 },
+        { name: 'Soldier Field', lat: 41.8623, lon: -87.6167, agl: 412, radius: 105 },
       ],
     },
     {
@@ -575,17 +617,22 @@ export const CHALLENGES = {
       type: 'climb',
       name: 'Lakefront Ceiling',
       where: 'Grant Park, in the breeze front',
-      blurb: 'Six hundred metres over the flattest city there is. The shore only gets you so far.',
+      blurb: 'Two hundred and fifty metres over the flattest city there is, off one column and nothing else.',
       ship: 'cadet',
-      needs: 6,
-      // Three hundred metres west of where it stood, which is the difference
-      // between being in the convergence and being just inland of it: the old
-      // spot sampled 0.85 m/s at the deck, which is under the ship's own sink,
-      // and a marker you cannot climb out of is not a climb.
-      marker: { lat: 41.8806, lon: -87.6216, agl: 150, heading: 350 },
-      gain: 600,
-      limit: 445,
-      medals: [330, 265, 215],
+      needs: 8,
+      // On the south end of the park rather than the middle, which is the
+      // difference between being in the convergence and being just inland of
+      // it: the old spot sampled 0.39 m/s at the deck, well under the ship's
+      // own sink, and a marker you cannot climb out of is not a climb.
+      //
+      // Six hundred metres was the ask, and the band cannot supply it: the
+      // convergence tapers to nothing by 900 m and the marker sits inside it,
+      // so the last stretch was flown in dead air and took longer than the
+      // whole climb below it. Three fifty tops out just under the ceiling.
+      marker: { lat: 41.8713, lon: -87.6185, agl: 330, heading: 350 },
+      gain: 250,
+      limit: 565,
+      medals: [415, 335, 275],
     },
   ],
 };

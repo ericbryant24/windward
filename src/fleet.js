@@ -287,7 +287,24 @@ export const FLEET = [
   },
 ];
 
-export const DEFAULT_AIRCRAFT = FLEET[0].id;
+/**
+ * The one aeroplane the game issues.
+ *
+ * The roster above is real and nothing about it has been thrown away — the
+ * flight model, the mesh builder and the instruments all still read a spec, and
+ * every ship here still flies the way its numbers say it does. What has gone is
+ * the choosing: there is no hangar on the menu, challenges no longer hand you a
+ * different aeroplane when you cross their hoop, and so there is nothing a
+ * player can arrive in by accident. Five aircraft is a decision to make before
+ * flying, and the menu has exactly one of those in it.
+ *
+ * Set this to null and the fleet comes back: the hangar renders, the saved
+ * preference is honoured again and `shipFor` goes back to reading the ship each
+ * challenge names. Everything downstream keys off this one constant.
+ */
+export const ISSUED_AIRCRAFT = 'draco';
+
+export const DEFAULT_AIRCRAFT = ISSUED_AIRCRAFT ?? FLEET[0].id;
 
 /** Wing span in metres, which is what the aspect ratio and the area mean. */
 export function wingSpan(spec) {
@@ -295,7 +312,8 @@ export function wingSpan(spec) {
 }
 
 export function getAircraft(id) {
-  return FLEET.find((a) => a.id === id) ?? FLEET[0];
+  const find = (want) => FLEET.find((a) => a.id === want);
+  return find(id) ?? find(DEFAULT_AIRCRAFT) ?? FLEET[0];
 }
 
 /**

@@ -51,15 +51,37 @@ await step('menu is showing', async () => {
 });
 
 await step('level select lists both maps', async () => {
+  const other = map === 'jungfrau' ? 'chicago' : 'jungfrau';
   const tabs = await page.$$eval('.level-tab', (els) => els.map((e) => e.dataset.value));
   if (tabs.length !== 2) throw new Error(`level tabs: ${tabs.join(',') || 'none'}`);
   // The other map's challenges have to be readable from here, or the two maps
   // are still two games.
-  await page.click(`.level-tab[data-value="${map === 'jungfrau' ? 'chicago' : 'jungfrau'}"]`);
+  await page.click(`.level-tab[data-value="${other}"]`);
   const away = await page.$$eval('.task-list .task-row', (els) => els.length);
   if (away < 7) throw new Error(`other level shows ${away} rows`);
-  if (!(await page.$('[data-action="goto"]'))) throw new Error('no way to travel to the other level');
+  // Picking a level is the only step: Fly goes wherever the list is pointing,
+  // rather than to a second button that has to be found underneath it.
+  const flyTo = await page.$eval('.fly-btn', (el) => el.dataset.value);
+  if (flyTo !== other) throw new Error(`Fly still points at ${flyTo}`);
+  if (await page.$('[data-action="goto"]')) throw new Error('the extra travel button is back');
   await page.click(`.level-tab[data-value="${map}"]`);
+  if ((await page.$eval('.fly-btn', (el) => el.dataset.value)) !== map) {
+    throw new Error('Fly did not follow the level back');
+  }
+});
+
+await step('the menu offers one aeroplane and no way to change it', async () => {
+  const { issued, shown } = await page.evaluate(async () => {
+    const { ISSUED_AIRCRAFT } = await import('/src/fleet.js');
+    return {
+      issued: ISSUED_AIRCRAFT,
+      shown: [...document.querySelectorAll('[data-action="aircraft"]')].filter(
+        (el) => el.offsetParent !== null
+      ).length,
+    };
+  });
+  if (!issued) throw new Error('no ship is issued — the hangar is back');
+  if (shown) throw new Error(`${shown} aircraft cards are on screen`);
 });
 
 await step('one button and you are flying', async () => {
@@ -116,12 +138,17 @@ await step('later challenges are locked behind medals', async () => {
   if (locked.some(Boolean)) throw new Error('a locked row is still a button');
 });
 
-await step('a challenge starts from the level select, in its own ship', async () => {
+await step('a challenge starts from the level select, in the issued ship', async () => {
   const id = await page.$eval('[data-action="challenge"]', (el) => el.dataset.value);
   await page.click(`[data-action="challenge"][data-value="${id}"]`);
   await page.waitForFunction((want) => window.WINDWARD.stats().challenge === want, id, { timeout: 5000 });
   const s = await page.evaluate(() => window.WINDWARD.stats());
-  const want = await page.evaluate((cid) => window.WINDWARD.game.challenges.defs.find((d) => d.id === cid).ship, id);
+  // Whatever the table says a task was designed around, nothing swaps the
+  // aeroplane underneath the player while one ship is issued.
+  const want = await page.evaluate(async (cid) => {
+    const { shipFor } = await import('/src/challenges.js');
+    return shipFor(window.WINDWARD.game.challenges.defs.find((d) => d.id === cid)).id;
+  }, id);
   if (s.aircraft !== want) throw new Error(`${id} flew ${s.aircraft}, not ${want}`);
 });
 
@@ -185,6 +212,26 @@ await step('every challenge names a ship that exists', async () => {
       .map((d) => `${d.id}:${d.ship}`);
   });
   if (bad.length) throw new Error(bad.join(', '));
+});
+
+await step('picking the other level and pressing Fly puts you over it', async () => {
+  const other = map === 'jungfrau' ? 'chicago' : 'jungfrau';
+  await page.waitForSelector('.menu.open', { timeout: 5000 });
+  await page.click(`.level-tab[data-value="${other}"]`);
+  await page.click('[data-action="fly"]');
+  // Crossing is a real reload of four megabytes of terrain, on a software
+  // renderer, so this is the slowest step in the file.
+  await page.waitForFunction((m) => location.search.includes(`map=${m}`), other, { timeout: 20000 });
+  await page.waitForFunction(() => window.WINDWARD?.ready || window.WINDWARD?.error, { timeout: 180000 });
+  await page.waitForSelector('.flight.open', { timeout: 30000 });
+  const s = await page.evaluate(() => window.WINDWARD.stats());
+  if (s.phase !== 'flying') throw new Error(`arrived in phase ${s.phase}`);
+  // The launch instruction is spent. Left on the address bar it would relaunch
+  // on every reload from the menu.
+  await page.click('[data-action="pause"]');
+  await page.click('[data-action="menu"]');
+  await page.waitForSelector('.menu.open', { timeout: 5000 });
+  if (page.url().includes('start=')) throw new Error(`start flag survived: ${page.url()}`);
 });
 
 const stats = await page.evaluate(() => window.WINDWARD.stats());

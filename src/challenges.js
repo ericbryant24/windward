@@ -1,7 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { makeLitMaterial } from './materials.js';
 import { CHALLENGES, REGIONS } from './regions.js';
-import { getAircraft } from './fleet.js';
+import { getAircraft, ISSUED_AIRCRAFT, polar } from './fleet.js';
 import { store } from './store.js';
 
 /**
@@ -27,7 +27,14 @@ import { store } from './store.js';
 const MARKER_RADIUS = 52;
 /** And how far back out before it will trigger again. */
 const REARM_RADIUS = 300;
-const PICKUP_RADIUS = 34;
+/**
+ * How close counts as having taken a pickup. Thirty-four metres was sized for
+ * a ship that could be flown at thirty; the ballasted glider crosses that in
+ * six tenths of a second at racing speed, and measured over the Loop it turned
+ * a five-marker collect into a series of near misses — one line in seventy-two
+ * finished. Fifty-five is still a target you have to be pointed at.
+ */
+const PICKUP_RADIUS = 55;
 /** Height of the light column that makes a marker findable from far off. */
 const BEACON_HEIGHT = 460;
 
@@ -79,12 +86,14 @@ export function formatMetric(def, value) {
  * screen that could add them up. Challenge ids are unique across regions, so
  * the region never has to appear in the key at all.
  *
- * The `.v2` is that change. The times underneath it were flown against a
- * control law and a set of thresholds that no longer exist, so they are not
- * worth carrying forward — a bronze earned under the old physics would show up
- * here as a gold nobody flew.
+ * The version suffix is what throws the book away when the times underneath it
+ * stop meaning anything. `.v3` is the game issuing one aeroplane: every
+ * challenge used to name its own ship and every threshold was measured against
+ * that ship, so a Kite's low pass and a Cadet's climb are not comparable with
+ * the same tasks flown in the Draco. Carrying them forward would show a gold
+ * against a run nobody flew.
  */
-const MEDAL_KEY = 'windward.medals.v2';
+const MEDAL_KEY = 'windward.medals.v3';
 
 export function loadMedals() {
   try {
@@ -120,9 +129,41 @@ export function findChallenge(id) {
   return null;
 }
 
-/** The aeroplane a challenge is flown in. Never the player's choice. */
+/**
+ * The aeroplane a challenge is flown in. Never the player's choice — and while
+ * the game issues one ship, never the challenge's either: `def.ship` is kept in
+ * the table because it says what each task was designed around, but nothing
+ * changes aeroplane underneath the player any more.
+ */
 export function shipFor(def) {
-  return getAircraft(def.ship);
+  return getAircraft(ISSUED_AIRCRAFT ?? def.ship);
+}
+
+/** Every task that is not a climb drops you in at this multiple of trim speed. */
+const START_SPEED = 1.33;
+
+/**
+ * How fast you are going when a task arms. Everything is dropped on its marker
+ * at the same speed every time, whether it was started from the hoop or from
+ * the level select, because otherwise a medal time says as much about the
+ * approach as about the run.
+ *
+ * A climb is the exception, and it has to be. Arriving at a third over trim is
+ * free height — the ballasted ship carries 140 m of it in the speed alone — and
+ * a task scored on metres gained will happily hand out a gold for converting
+ * that back into altitude without ever finding a thermal. Measured, a climb
+ * armed at cruise was over in half a minute and never went near the lift it was
+ * standing on.
+ *
+ * Hands-off trim speed is the answer rather than best-sink speed, which was
+ * tried first: entering at 28 m/s left the ship slow, low and on a slope, and
+ * every measured line flew into the hill before it could get a turn
+ * established. Trim leaves about sixty metres of zoom in the tank against a
+ * task that asks for four hundred, which is a margin rather than a shortcut.
+ */
+export function entrySpeed(def, spec = shipFor(def)) {
+  if (def?.type === 'climb') return spec.trimSpeed;
+  return spec.trimSpeed * START_SPEED;
 }
 
 /**
@@ -220,7 +261,7 @@ export class Challenges {
     // One shared blob, repositioned per run: only one collect is ever live, and
     // building the meshes on arm would allocate mid-flight. Sized from the data
     // so adding a longer collect cannot quietly overrun the pool.
-    const pickGeom = new THREE.IcosahedronGeometry(15, 0);
+    const pickGeom = new THREE.IcosahedronGeometry(22, 0);
     const poolSize = Math.max(0, ...this.defs.map((d) => d.picks?.length ?? 0));
     this.pickups = Array.from({ length: poolSize }, () => {
       const mesh = new THREE.Mesh(pickGeom, this.materials[3]);

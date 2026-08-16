@@ -1,7 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { MEDAL_NAMES, formatMetric, formatClock } from './challenges.js';
 import { Air } from './flight.js';
-import { polar, getAircraft } from './fleet.js';
+import { ISSUED_AIRCRAFT, polar, getAircraft } from './fleet.js';
 
 /**
  * All of the 2D UI: loading, menus, and the in-flight instruments. DOM rather
@@ -31,8 +31,6 @@ export class Hud {
     this.objectiveName = this.el('[data-objective]');
     this.objectiveDist = this.el('[data-objdist]');
     this.timer = this.el('[data-timer]');
-    this.score = this.el('[data-score]');
-    this.chip = this.el('.streak');
     this.compassTape = this.el('.compass-tape');
     this.varioAir = this.el('.vario-air');
     this.netto = this.el('[data-netto]');
@@ -54,6 +52,11 @@ export class Hud {
     // The canvas only; what goes on it belongs to src/minimap.js, which the
     // game hands the world it is drawing.
     this.minimapCanvas = this.el('.minimap');
+
+    // The hangar is machinery the game still has and currently does not use;
+    // see ISSUED_AIRCRAFT in fleet.js. It stays in the template so that putting
+    // the fleet back is one constant rather than a rewrite of this file.
+    if (ISSUED_AIRCRAFT) this.el('.fleet').hidden = true;
 
     this._v = new THREE.Vector3();
     this.polar = polar(getAircraft()); // until the game says which ship it is
@@ -88,14 +91,14 @@ export class Hud {
     this.setProgress(0.04, `crossing to ${region.name}…`);
   }
 
-  /** Point the menu and the loading screen at a region. */
+  /**
+   * Point the menu and the loading screen at a region. The taglines are not
+   * part of that any more: they used to name whichever terrain was in memory,
+   * which made the two levels read as two games with two title screens. The
+   * game is called Windward wherever you happen to be flying it, and the place
+   * is already named twice on the screen underneath.
+   */
   setRegion(region) {
-    const set = (attr, text) => {
-      const el = this.root.querySelector(`[${attr}]`);
-      if (el) el.textContent = text;
-    };
-    set('data-tagline', region.tagline);
-    set('data-loadline', region.loadingTagline);
     // A single-file build carries one map's data and cannot travel to the
     // other. It is also already as offline as a thing can be, so the download
     // shelf has nothing to say.
@@ -119,7 +122,6 @@ export class Hud {
     // menu stays where the player last left it.
     if (!this.level || !view.levels.some((l) => l.id === this.level)) this.level = view.here;
 
-    this.el('[data-flywhere]').textContent = view.levels.find((l) => l.id === view.here)?.name ?? '';
     this.el('[data-goldcount]').textContent = `${view.golds} of ${view.total} golds`;
     this.el('[data-medalcount]').textContent = view.medalled
       ? `${view.medalled} of ${view.total} carry a medal`
@@ -142,11 +144,16 @@ export class Hud {
 
     this.el('[data-discovered]').textContent = `${view.discovered}/${view.places}`;
     this.el('[data-medalstat]').textContent = `${view.medalled}/${view.total}`;
-    this.el('[data-bestscore]').textContent = view.score ? view.score.toLocaleString('en-US') : '—';
     this.#drawLevel();
   }
 
-  /** Switch which level the list is showing. No reload: this is only a list. */
+  /**
+   * Switch which level the list is showing — and which one Fly launches into.
+   * Choosing a place and going flying used to be two presses, the second of
+   * them a button that appeared and disappeared under the list; now picking
+   * Chicago and pressing Fly puts you over Chicago, and whether that costs a
+   * reload is the game's problem rather than something to ask about first.
+   */
   selectLevel(id) {
     if (!this.view || this.level === id) return;
     this.level = id;
@@ -159,18 +166,16 @@ export class Hud {
   #drawLevel() {
     const level = this.view.levels.find((l) => l.id === this.level);
     if (!level) return;
-    const away = level.id !== this.view.here;
     this.el('.level-blurb').textContent = level.blurb;
-    this.el('.level-travel').innerHTML = away
-      ? `<button class="btn" data-action="goto" data-value="${level.id}">Fly to ${level.name}</button>`
-      : '';
+    this.el('.fly-btn').dataset.value = level.id;
+    this.el('[data-flywhere]').textContent = level.name;
     this.el('.task-list').innerHTML = level.rows
-      .map(({ def, ship, medal, best, open }) =>
+      .map(({ def, medal, best, open }) =>
         open
           ? `<button class="task-row m${medal}" data-action="challenge" data-value="${def.id}">
                <i title="${MEDAL_NAMES[medal]}"></i>
                <div>
-                 <span>${def.name}<u>${ship.name}</u></span>
+                 <span>${def.name}</span>
                  <em>${def.where} · ${def.blurb}</em>
                </div>
                <b>${best == null ? 'unflown' : formatMetric(def, best)}</b>
@@ -182,7 +187,7 @@ export class Hud {
             `<div class="task-row locked">
                <i></i>
                <div>
-                 <span>${def.name}<u>${ship.name}</u></span>
+                 <span>${def.name}</span>
                  <em>${def.where} · raised at ${def.needs} medals</em>
                </div>
                <b>${def.needs} med</b>
@@ -354,7 +359,7 @@ export class Hud {
 
   /** Per-frame instrument refresh. */
   update(state) {
-    const { glider, ground, objective, camera, score, streak, challenge } = state;
+    const { glider, ground, objective, camera, challenge } = state;
 
     this.alt.textContent = Math.round(glider.position.y);
     this.agl.textContent = `${Math.max(0, Math.round(glider.position.y - ground))} agl`;
@@ -419,14 +424,6 @@ export class Hud {
     }
 
     this.timer.textContent = `${Math.round(glider.boost * 100)}%`;
-    this.score.textContent = Math.round(score).toLocaleString('en-US');
-
-    if (streak > 1.05) {
-      this.chip.classList.add('on');
-      this.chip.textContent = `×${streak.toFixed(1)} ridge run`;
-    } else {
-      this.chip.classList.remove('on');
-    }
 
     this.task.classList.toggle('on', !!challenge);
     if (challenge) {
@@ -468,7 +465,7 @@ const TEMPLATE = /* html */ `
 <div class="loading">
   <div class="brand">
     <h1>WINDWARD</h1>
-    <p data-loadline>Soaring the Bernese Alps</p>
+    <p>Altitude is the only fuel you have</p>
   </div>
   <div class="loading-bar"><span></span></div>
   <div class="loading-note">reading the terrain…</div>
@@ -483,12 +480,12 @@ const TEMPLATE = /* html */ `
   <div class="menu-inner">
     <header>
       <h1>WINDWARD</h1>
-      <p class="sub" data-tagline>Jungfrau region · real terrain · 38 × 38 km</p>
+      <p class="sub">Altitude is the only fuel you have</p>
     </header>
 
     <button class="fly-btn" data-action="fly">
       <span class="fly-go">Fly</span>
-      <span class="fly-where" data-flywhere>Jungfrau</span>
+      <span class="fly-where" data-flywhere></span>
     </button>
 
     <div class="tasks">
@@ -501,7 +498,6 @@ const TEMPLATE = /* html */ `
 
       <div class="level-tabs"></div>
       <p class="level-blurb"></p>
-      <div class="level-travel"></div>
       <div class="task-list"></div>
     </div>
 
@@ -513,7 +509,6 @@ const TEMPLATE = /* html */ `
     <div class="stats">
       <div><span>Landmarks</span><b data-discovered>0/0</b></div>
       <div><span>Medalled</span><b data-medalstat>0/0</b></div>
-      <div><span>Best score</span><b data-bestscore>—</b></div>
     </div>
 
     <div class="settings">
@@ -596,14 +591,12 @@ const TEMPLATE = /* html */ `
 
   <canvas class="minimap"></canvas>
 
-  <div class="score-chip"><b data-score>0</b><span>pts</span></div>
   <div class="task">
     <span data-taskname>—</span>
     <b data-taskprogress>—</b>
     <em class="clock" data-taskclock>—</em>
     <i data-tasktime>—</i>
   </div>
-  <div class="streak"></div>
   <div class="warn"></div>
   <div class="gate-arrow">➤</div>
 

@@ -1,7 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { Air, Glider } from './flight.js';
 import { createAircraft, disposeAircraft } from './aircraft.js';
-import { FLEET, getAircraft, polar } from './fleet.js';
+import { FLEET, ISSUED_AIRCRAFT, getAircraft, polar } from './fleet.js';
 import { AirViz } from './airviz.js';
 import { Wreck } from './wreck.js';
 import { World, createThermalClouds } from './world.js';
@@ -12,8 +12,10 @@ import { Minimap } from './minimap.js';
 import {
   Challenges,
   MEDAL_NAMES,
+  formatClock,
   formatMetric,
   challengeMetric,
+  entrySpeed,
   medalFor,
   levels,
   tally,
@@ -24,19 +26,24 @@ import { PLACES } from './regions.js';
 import { store } from './store.js';
 
 const CAMERA_MODES = ['chase', 'far', 'cockpit'];
-const STORE_KEY = 'windward.progress.v1';
+const STORE_KEY = 'windward.progress.v2';
 const SHIP_KEY = 'windward.aircraft';
-/** Every challenge starts at this multiple of its own ship's trim speed. */
-const START_SPEED = 1.33;
 
 /**
- * Rules, scoring, camera and the frame loop. The glider physics live in
- * flight.js; this is everything that turns flying into a game.
+ * Rules, camera and the frame loop. The glider physics live in flight.js; this
+ * is everything that turns flying into a game.
  *
  * There are two things you can be doing: flying, and flying a challenge. That
  * is the whole state machine. A challenge is not a mode — it arms when you
  * cross its hoop and it ends where it ends, and either way you are still in the
  * air over the same map with the next marker somewhere off the wingtip.
+ *
+ * There is no score. There used to be one, paid out for landmarks, for medals,
+ * for flying close to the rock and docked for crashing, and it answered no
+ * question a player was asking: a high score in an open sky with no clock is a
+ * number that goes up if you keep flying. What is kept instead is what was
+ * actually done — which landmarks have been found, and what each challenge has
+ * been flown in.
  */
 export class Game {
   constructor({ renderer, scene, camera, hud, controls, heightfield, sky, terrain, lakes, audio, quality, buildingData, networkData, region }) {
@@ -54,10 +61,11 @@ export class Game {
     this.region = region;
     this.air = new Air(heightfield, sky, region.air);
     this.air.seedThermals();
-    // Two aeroplanes to keep track of: the one the player picked, which is what
-    // plain flying uses, and the one currently bolted to the physics — which a
-    // challenge overrides for as long as it wants to.
-    this.freeSpec = getAircraft(store.get(SHIP_KEY));
+    // Two aeroplanes to keep track of: the one plain flying uses, and the one
+    // currently bolted to the physics. While the game issues a single ship they
+    // are always the same aeroplane — but the swap is still real machinery, so
+    // putting the hangar back is a matter of unsetting one constant.
+    this.freeSpec = getAircraft(ISSUED_AIRCRAFT ?? store.get(SHIP_KEY));
     this.spec = this.freeSpec;
     this.polar = polar(this.spec);
     this.glider = new Glider(this.air, this.spec);
@@ -103,10 +111,7 @@ export class Game {
     this.state = 'menu';
     this.cameraMode = 0;
     this.timer = 0;
-    this.score = 0;
-    this.streak = 1;
     this.maxAltitude = 0;
-    this.lowTime = 0;
     this.progress = loadProgress();
 
     this._camPos = new THREE.Vector3();
@@ -154,8 +159,8 @@ export class Game {
    * in its own ship is not a choice and must not overwrite theirs.
    */
   setAircraft(id, remember = true) {
-    const spec = getAircraft(id);
-    if (remember) {
+    const spec = getAircraft(ISSUED_AIRCRAFT ?? id);
+    if (remember && !ISSUED_AIRCRAFT) {
       this.freeSpec = spec;
       store.set(SHIP_KEY, spec.id);
       this.hud.setFleet(FLEET, spec.id);
@@ -185,7 +190,8 @@ export class Game {
    * a time flown off the map are the same time.
    */
   startChallenge(def) {
-    this.#takeOff(this.challenges.spawnFor(def), shipFor(def));
+    const spec = shipFor(def);
+    this.#takeOff({ ...this.challenges.spawnFor(def), speed: entrySpeed(def, spec) }, spec);
     this.#beginChallenge(def);
   }
 
@@ -194,16 +200,13 @@ export class Game {
     if (spec) this.setAircraft(spec.id, false);
     this.state = 'flying';
     this.timer = 0;
-    this.score = 0;
-    this.streak = 1;
     this.maxAltitude = 0;
-    this.lowTime = 0;
     this.wreck.end();
     this.challenges.forget();
     this.challenges.setVisible(true);
     this.hud.dismissAsk();
 
-    this.glider.reset(spawn.position, spawn.heading, spawn.speed ?? this.spec.trimSpeed * START_SPEED);
+    this.glider.reset(spawn.position, spawn.heading, spawn.speed ?? this.spec.trimSpeed * 1.09);
     this._prevPos.copy(this.glider.position);
     this.#placeCamera(true);
     this.#surveyAir();
@@ -220,12 +223,12 @@ export class Game {
    * ship is never something a player can arrive in by accident.
    */
   #beginChallenge(def) {
-    this.setAircraft(def.ship, false);
+    this.setAircraft(shipFor(def).id, false);
     this.challenges.arm(def);
     const target = challengeMetric(def) === 'height'
       ? `under ${def.ceiling} m for ${def.hold} s`
       : `gold in ${formatMetric(def, def.medals[2])}`;
-    this.hud.toast(`<b>${def.name}</b> · ${this.spec.name} · ${target}`);
+    this.hud.toast(`<b>${def.name}</b> · ${target}`);
     this.audio?.cue('gate');
   }
 
@@ -290,7 +293,6 @@ export class Game {
           .sort((a, b) => (a.needs ?? 0) - (b.needs ?? 0))
           .map((def) => ({
             def,
-            ship: shipFor(def),
             medal: medalOf(def, best),
             best: best[def.id] ?? null,
             open: unlocked(def, medalled),
@@ -305,7 +307,6 @@ export class Game {
       medalled: rows.filter((r) => r.medal > 0).length,
       discovered: this.progress.discovered.length,
       places: (only ? [PLACES[only] ?? []] : Object.values(PLACES)).reduce((n, list) => n + list.length, 0),
-      score: this.progress.best.score ?? 0,
     };
   }
 
@@ -315,9 +316,9 @@ export class Game {
       this.controls.setVisible(false);
       const running = this.challenges.active?.def;
       this.hud.showResults('Paused', [
-        ['Flying', this.spec.name],
         [running ? 'Challenge' : 'Over', running ? running.name : this.region.name],
-        ['Score', Math.round(this.score).toLocaleString('en-US')],
+        ['Altitude', `${Math.round(this.glider.position.y)} m`],
+        ['Highest point', `${Math.round(this.maxAltitude)} m`],
       ], [
         { label: 'Resume', action: 'resume', primary: true },
         { label: 'Menu', action: 'menu' },
@@ -385,8 +386,6 @@ export class Game {
         ground,
         objective,
         camera: this.camera,
-        score: this.score,
-        streak: this.streak,
         challenge: this.challenges.hudState(),
       });
       this.controls.setBoostCharge(this.glider.boost);
@@ -471,17 +470,6 @@ export class Game {
       return;
     }
 
-    // ---- ridge running: reward flying close, but only while quick ----------
-    if (agl < 90 && g.airspeed > this.spec.trimSpeed * 0.73) {
-      const closeness = 1 - agl / 90;
-      this.streak = Math.min(4, this.streak + closeness * dt * 0.55);
-      this.score += closeness * this.streak * 26 * dt;
-      this.lowTime = 0;
-    } else {
-      this.lowTime += dt;
-      if (this.lowTime > 1.6) this.streak = Math.max(1, this.streak - dt * 1.4);
-    }
-
     if (g.position.y > this.maxAltitude) this.maxAltitude = g.position.y;
 
     // ---- discovery ---------------------------------------------------------
@@ -492,8 +480,7 @@ export class Game {
       if (dx * dx + dz * dz < 800 * 800 && Math.abs(g.position.y - p.y) < 900) {
         this.progress.discovered.push(p.name);
         saveProgress(this.progress);
-        this.score += 500;
-        this.hud.toast(`<b>${p.name}</b> discovered · +500`, 'discovery');
+        this.hud.toast(`<b>${p.name}</b> discovered`, 'discovery');
         this.audio?.cue('discovery');
       }
     }
@@ -520,8 +507,8 @@ export class Game {
    */
   #armFromMarker(def) {
     const spawn = this.challenges.spawnFor(def);
-    this.setAircraft(def.ship, false);
-    this.glider.reset(spawn.position, spawn.heading, this.spec.trimSpeed * START_SPEED);
+    this.setAircraft(shipFor(def).id, false);
+    this.glider.reset(spawn.position, spawn.heading, entrySpeed(def, this.spec));
     this._prevPos.copy(this.glider.position);
     this.#placeCamera(true);
     this.#beginChallenge(def);
@@ -537,8 +524,6 @@ export class Game {
     this.state = 'done';
     this.audio?.cue('finish');
     this.controls.setVisible(false);
-    this.score += 500 + medal * 700;
-    this.#recordBest();
     const label = challengeMetric(def) === 'height' ? 'Mean height' : 'Time';
     const totals = tally(this.challenges.best);
     const lines = [
@@ -645,11 +630,9 @@ export class Game {
     this.controls.setVisible(false);
     const lines = [
       ['Landed at', `${Math.round(this.hf.heightAt(this.glider.position.x, this.glider.position.z))} m`],
-      ['Score', Math.round(this.score + 1500).toLocaleString('en-US')],
       ['Highest point', `${Math.round(this.maxAltitude)} m`],
+      ['Time aloft', formatClock(this.timer)],
     ];
-    this.score += 1500;
-    this.#recordBest();
     this.hud.showResults('Safe landing', lines, [
       { label: 'Fly again', action: 'restart', primary: true },
       { label: 'Menu', action: 'menu' },
@@ -674,11 +657,6 @@ export class Game {
     this._crashCam.y = Math.max(this._crashCam.y, point.y + 5);
     this._crashAim.copy(g.position);
 
-    this.streak = 1;
-    // A scrape costs less than arriving flat out into a tower. Severity is
-    // uncapped here on purpose: a redline dive into Willis Tower is the most
-    // expensive thing in the game, not a tie with a mediocre 45-degree arrival.
-    this.score = Math.max(0, this.score - Math.round(80 + 450 * severity));
     this.audio?.cue('crash');
     this.hud.setWarning('');
     this.hud.impact(severity);
@@ -713,11 +691,6 @@ export class Game {
     this.airviz.prime(this.glider.position);
     this._liftAge = 0;
     this._lift = null;
-  }
-
-  #recordBest() {
-    this.progress.best.score = Math.max(this.progress.best.score ?? 0, Math.round(this.score));
-    saveProgress(this.progress);
   }
 
   // ------------------------------------------------------------ camera ---
@@ -920,7 +893,7 @@ class LabelLayer {
     this.#draw(this.taskPool, 'task-label', tasks, ({ m, d }) => ({
       html:
         `<i></i><span>${m.def.name}</span>` +
-        `<em>${shipFor(m.def).name} · ${d > 1500 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`}</em>`,
+        `<em>${d > 1500 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`}</em>`,
       cls: `m${medalOfMarker(m.def)}`,
       opacity: Math.max(0.35, Math.min(1, 1 - d / 9000)),
     }));
@@ -971,9 +944,9 @@ class LabelLayer {
 function loadProgress() {
   try {
     const raw = JSON.parse(store.get(STORE_KEY) ?? '{}');
-    return { discovered: raw.discovered ?? [], best: raw.best ?? {} };
+    return { discovered: raw.discovered ?? [] };
   } catch {
-    return { discovered: [], best: {} };
+    return { discovered: [] };
   }
 }
 

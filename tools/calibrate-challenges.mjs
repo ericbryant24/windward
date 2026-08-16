@@ -60,7 +60,7 @@ import { Heightfield } from '../src/heightfield.js';
 import { Air, Glider } from '../src/flight.js';
 import { REGIONS, CHALLENGES } from '../src/regions.js';
 import { World } from '../src/world.js';
-import { Challenges, medalFor, challengeMetric, shipFor } from '../src/challenges.js';
+import { Challenges, medalFor, challengeMetric, entrySpeed, shipFor } from '../src/challenges.js';
 import { loadBuildings, Buildings } from '../src/buildings.js';
 import { polar } from '../src/fleet.js';
 import { TIME_PRESETS } from '../src/sky.js';
@@ -120,23 +120,6 @@ const CLIMB_LADDER = { gold: 1.22, silver: 1.5, bronze: 1.85, limit: 2.5 };
  * the measured floor would want a run with no margin in it at all.
  */
 const LOWPASS = { goldPad: [1.15, 4], bronzeOfCeiling: 0.8, minGap: 5 };
-
-/**
- * Every challenge starts at this multiple of its ship's trim speed — read out
- * of game.js rather than copied, because a calibration flown from a different
- * entry speed than the game uses is a calibration of nothing.
- */
-const START_SPEED = await readStartSpeed();
-
-async function readStartSpeed() {
-  const src = await readFile(new URL('../src/game.js', import.meta.url), 'utf8');
-  const m = src.match(/START_SPEED\s*=\s*([\d.]+)/);
-  if (!m) {
-    console.error('! could not find START_SPEED in src/game.js — falling back to 1.33');
-    return 1.33;
-  }
-  return Number(m[1]);
-}
 
 // ------------------------------------------------------------- the world ---
 /** The baked region, read the way the browser reads it but without a browser. */
@@ -306,7 +289,9 @@ function fly(ctx, def, policy, guide) {
   const spec = shipFor(def);
   const glider = new Glider(air, spec);
   const spawn = challenges.spawnFor(def);
-  glider.reset(spawn.position, spawn.heading, spec.trimSpeed * START_SPEED);
+  // The game's own entry speed, imported rather than copied: a calibration
+  // flown from a different one than the game uses is a calibration of nothing.
+  glider.reset(spawn.position, spawn.heading, entrySpeed(def, spec));
 
   air.time = 0;
   challenges.abort();
@@ -1007,8 +992,14 @@ function climbPolicies(ctx, def, spec, survey, marker) {
   for (const site of picked) {
     const centre = new THREE.Vector3(site.x, Math.max(site.ground + 120, marker.y - site.distance / (book.bestLD * 0.8)), site.z);
     const band = bandAxis(ctx, spec, site, site.ground + 260);
+    // Radii the ship can actually hold, not just ones a thermal is wide enough
+    // for. A 240 m circle inside a 300 m column spends most of itself in the
+    // weak outer air and some of it in the sink collar — measured, that was the
+    // whole reason a 350 m climb in 5.6 m/s of lift took five and a half
+    // minutes. At best-sink speed and sixty-three degrees the ballasted ship
+    // turns inside sixty metres, so the tight circles belong on the list.
     for (const boost of [false, true]) {
-      for (const radius of [170, 240, 320]) {
+      for (const radius of [90, 130, 170, 240, 320]) {
         out.push({
           kind: 'climb',
           type: 'orbit',
@@ -1066,7 +1057,10 @@ function lowpassPolicies(def, spec) {
   // Duplicates would only fly the same line twice: on a draggy ship min sink
   // and best glide round to the same number.
   const speeds = [...new Set([book.minSinkSpeed * 1.05, book.bestLDSpeed, book.bestLDSpeed * 1.3].map(Math.round))];
-  for (const deck of [10, 16, 24, 34, 44]) {
+  // Including decks that only just clear the ground: a ballasted ship holding a
+  // hard deck over a valley floor has nowhere to put a mistake, and a pass that
+  // survives at 60 m and scores badly still says the task is finishable.
+  for (const deck of [10, 16, 24, 34, 44, 60, 80]) {
     if (deck > def.ceiling * 0.95) continue;
     for (const speed of speeds) {
       for (const boost of [false, true]) {

@@ -71,8 +71,8 @@ export class Wreck {
    * @param {object} glider the ship, whose state this takes over
    * @param {{cause:string, normal:THREE.Vector3, point:THREE.Vector3}} impact
    * @returns {number} severity, uncapped — the physics and the shake use the
-   *   0..1 clamp, but the score and the wording want the worst arrivals in the
-   *   game to still outrank the merely bad ones.
+   *   0..1 clamp, but the wording wants the worst arrivals in the game to still
+   *   outrank the merely bad ones.
    */
   begin(glider, { cause, normal, point }) {
     const v = glider.velocity;

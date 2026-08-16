@@ -200,7 +200,6 @@ async function boot() {
       alt: Math.round(game.glider.position.y),
       speed: Math.round(game.glider.airspeed * 3.6),
       vario: +game.glider.varioSmooth.toFixed(2),
-      score: Math.round(game.score),
       trees: game.trees?.count ?? 0,
       buildingTiles: game.buildings?.built.size ?? 0,
       movers: game.network?.moverCount ?? 0,
@@ -222,13 +221,15 @@ async function boot() {
    * before this page is torn down, and the arriving page raises the same one
    * with the same brand on it and finishes the bar.
    */
-  function travel(id, challenge = null) {
+  function travel(id, { challenge = null, start = false } = {}) {
     if (!id || id === region.id) return;
     store.set('windward.region', id);
     const url = new URL(location.href);
     url.searchParams.set('map', id);
     if (challenge) url.searchParams.set('challenge', challenge);
     else url.searchParams.delete('challenge');
+    if (start) url.searchParams.set('start', '1');
+    else url.searchParams.delete('start');
     hud.showTransition(getRegion(id));
     // One frame, so the browser paints the destination's loading screen before
     // the navigation freezes this document. Without it the last thing on screen
@@ -239,14 +240,18 @@ async function boot() {
   hud.onAction = async (action, value, btn) => {
     switch (action) {
       case 'fly':
+        // The level select says where. If that is somewhere else, going there
+        // is part of pressing Fly rather than a button of its own that had to
+        // be found first — the arriving document opens straight into the air.
+        if (value && value !== region.id) {
+          travel(value, { start: true });
+          break;
+        }
         audio.start();
         game.startFlight();
         break;
       case 'level':
         hud.selectLevel(value);
-        break;
-      case 'goto':
-        travel(value);
         break;
       case 'challenge': {
         const def = findChallenge(value);
@@ -255,7 +260,7 @@ async function boot() {
         // memory. Pressing one of those is a journey, not an error: hand the
         // challenge id to the next document and it opens straight into it.
         if (regionOfChallenge(value) !== region.id) {
-          travel(regionOfChallenge(value), value);
+          travel(regionOfChallenge(value), { challenge: value });
           break;
         }
         audio.start();
@@ -366,6 +371,16 @@ async function boot() {
   game.toMenu();
   if (arriving) game.startChallenge(arriving);
   else if (params.get('start')) game.startFlight();
+  // Both of those are one-shot instructions from the document that sent us
+  // here, and they have now been carried out. Leaving them on the address bar
+  // means a reload from the menu silently launches a flight nobody asked for,
+  // and the map is the only part of the URL worth bookmarking.
+  if (wanted || params.get('start')) {
+    const clean = new URL(location.href);
+    clean.searchParams.delete('challenge');
+    clean.searchParams.delete('start');
+    history.replaceState(null, '', clean);
+  }
 
   // Only now. Precaching the 2.4 MB shell while the player is still waiting on
   // four megabytes of terrain would make the thing they asked for slower to
