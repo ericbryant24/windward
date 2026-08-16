@@ -8,12 +8,18 @@ name: Deploy to GitHub Pages
 # workflow token is not allowed to create the Pages site itself, on public or
 # private repositories, so asking it to only produced a confusing failure.
 #
-# Only the default branch can deploy. GitHub creates the github-pages
-# environment with its deployment branch policy pinned to whatever the default
-# branch is, so a push to any other branch listed here fails in a way that
-# looks like nothing at all: the deploy job is refused a runner and finishes in
-# a second with no steps and no logs, while verify passes. If that happens,
-# the branch is the problem, not the build.
+# Which branches may deploy is a setting, not something this file controls:
+# Settings -> Environments -> github-pages -> Deployment branches and tags.
+# GitHub writes that allowlist once, naming whichever branch was the default
+# when the environment was created, and never revises it — renaming the default
+# branch afterwards leaves the old name sitting in the list, still the only one
+# allowed through.
+#
+# A branch that is not on the list fails in a way that looks like nothing at
+# all: verify passes, then deploy is refused a runner and finishes in a second
+# with no steps, no logs and an empty check-run body. There is no message
+# anywhere saying the branch was the problem. If a deploy fails and the job
+# never ran, look at the environment before you look at the build.
 
 on:
   push:
