@@ -354,7 +354,11 @@ export class Challenges {
       // rather than when the task arms: the minimap and the HUD arrow both want
       // it, and the calibrator wants it without flying anything.
       const line = def.type === 'deck' ? buildCorridor(world, def) : null;
-      return { def, position, normal, radius: MARKER_RADIUS, mesh, beacon, facing, line, locked: false };
+      // `ground` is where the light column stands. The label layer wants it: a
+      // hoop four hundred metres up projects off the top of the screen while
+      // its column is still filling the middle of it, and a column nobody has
+      // put a name on is the thing players ask about.
+      return { def, position, ground, normal, radius: MARKER_RADIUS, mesh, beacon, facing, line, locked: false };
     });
     this.refreshUnlocks();
 

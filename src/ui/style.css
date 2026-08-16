@@ -865,15 +865,40 @@ body {
   }
 }
 
+/* The chevron that points at the objective when it is off screen — and, next
+   to it, what it is pointing at. Unlabelled it was a cyan arrow with its reason
+   written at the opposite end of the display, in the objective chip. */
 .gate-arrow {
   position: absolute;
   left: 50%;
   top: 50%;
-  font-size: 26px;
-  color: var(--accent);
-  text-shadow: 0 0 14px rgba(97, 210, 255, 0.7);
+  text-align: center;
   opacity: 0;
   transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.gate-arrow i {
+  display: block;
+  font-style: normal;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 0 14px rgba(97, 210, 255, 0.7);
+}
+
+.gate-arrow b {
+  display: block;
+  margin-top: 3px;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(226, 240, 252, 0.92);
+  text-shadow: 0 1px 8px rgba(4, 9, 15, 0.95);
 }
 
 .icon-btn {

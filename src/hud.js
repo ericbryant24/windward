@@ -37,6 +37,8 @@ export class Hud {
     this.windArrow = this.el('.wind i');
     this.windSpeed = this.el('[data-wind]');
     this.arrow = this.el('.gate-arrow');
+    this.arrowGlyph = this.el('.gate-arrow i');
+    this.arrowName = this.el('.gate-arrow b');
     this.warn = this.el('.warn');
     this.task = this.el('.task');
     this.taskName = this.el('[data-taskname]');
@@ -415,7 +417,7 @@ export class Hud {
       if (objective.position) {
         const d = objective.position.distanceTo(glider.position);
         this.objectiveDist.textContent = d > 1500 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`;
-        this.#pointArrow(objective.position, camera, glider);
+        this.#pointArrow(objective.position, camera, glider, objective.name);
       } else {
         this.objectiveDist.textContent = '';
         this.arrow.style.opacity = '0';
@@ -461,7 +463,7 @@ export class Hud {
   }
 
   /** Chevron that points at the next gate when it is off screen. */
-  #pointArrow(target, camera, glider) {
+  #pointArrow(target, camera, glider, name) {
     const p = this._v.copy(target).project(camera);
     const onScreen = p.z < 1 && Math.abs(p.x) < 0.92 && Math.abs(p.y) < 0.92;
     if (onScreen) {
@@ -477,8 +479,15 @@ export class Hud {
     const angle = Math.atan2(y, x);
     const r = Math.min(innerWidth, innerHeight) * 0.31;
     this.arrow.style.opacity = '1';
+    // The wrapper is placed and the glyph inside it is turned. A bare chevron
+    // is a thing pointing somewhere for no stated reason — its name lives at
+    // the top of the screen in the objective chip, which is the other side of
+    // the display — so the name comes with it, and stays the right way up
+    // while the glyph swings.
     this.arrow.style.transform =
-      `translate(-50%, -50%) translate(${Math.cos(angle) * r}px, ${-Math.sin(angle) * r}px) rotate(${-angle + Math.PI / 2}rad)`;
+      `translate(-50%, -50%) translate(${Math.cos(angle) * r}px, ${-Math.sin(angle) * r}px)`;
+    this.arrowGlyph.style.transform = `rotate(${-angle + Math.PI / 2}rad)`;
+    this.arrowName.textContent = name ?? '';
   }
 }
 
@@ -620,7 +629,7 @@ const TEMPLATE = /* html */ `
     <u class="ghost" data-taskghost></u>
   </div>
   <div class="warn"></div>
-  <div class="gate-arrow">➤</div>
+  <div class="gate-arrow"><i>➤</i><b></b></div>
 
   <button class="icon-btn pause" data-action="pause" aria-label="Pause">❚❚</button>
   <div class="crash-flash"></div>

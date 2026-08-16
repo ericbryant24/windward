@@ -167,7 +167,17 @@ Lauterbrunnen is named for them and there are seventy-two off those walls. A
 25 m heightfield cannot hold a ribbon of water two metres wide down a vertical
 face, so the five that matter are placed by hand in `src/falls.js` — the
 Staubbach at 297 m, the Mürrenbach, the Trümmelbach coming out of the rock at
-the valley floor, the Sefinen and the Schmadribach. Each is one quad and a
+the valley floor, the Sefinen and the Schmadribach.
+
+Each one is a strip that **follows the ground**, between a foot and a head the
+code finds by walking the terrain outward and then back up the face. It has to
+be: measured on the baked map, the wall under the Staubbach is a 28-degree
+ramp, not a wall — 415 m of climb over 300 m of ground, because the grid cannot
+hold a vertical face and the bake smooths what is left. A vertical quad on that
+ramp either buries its foot in the hill or hangs its head four hundred metres
+out in clear air, and for a while it did the second. The middle rows are bowed
+a little way off the rock so the water leaves the cliff the way water does, and
+both ends stay planted. Each is one quad and a
 noise field, standing just out from the wall because the DEM bakes the cliff as
 a steep ramp and anything drawn on the rock would be inside it.
 

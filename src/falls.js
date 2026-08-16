@@ -7,24 +7,44 @@ import { NOISE, SKY, OUTPUT } from './shaders/lib.js';
  * The Lauterbrunnen valley is named for them — seventy-two of them come off
  * those walls — and the Staubbach is the tallest free-falling fall in
  * Switzerland at 297 m. Every one of them was a place name on the minimap with
- * nothing standing where it pointed: the terrain is a 25 m grid, so a ribbon of
- * water two metres wide down a vertical face is not something a heightfield can
- * ever contain. They have to be put there by hand.
+ * nothing standing where it pointed: a ribbon of water two metres wide is not
+ * something a 25 m heightfield can ever contain. They have to be put there by
+ * hand.
  *
- * A fall is three things stacked up the wall:
+ * A fall is two things: a ribbon of water laid down the face, and a cone of
+ * mist where what is left of it lands. Both are one draw call and no texture —
+ * the water is a noise field in the fragment shader — so the map can have as
+ * many as the map really has.
  *
- *   the ribbon   a tapering vertical plane of water, scrolling downward, torn
- *                into strands towards the bottom. The Staubbach's name means
- *                "dust brook" — most of it is airborne long before it lands,
- *                and the shader is written around that rather than around a
- *                sheet of water.
- *   the plume    the drifting veil the wind takes off it, leaning downwind.
- *   the base     a cone of mist where what is left of it hits the meadow.
+ * ------------------------------------------------------------- the shape ---
  *
- * All three are one draw call per fall and no texture: two triangles' worth of
- * geometry each, and the water is a noise field in the fragment shader. Cheap
- * enough that the map can have as many as the map really has.
+ * The ribbon is a strip that FOLLOWS THE GROUND, sampled off the heightfield
+ * between a foot and a head that are themselves found by walking the terrain.
+ * It was a flat vertical quad standing at the authored point, and that is the
+ * one thing the data cannot support. Measured on the baked Jungfrau: at the
+ * Staubbach the valley floor is 789 m and the lip is 1316 m, but the wall
+ * between them is a 28-degree RAMP, not a wall — 415 m of climb over 300 m of
+ * ground. The 25 m grid cannot hold a vertical face and the bake smooths what
+ * is left, so there is no vertical surface anywhere for a vertical ribbon to
+ * lie against.
+ *
+ * A vertical quad on that ramp can do one of two things and both are wrong: put
+ * its foot on the valley floor and its head is four hundred metres out in
+ * clear air, or put its head on the rock and its foot is buried a hundred
+ * metres inside the hill. The old code did neither — it took its base from the
+ * terrain at the authored point, which is halfway up the ramp, so the fall
+ * started 57 m above the meadow, stopped 150 m short of the lip, and hung in
+ * the air off the cliff.
+ *
+ * Laid ON the surface it cannot float, whatever the terrain does. It reads as a
+ * steep cascade rather than a free drop, which is a fair description of what
+ * this DEM has to offer, and it is right from every angle.
  */
+
+/** Rows up the face. Enough that the strip follows a ramp without faceting. */
+const ROWS = 18;
+/** How far off the rock the water sits, along the surface normal, in metres. */
+const STANDOFF = 7;
 
 /** The falls a region puts on its walls, in the order they read best. */
 export function createFalls(heightfield, sky, list = []) {
@@ -33,51 +53,25 @@ export function createFalls(heightfield, sky, list = []) {
   if (!list.length) return Object.assign(group, { userData: { setLighting: () => {}, update: () => {} } });
 
   for (const fall of list) {
-    const { x, z } = toLocal(heightfield, fall.lat, fall.lon);
-    // The ribbon STANDS on the valley floor just out from the wall, rather than
-    // hanging off the lip. That is not a shortcut, it is what the data allows:
-    // a 25 m grid cannot hold an overhang, so the Lauterbrunnen wall is baked
-    // as a steep ramp and anything drawn on the rock is inside it. Standing the
-    // fall a little way out puts the whole drop in open air, which is also how
-    // it reads from an aeroplane — a white ribbon against a dark wall.
-    const base = heightfield.heightAt(x, z);
-    const drop = fall.drop;
-    // Leaning back towards the wall as it climbs, so the top meets the lip
-    // rather than floating in front of it.
-    const back = THREE.MathUtils.degToRad(fall.faces);
-    const leanX = -Math.sin(back) * (fall.lean ?? 0);
-    const leanZ = Math.cos(back) * (fall.lean ?? 0);
+    const line = fallLine(heightfield, fall);
+    if (!line) continue;
 
     const mat = makeFallMaterial(sky, fall);
     materials.push(mat);
-
-    // One quad, across the face and wider at the bottom where the fall has
-    // spread into spray.
-    const geom = new THREE.PlaneGeometry(fall.width ?? 22, drop, 1, 10);
-    const pos = geom.getAttribute('position');
-    for (let i = 0; i < pos.count; i++) {
-      const v = pos.getY(i) / drop + 0.5; // 0 at the foot, 1 at the lip
-      pos.setX(i, pos.getX(i) * (1 + (1 - v) * (fall.spread ?? 1.4)));
-      pos.setZ(i, v * (fall.lean ?? 0));
-    }
-    pos.needsUpdate = true;
-    geom.computeVertexNormals();
-
-    const ribbon = new THREE.Mesh(geom, mat);
-    ribbon.position.set(x + leanX * 0, base + drop / 2, z + leanZ * 0);
-    ribbon.rotation.y = -back;
+    const ribbon = new THREE.Mesh(ribbonGeometry(heightfield, line, fall), mat);
     ribbon.renderOrder = 18;
     group.add(ribbon);
 
-    // The mist at the bottom. A cone rather than a sphere so it reads as
-    // something thrown up off the ground instead of a ball of fog.
+    // The mist at the bottom, at the foot the walk found rather than at the
+    // authored point. A cone rather than a sphere so it reads as something
+    // thrown up off the ground instead of a ball of fog.
     const mistMat = makeMistMaterial(sky);
     materials.push(mistMat);
     const mist = new THREE.Mesh(
-      new THREE.ConeGeometry((fall.width ?? 22) * 1.6, Math.min(90, drop * 0.22), 10, 1, true),
+      new THREE.ConeGeometry((fall.width ?? 22) * 1.6, Math.min(90, line.drop * 0.22), 10, 1, true),
       mistMat
     );
-    mist.position.set(x, base + Math.min(45, drop * 0.11), z);
+    mist.position.set(line.foot.x, line.foot.y + Math.min(45, line.drop * 0.11), line.foot.z);
     mist.renderOrder = 19;
     group.add(mist);
   }
@@ -100,6 +94,117 @@ function toLocal(hf, lat, lon) {
     x: (lon - meta.centerLon) * 111320 * Math.cos((meta.centerLat * Math.PI) / 180),
     z: (meta.centerLat - lat) * 111320,
   };
+}
+
+/**
+ * Where a fall starts and stops, read off the terrain rather than authored.
+ *
+ * `faces` is the compass direction the water is thrown, so walking that way is
+ * walking out from the wall and walking back against it is climbing the face.
+ * Two walks:
+ *
+ *   the foot   out from the authored point until the ground stops falling —
+ *              the gradient dropping under about a tenth is the bottom of the
+ *              face, whether that is twenty-five metres out (Trümmelbach) or
+ *              six hundred (Schmadribach, which drains a hanging valley).
+ *   the head   back up the face from the foot until it has climbed the drop
+ *              the fall is credited with, or until the face stops climbing,
+ *              whichever comes first.
+ *
+ * Doing it this way rather than from authored endpoints means the falls stay
+ * put when the terrain is re-baked, which has happened twice.
+ */
+function fallLine(hf, fall) {
+  const start = toLocal(hf, fall.lat, fall.lon);
+  const a = THREE.MathUtils.degToRad(fall.faces);
+  const ux = Math.sin(a);
+  const uz = -Math.cos(a);
+  const at = (d) => {
+    const x = start.x + ux * d;
+    const z = start.z + uz * d;
+    return { x, z, y: hf.heightAt(x, z), d };
+  };
+
+  const STEP = 25;
+  let foot = at(0);
+  for (let d = STEP; d <= 900; d += STEP) {
+    const p = at(d);
+    // Rising again, or flattening out: the face has ended.
+    if (p.y > foot.y - STEP * 0.1) break;
+    foot = p;
+  }
+
+  let head = foot;
+  for (let d = foot.d - STEP; d >= foot.d - 1200; d -= STEP) {
+    const p = at(d);
+    if (p.y <= head.y) break; // stopped climbing: the top of the face
+    head = p;
+    if (head.y - foot.y >= fall.drop) break;
+  }
+
+  const drop = head.y - foot.y;
+  if (drop < 25) return null; // nothing here worth drawing water down
+  return { foot, head, drop, run: Math.hypot(head.x - foot.x, head.z - foot.z) };
+}
+
+/**
+ * The ribbon: a strip of quads climbing the face, each row sitting a few metres
+ * off the rock along the surface normal so it never z-fights and never sinks
+ * in. Wider at the bottom, where the fall has stopped being water.
+ */
+function ribbonGeometry(hf, line, fall) {
+  const width = fall.width ?? 22;
+  const spread = fall.spread ?? 1.4;
+  // Across the fall line in plan, which is the direction the ribbon has width.
+  const dx = (line.head.x - line.foot.x) / (line.run || 1);
+  const dz = (line.head.z - line.foot.z) / (line.run || 1);
+  const px = -dz;
+  const pz = dx;
+
+  // Bowed off the face in the middle and planted at both ends. Water leaving
+  // the lip does not hug the rock on the way down, and a strip that does reads
+  // as a pale gully painted on the hillside; carrying the middle rows a little
+  // way downhill without taking their height with them lifts them clear of the
+  // slope, which is the free-falling part of a fall. Both ends still touch, so
+  // it cannot go back to floating.
+  const bow = fall.bow ?? Math.min(45, line.drop * 0.1);
+
+  const pos = new Float32Array((ROWS + 1) * 2 * 3);
+  const uv = new Float32Array((ROWS + 1) * 2 * 2);
+  const nrm = new THREE.Vector3();
+  for (let i = 0; i <= ROWS; i++) {
+    const t = i / ROWS; // 0 at the foot, 1 at the head
+    const ax = line.foot.x + (line.head.x - line.foot.x) * t;
+    const az = line.foot.z + (line.head.z - line.foot.z) * t;
+    const half = (width * (1 + (1 - t) * spread)) / 2;
+    hf.normalAt(ax, az, 40, nrm);
+    // Height from where the row sits ON the line; position from where the bow
+    // carries it. That difference is the air under the water.
+    const y = hf.heightAt(ax, az) + nrm.y * STANDOFF;
+    const out = bow * Math.sin(Math.PI * t);
+    const cx = ax - dx * out;
+    const cz = az - dz * out;
+    for (let k = 0; k < 2; k++) {
+      const s = k ? 1 : -1;
+      const o = (i * 2 + k) * 3;
+      pos[o] = cx + px * half * s + nrm.x * STANDOFF;
+      pos[o + 1] = y;
+      pos[o + 2] = cz + pz * half * s + nrm.z * STANDOFF;
+      uv[(i * 2 + k) * 2] = k;
+      uv[(i * 2 + k) * 2 + 1] = t;
+    }
+  }
+  const index = [];
+  for (let i = 0; i < ROWS; i++) {
+    const b = i * 2;
+    index.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geom.setIndex(index);
+  geom.computeVertexNormals();
+  return geom;
 }
 
 /**

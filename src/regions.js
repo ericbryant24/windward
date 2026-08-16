@@ -51,26 +51,31 @@ export const REGIONS = {
      * The Lauterbrunnen valley is named for its waterfalls — seventy-two of
      * them come off those walls — and a 25 m heightfield cannot hold a ribbon
      * of water two metres wide down a vertical face, so they are placed by
-     * hand. `faces` is the compass direction the water is thrown, `reach` how
-     * far out from the lip it lands, and the drop itself is read off the baked
-     * terrain rather than authored. See src/falls.js.
+     * hand.
+     *
+     * Only three fields decide where a fall goes: the point, `faces` — the
+     * compass direction the water is thrown, so the opposite of it is the way
+     * up the face — and `drop`, how much height the fall is credited with.
+     * src/falls.js walks the terrain from the point to find the foot and the
+     * head, and lays the water on the ground between them, so these stay right
+     * across a re-bake. `width`, `spread` and `rate` are looks.
      */
     falls: [
       // 297 m, and the tallest free-falling fall in Switzerland. Standing just
       // out from the west wall opposite the village, its lip level with the
       // Mürren terrace. Most of it is airborne long before it lands, which is
       // what "dust brook" means and what the shader is written around.
-      { name: 'Staubbach', lat: 46.5917, lon: 7.9062, faces: 90, drop: 320, lean: 60, width: 24, spread: 2.2, rate: 1.0 },
+      { name: 'Staubbach', lat: 46.5917, lon: 7.9062, faces: 90, drop: 320, width: 24, spread: 2.2, rate: 1.0 },
       // Off the Mürren terrace further south, on the same wall.
-      { name: 'Mürrenbach', lat: 46.5772, lon: 7.9066, faces: 90, drop: 300, lean: 55, width: 18, spread: 1.8, rate: 1.1 },
+      { name: 'Mürrenbach', lat: 46.5772, lon: 7.9066, faces: 90, drop: 300, width: 18, spread: 1.8, rate: 1.1 },
       // The Trümmelbach runs inside the rock for most of its height; what shows
       // from the air is the last of it coming out of the cliff just above the
       // valley floor. Short and hard rather than tall and soft.
-      { name: 'Trümmelbach', lat: 46.5758, lon: 7.9074, faces: 78, drop: 90, lean: 14, width: 11, spread: 0.9, rate: 1.6 },
+      { name: 'Trümmelbach', lat: 46.5758, lon: 7.9074, faces: 78, drop: 90, width: 11, spread: 0.9, rate: 1.6 },
       // The Sefinen Lütschine coming off the hanging valley to the south-west.
-      { name: 'Sefinen', lat: 46.5614, lon: 7.9016, faces: 84, drop: 210, lean: 45, width: 16, spread: 1.7, rate: 1.1 },
+      { name: 'Sefinen', lat: 46.5614, lon: 7.9016, faces: 84, drop: 210, width: 16, spread: 1.7, rate: 1.1 },
       // The Schmadribach at the head of the valley, off the Breithorn cirque.
-      { name: 'Schmadribach', lat: 46.5192, lon: 7.9055, faces: 0, drop: 260, lean: 55, width: 20, spread: 2.0, rate: 1.0 },
+      { name: 'Schmadribach', lat: 46.5192, lon: 7.9055, faces: 0, drop: 260, width: 20, spread: 2.0, rate: 1.0 },
     ],
     trees: {},
     buildings: { maxDistance: 2600, bands: [], roofClutter: false, landmarks: ['sphinx', 'pizgloria'] },

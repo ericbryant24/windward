@@ -191,7 +191,10 @@ export class Game {
   startFlight() {
     this.setAircraft(this.freeSpec.id, false);
     this.#takeOff(this.spawnFor());
-    this.hud.toast('Fly into a marker to take on what is standing there.');
+    // Named for what is on the screen rather than for what the code calls it.
+    // "Marker" is this file's word; what the player can see is a ring standing
+    // in the air with a shaft of light under it.
+    this.hud.toast('Fly through a ring of light to take on the challenge standing there.');
   }
 
   /**
@@ -428,6 +431,33 @@ export class Game {
   }
 
   /**
+   * Things the game says exactly once, the first time they are true.
+   *
+   * A shaft of cyan light standing out of a valley is the most conspicuous
+   * thing on either map and the game never said what it was. Neither did the
+   * chevron that points at it. Both are obvious after the first challenge and
+   * unreadable before it, which is the definition of something worth one
+   * sentence — and of something not worth a tutorial. Said once, kept in the
+   * profile, never said again.
+   */
+  #hints() {
+    if (this.state !== 'flying' || this.challenges.active) return;
+    const seen = this.progress.hints;
+    if (seen.includes('marker')) return;
+    for (const m of this.challenges.markers) {
+      if (!m.mesh.visible) continue;
+      if (m.position.distanceToSquared(this.glider.position) > 2200 * 2200) continue;
+      seen.push('marker');
+      saveProgress(this.progress);
+      this.hud.toast(
+        `<b>${m.def.name}</b><br>That column of light is a challenge. Fly through the ring to start it.`,
+        'discovery'
+      );
+      return;
+    }
+  }
+
+  /**
    * The challenge band, with the ghost folded in. How far ahead of your own
    * best you are RIGHT NOW is the number a ghost exists to produce, and for the
    * three types scored on a quantity it is a number rather than a picture — the
@@ -516,6 +546,8 @@ export class Game {
         this.audio?.cue('discovery');
       }
     }
+
+    this.#hints();
 
     this.timer += dt;
 
@@ -935,12 +967,22 @@ class LabelLayer {
       if (!m.mesh.visible) continue;
       const d = Math.hypot(m.position.x - from.x, m.position.z - from.z);
       if (d > 6500) continue;
-      this._v.copy(m.position).setY(m.position.y + 90);
-      const proj = this._v.clone().project(camera);
-      // Kept well inside the frame. A label pinned to the edge is half off the
-      // screen and sitting on the airbrake button, and the objective chevron
-      // already covers anything out there.
-      if (proj.z > 1 || Math.abs(proj.x) > 0.62 || Math.abs(proj.y) > 0.72) continue;
+      // Over the hoop first, and failing that at the foot of the light column.
+      // A marker four hundred metres above you projects off the top of the
+      // screen while its column still fills the middle of it, and an unnamed
+      // column is exactly the thing a player has to ask about. Two anchors and
+      // one of them is nearly always in frame.
+      let proj = null;
+      for (const y of [m.position.y + 70, m.ground + 60]) {
+        const p = this._v.set(m.position.x, y, m.position.z).clone().project(camera);
+        // Kept well inside the frame. A label pinned to the edge is half off
+        // the screen and sitting on the airbrake button, and the objective
+        // chevron already covers anything out there.
+        if (p.z > 1 || Math.abs(p.x) > 0.66 || Math.abs(p.y) > 0.74) continue;
+        proj = p;
+        break;
+      }
+      if (!proj) continue;
       near.push({ m, d, proj });
     }
     near.sort((a, b) => a.d - b.d);
@@ -999,9 +1041,9 @@ class LabelLayer {
 function loadProgress() {
   try {
     const raw = JSON.parse(store.get(STORE_KEY) ?? '{}');
-    return { discovered: raw.discovered ?? [] };
+    return { discovered: raw.discovered ?? [], hints: raw.hints ?? [] };
   } catch {
-    return { discovered: [] };
+    return { discovered: [], hints: [] };
   }
 }
 
