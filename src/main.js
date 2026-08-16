@@ -31,7 +31,7 @@ const QUALITY = {
     pixelRatio: 1.5,
     treeOptions: { radius: 850, spacing: 17, maxInstances: 3000 },
     buildingOptions: { maxDistance: 1900 },
-    networkOptions: { ribbonDistance: 1400, moverDistance: 2600 },
+    networkOptions: { ribbonDistance: 1400, moverDistance: 2600, maxMovers: 1400 },
   },
   high: {
     gridN: 20,
@@ -42,7 +42,7 @@ const QUALITY = {
     pixelRatio: 2,
     treeOptions: { radius: 1150, spacing: 15, maxInstances: 5200 },
     buildingOptions: { maxDistance: 2800 },
-    networkOptions: { ribbonDistance: 2000, moverDistance: 3600 },
+    networkOptions: { ribbonDistance: 2000, moverDistance: 3600, maxMovers: 4200 },
   },
 };
 

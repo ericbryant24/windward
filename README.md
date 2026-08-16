@@ -221,8 +221,19 @@ real 40 mm cable is far thinner than a pixel and would strobe in and out of
 existence otherwise. OSM stores a railway as dozens of fragments split wherever
 a tag changes, so the baker chains fragments that share an endpoint (taking the
 straightest continuation at junctions) into continuous runs, which is what
-gives the trains, cars and cable cars a line to run along. Traffic only exists
-within a few kilometres of the aircraft.
+gives the trains, cars and cable cars a line to run along.
+
+Traffic is a headway rather than a count — one car per fifty-five metres of
+arterial, one per hundred and thirty of street, one train per three kilometres
+of track — so a road is as busy as it is long. It used to be a flat four cars
+per route however long the route was, which put ninety-six cars on Chicago's
+363 km of arterial and none at all on the Jungfrau's main roads, because a
+route whose midpoint was out of range got nothing even while it passed under
+the wing. Vehicles are drawn nearest-first with a bias towards where the camera
+is pointed, so when the pool runs out it is the traffic behind you that goes;
+they keep to their own side of the road, and they are painted the colours a car
+park is, because one flat grey against grey asphalt is invisible from a
+thousand feet.
 
 **Shading normals** come from a mipmapped gradient map baked from the
 heightfield, not from per-fragment height derivatives — the derivative of a

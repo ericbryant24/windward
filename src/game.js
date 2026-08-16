@@ -130,6 +130,7 @@ export class Game {
     this._v = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
     this._camShake = new THREE.Vector3();
+    this._camFwd = new THREE.Vector3();
     this._liftPos = new THREE.Vector3();
     this._lift = null;
     this._liftAge = 0;
@@ -384,7 +385,7 @@ export class Game {
     this.trees?.update(dt, this.camera.position);
     this.falls.userData.update(dt);
     this.buildings?.update(this.camera.position);
-    this.network?.update(dt, this.camera.position);
+    this.network?.update(dt, this.camera.position, this._camFwd.set(0, 0, -1).applyQuaternion(this.camera.quaternion));
     this.wreck.tick(dt);
     this.aircraft.position.copy(this.glider.position);
     this.aircraft.quaternion.copy(this.glider.quaternion);

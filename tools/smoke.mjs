@@ -227,6 +227,31 @@ await step('every challenge is one of the four kinds, with a ladder that climbs'
   if (bad.length) throw new Error(bad.join(', '));
 });
 
+await step('there is traffic on the roads', async () => {
+  const out = await page.evaluate(async (m) => {
+    const g = window.WINDWARD.game;
+    // In the air, and over the busiest ground on the map rather than wherever
+    // the last step left us: the point is the density, not the draw distance.
+    // In the menu the camera is orbiting a mountain and there is no traffic
+    // anywhere near it, which is correct and measures nothing.
+    g.startFlight();
+    const [la, lo] = m === 'chicago' ? [41.8819, -87.6278] : [46.686, 7.863];
+    const v = g.world.toLocal(la, lo);
+    g.glider.reset(new g.glider.position.constructor(v.x, g.hf.heightAt(v.x, v.z) + 450, v.z), 90, 44);
+    for (let i = 0; i < 30; i++) g.update(1 / 120);
+    const fwd = new g.camera.position.constructor(0, 0, -1).applyQuaternion(g.camera.quaternion);
+    g.network.update(1 / 60, g.camera.position, fwd);
+    const kinds = new Set(g.network.routes.filter((r) => r.movers.length).map((r) => r.kind));
+    return { movers: g.network.moverCount, kinds: [...kinds].sort() };
+  }, map);
+  // A city block is a car or two; an alpine valley road is busier than empty.
+  const floor = map === 'chicago' ? 700 : 250;
+  if (out.movers < floor) throw new Error(`only ${out.movers} vehicles over the middle of ${map}`);
+  // Roads AND rails, not just whichever kind happens to sort first.
+  if (out.kinds.length < 2) throw new Error(`traffic on only one kind of way: ${out.kinds}`);
+  console.log(`        ${out.movers} vehicles, kinds ${out.kinds.join(',')}`);
+});
+
 await step('a finished run leaves a ghost, and the next attempt races it', async () => {
   const out = await page.evaluate(async () => {
     const g = window.WINDWARD.game;

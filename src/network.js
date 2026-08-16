@@ -18,6 +18,12 @@ import { loadPacked, readMagic } from './binary.js';
 
 const TILE = 1000;
 
+/** Deterministic 0..1 from one number, for traffic that clumps the same way twice. */
+function hash01(v) {
+  const x = Math.sin(v) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 const KIND = {
   MAJOR_ROAD: 0,
   MINOR_ROAD: 1,
@@ -41,15 +47,45 @@ const STYLE = [
   { width: 3.0, colour: [0.050, 0.046, 0.044], range: 0.8 }, // funicular
 ];
 
+/**
+ * What runs on each kind of way.
+ *
+ * `every` is the headway in metres — one vehicle per that much route — and it
+ * is the whole reason the maps have traffic on them. It used to be `many`, a
+ * flat count per route: four cars on a major road whether the road was eight
+ * hundred metres long or eight kilometres. Chicago has 363 km of arterial and
+ * was showing ninety-six cars on it, which is one every four kilometres, and
+ * the Jungfrau's main roads had none at all.
+ *
+ * The numbers are what the thing actually is. A busy arterial is a car every
+ * eighty metres or so per direction; a mountain lane is not. A train every
+ * three kilometres of track is a frequent service.
+ */
 const MOVERS = {
-  [KIND.NARROW_GAUGE]: { speed: 9.5, cars: 3, size: [2.7, 3.4, 15], colour: [0.28, 0.045, 0.035], lift: 1.9, gap: 1.5 },
-  [KIND.RAIL]: { speed: 17, cars: 4, size: [3.0, 3.8, 22], colour: [0.10, 0.11, 0.13], lift: 2.1, gap: 1.6 },
-  [KIND.FUNICULAR]: { speed: 5, cars: 1, size: [2.8, 3.6, 12], colour: [0.22, 0.09, 0.03], lift: 2.0, gap: 0 },
-  [KIND.MAJOR_ROAD]: { speed: 17, cars: 1, size: [1.9, 1.6, 4.4], colour: [0.20, 0.20, 0.22], lift: 0.9, gap: 0, many: 4 },
-  [KIND.MINOR_ROAD]: { speed: 11, cars: 1, size: [1.8, 1.6, 4.2], colour: [0.18, 0.18, 0.19], lift: 0.9, gap: 0, many: 2 },
-  [KIND.CABLE_CAR]: { speed: 7.5, cars: 1, size: [3.0, 3.2, 4.6], colour: [0.16, 0.05, 0.04], hang: 3.6, many: 2 },
-  [KIND.CHAIRLIFT]: { speed: 2.6, cars: 1, size: [1.9, 1.3, 1.5], colour: [0.05, 0.06, 0.09], hang: 2.4, many: 9 },
+  [KIND.NARROW_GAUGE]: { speed: 9.5, cars: 3, size: [2.7, 3.4, 15], colour: [0.28, 0.045, 0.035], lift: 1.9, gap: 1.5, every: 2200 },
+  [KIND.RAIL]: { speed: 17, cars: 4, size: [3.0, 3.8, 22], colour: [0.10, 0.11, 0.13], lift: 2.1, gap: 1.6, every: 3000 },
+  [KIND.FUNICULAR]: { speed: 5, cars: 1, size: [2.8, 3.6, 12], colour: [0.22, 0.09, 0.03], lift: 2.0, gap: 0, every: 1e9 },
+  [KIND.MAJOR_ROAD]: { speed: 17, cars: 1, size: [1.9, 1.6, 4.4], colour: [0.20, 0.20, 0.22], lift: 0.9, gap: 0, every: 55, lane: 2.4 },
+  [KIND.MINOR_ROAD]: { speed: 11, cars: 1, size: [1.8, 1.6, 4.2], colour: [0.18, 0.18, 0.19], lift: 0.9, gap: 0, every: 130, lane: 1.6 },
+  [KIND.CABLE_CAR]: { speed: 7.5, cars: 1, size: [3.0, 3.2, 4.6], colour: [0.16, 0.05, 0.04], hang: 3.6, every: 450 },
+  [KIND.CHAIRLIFT]: { speed: 2.6, cars: 1, size: [1.9, 1.3, 1.5], colour: [0.05, 0.06, 0.09], hang: 2.4, every: 110 },
 };
+
+/** No single route may fill the pool on its own. */
+const MOVERS_PER_ROUTE = 64;
+
+/** What cars are painted, roughly in the proportions a car park is. */
+const PAINT = [
+  [0.74, 0.75, 0.76],
+  [0.80, 0.81, 0.82],
+  [0.62, 0.63, 0.66],
+  [0.70, 0.71, 0.73],
+  [0.13, 0.13, 0.14],
+  [0.20, 0.20, 0.22],
+  [0.42, 0.43, 0.46],
+  [0.28, 0.09, 0.08],
+  [0.10, 0.16, 0.30],
+];
 
 export async function loadNetwork(url, embedded = null) {
   const view = await loadPacked(url, embedded);
@@ -80,11 +116,12 @@ export async function loadNetwork(url, embedded = null) {
 }
 
 export class Network {
-  constructor(heightfield, sky, ways, { ribbonDistance = 1800, moverDistance = 3200 } = {}) {
+  constructor(heightfield, sky, ways, { ribbonDistance = 1800, moverDistance = 3200, maxMovers = 900 } = {}) {
     this.hf = heightfield;
     this.ways = ways;
     this.ribbonDistance = ribbonDistance;
     this.moverDistance = moverDistance;
+    this.maxMovers = maxMovers;
     this.group = new THREE.Group();
 
     this.surfaceMaterial = makeSurfaceMaterial(sky);
@@ -331,11 +368,24 @@ export class Network {
 
       // cable routes carry their sagging samples so cabins hang from the wire
       const cable = this.cables?.find((c) => c.kind === way.kind && near(c.samples[0], way.pts));
+      // How far the route reaches from its own midpoint. Testing the midpoint
+      // alone against the draw distance is what left the Jungfrau's main roads
+      // empty: a five kilometre road whose middle is four kilometres away has
+      // no traffic on it even while it passes directly under the aeroplane.
+      const midX = way.pts[(n >> 1) * 2];
+      const midZ = way.pts[(n >> 1) * 2 + 1];
+      let reach = 0;
+      for (let i = 0; i < n; i++) {
+        reach = Math.max(reach, Math.hypot(way.pts[i * 2] - midX, way.pts[i * 2 + 1] - midZ));
+      }
       this.routes.push({
         kind: way.kind,
         pts: way.pts,
         cum,
         total,
+        reach,
+        // Fixed per route, so a road looks the same every time you fly over it.
+        seed: this.routes.length * 12.9898,
         lift: way.level > 0 ? (way.kind >= KIND.NARROW_GAUGE ? 7.4 : 6.2) * way.level : 0,
         cable: cable ?? null,
         mid: new THREE.Vector3(way.pts[(n >> 1) * 2], 0, way.pts[(n >> 1) * 2 + 1]),
@@ -351,7 +401,8 @@ export class Network {
     geom.setAttribute('position', box.getAttribute('position'));
     geom.setAttribute('normal', box.getAttribute('normal'));
     geom.setIndex(box.getIndex());
-    this.maxMovers = 260;
+    // Every vehicle on both maps is one instanced draw of a box, so the pool
+    // can be large: what it costs is the matrix write per frame, not the GPU.
     this.moverMatrix = new Float32Array(this.maxMovers * 16);
     this.moverColour = new Float32Array(this.maxMovers * 3);
     const m = new THREE.InstancedBufferAttribute(this.moverMatrix, 16);
@@ -369,17 +420,46 @@ export class Network {
     this.group.add(this.moverMesh);
   }
 
-  /** Position along a route: returns the point and the tangent. */
-  #sample(route, s, out, tangent) {
+  /**
+   * Position along a route: returns the point and the tangent, and leaves the
+   * segment it landed on in `this._seg` so the caller can hand it back next
+   * frame.
+   *
+   * A vehicle moves a metre or two between frames along a route whose segments
+   * are tens of metres, so starting from where it was last time is a step or
+   * two of walking against eight of binary search — and there are thousands of
+   * them. Falls back to the search whenever the hint is missing or wrong, which
+   * is what makes it safe to hand it a stale one.
+   */
+  #sample(route, s, out, tangent, hint = -1) {
     const { pts, cum } = route;
     const n = cum.length;
-    let lo = 0;
-    let hi = n - 1;
-    while (lo + 1 < hi) {
-      const mid = (lo + hi) >> 1;
-      if (cum[mid] <= s) lo = mid;
-      else hi = mid;
+    let lo;
+    let hi;
+    if (hint >= 0 && hint < n - 1 && cum[hint] <= s && s <= cum[hint + 1]) {
+      lo = hint;
+      hi = hint + 1;
+    } else if (hint >= 0 && hint < n - 1) {
+      // Walk, bounded, then give up and search.
+      lo = hint;
+      let steps = 0;
+      while (lo > 0 && cum[lo] > s && steps++ < 4) lo--;
+      while (lo < n - 2 && cum[lo + 1] < s && steps++ < 8) lo++;
+      hi = lo + 1;
+      if (!(cum[lo] <= s && s <= cum[hi])) lo = -1;
+    } else {
+      lo = -1;
     }
+    if (lo < 0) {
+      lo = 0;
+      hi = n - 1;
+      while (lo + 1 < hi) {
+        const mid = (lo + hi) >> 1;
+        if (cum[mid] <= s) lo = mid;
+        else hi = mid;
+      }
+    }
+    this._seg = lo;
     const seg = Math.max(cum[hi] - cum[lo], 1e-3);
     const t = Math.min(1, Math.max(0, (s - cum[lo]) / seg));
     const ax = pts[lo * 2];
@@ -406,10 +486,10 @@ export class Network {
     return out;
   }
 
-  update(dt, cameraPosition) {
+  update(dt, cameraPosition, cameraForward = null) {
     this.time += dt;
     this.#updateRibbons(cameraPosition);
-    this.#updateMovers(dt, cameraPosition);
+    this.#updateMovers(dt, cameraPosition, cameraForward);
   }
 
   #updateRibbons(cameraPosition) {
@@ -449,33 +529,72 @@ export class Network {
     }
   }
 
-  #updateMovers(dt, cameraPosition) {
+  #updateMovers(dt, cameraPosition, cameraForward) {
     const far = this.moverDistance;
     let count = 0;
+    // Nearest routes first, so that when the pool runs out it is the farthest
+    // traffic that goes rather than whatever happened to be last in the file.
+    // Baked order is by kind, which meant the arterials filled the pool before
+    // a single residential street got a car and the grid under the aeroplane
+    // read as empty while two thousand vehicles were being drawn out of sight.
+    // Re-sorted a couple of times a second: at three and a half kilometres of
+    // draw distance the running order does not change any faster than that.
+    this._orderAge = (this._orderAge ?? 0) - dt;
+    if (this._orderAge <= 0 || !this._order) {
+      this._orderAge = 0.4;
+      this._order = this.routes
+        .map((r, i) => {
+          const ox = r.mid.x - cameraPosition.x;
+          const oz = r.mid.z - cameraPosition.z;
+          const d = Math.hypot(ox, oz);
+          // Distance, less a bonus for being in front. Sorting on distance
+          // alone spends half the pool on traffic behind the aeroplane, which
+          // is half the pool spent on nothing anybody can see.
+          const ahead = cameraForward && d > 1 ? (ox * cameraForward.x + oz * cameraForward.z) / d : 0;
+          return [i, d - r.reach - Math.max(0, ahead) * far * 0.55];
+        })
+        .sort((a, b) => a[1] - b[1])
+        .map((e) => e[0]);
+    }
     const pos = this._v;
     const tan = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0);
     const m = this._m;
     const q = this._q;
 
-    for (const route of this.routes) {
+    for (const index of this._order) {
+      const route = this.routes[index];
       const dx = route.mid.x - cameraPosition.x;
       const dz = route.mid.z - cameraPosition.z;
-      const near = dx * dx + dz * dz < far * far;
-      if (!near) {
+      // Any part of the route within reach, not just its middle.
+      const edge = Math.max(0, Math.hypot(dx, dz) - route.reach);
+      if (edge > far) {
         route.movers.length = 0;
         continue;
       }
       const spec = MOVERS[route.kind];
       if (!route.movers.length) {
-        const many = spec.many ?? 1;
+        const many = Math.max(1, Math.min(MOVERS_PER_ROUTE, Math.round(route.total / spec.every)));
         for (let i = 0; i < many; i++) {
-          route.movers.push({ s: (route.total * (i + 0.5)) / many, dir: i % 2 === 0 ? 1 : -1 });
+          // Evenly spaced would be a conveyor belt. A deterministic wobble on
+          // both the spacing and the speed makes it clump and string out the
+          // way traffic does, and costs nothing to store.
+          const h = hash01(route.seed + i * 0.7351);
+          route.movers.push({
+            s: (route.total * (i + 0.5 + (h - 0.5) * 0.7)) / many,
+            dir: i % 2 === 0 ? 1 : -1,
+            rate: 0.75 + h * 0.5,
+            // Traffic seen from a thousand feet is mostly silver and white with
+            // dark ones scattered through it, and that contrast against the
+            // asphalt is the only reason you can tell a road is busy at all.
+            // One flat grey for every vehicle was invisible from the air.
+            tint: spec.lane ? PAINT[Math.floor(hash01(route.seed + i * 5.117) * PAINT.length)] : null,
+          });
         }
       }
 
       for (const mover of route.movers) {
-        mover.s += spec.speed * mover.dir * dt;
+        mover.s += spec.speed * (mover.rate ?? 1) * mover.dir * dt;
         if (mover.s > route.total) {
           mover.s = route.total;
           mover.dir = -1;
@@ -488,16 +607,28 @@ export class Network {
           if (count >= this.maxMovers) break;
           const offset = carIndex * (spec.size[2] + (spec.gap ?? 0)) * mover.dir;
           const s = Math.min(route.total, Math.max(0, mover.s - offset));
-          this.#sample(route, s, pos, tan);
+          this.#sample(route, s, pos, tan, carIndex === 0 ? mover.seg ?? -1 : -1);
+          if (carIndex === 0) mover.seg = this._seg;
+          // A long route reaches well past the draw distance at both ends, so
+          // the vehicles on it are culled one at a time rather than all
+          // together with the route.
+          if (Math.hypot(pos.x - cameraPosition.x, pos.z - cameraPosition.z) > far) continue;
+          // Traffic keeps to its own side, which is most of what makes a road
+          // read as a road from three thousand feet.
+          if (spec.lane) {
+            pos.x += -tan.z * spec.lane * mover.dir;
+            pos.z += tan.x * spec.lane * mover.dir;
+          }
           const y = spec.hang ? pos.y - spec.hang : pos.y + spec.lift;
           const yaw = Math.atan2(tan.x, tan.z);
           q.setFromAxisAngle(up, yaw);
           this._scale.set(spec.size[0], spec.size[1], spec.size[2]);
           m.compose(pos.set(pos.x, y, pos.z), q, this._scale);
           m.toArray(this.moverMatrix, count * 16);
-          this.moverColour[count * 3] = spec.colour[0];
-          this.moverColour[count * 3 + 1] = spec.colour[1];
-          this.moverColour[count * 3 + 2] = spec.colour[2];
+          const paint = mover.tint ?? spec.colour;
+          this.moverColour[count * 3] = paint[0];
+          this.moverColour[count * 3 + 1] = paint[1];
+          this.moverColour[count * 3 + 2] = paint[2];
           count++;
         }
       }
