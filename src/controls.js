@@ -6,7 +6,14 @@
 export class Controls {
   constructor(root) {
     this.root = root;
-    this.state = { roll: 0, pitch: 0, brake: 0 };
+    this.state = { roll: 0, pitch: 0, brake: 0, throttle: 1 };
+    /**
+     * Which of the two right-hand controls is fitted. A sailplane gets the
+     * airbrake button; anything with an engine gets a lever instead, because
+     * they are not the same control and no aeroplane in the fleet has both.
+     */
+    this.powered = false;
+    this._throttle = 1;
     this.keys = new Set();
     this.enabled = true;
     this.tilt = null;
@@ -36,6 +43,10 @@ export class Controls {
         <button class="round-btn brake" data-btn="brake" aria-label="Airbrakes">
           <span class="glyph">◤◥</span><span class="label">BRAKE</span>
         </button>
+        <div class="throttle" data-zone="throttle" hidden>
+          <div class="throttle-track"><u></u></div>
+          <div class="throttle-label">THR <b>100</b></div>
+        </div>
       </div>`;
     this.root.appendChild(el);
     this.el = el;
@@ -43,6 +54,20 @@ export class Controls {
     this.knobEl = el.querySelector('.stick-knob');
     this.hintEl = el.querySelector('.stick-hint');
     this.brakeBtn = el.querySelector('[data-btn="brake"]');
+    this.throttleEl = el.querySelector('.throttle');
+    this.throttleFill = el.querySelector('.throttle-track u');
+    this.throttleText = el.querySelector('.throttle-label b');
+  }
+
+  /**
+   * Fit the right-hand control to the aeroplane. Called whenever the ship
+   * changes, which while one is issued is once, at boot.
+   */
+  setAircraft(spec) {
+    this.powered = !!spec?.power;
+    this.brakeBtn.hidden = this.powered;
+    this.throttleEl.hidden = !this.powered;
+    this._throttle = this.powered ? 1 : 0;
   }
 
   #bindTouch() {
@@ -96,6 +121,40 @@ export class Controls {
     zone.addEventListener('mousedown', start);
     addEventListener('mousemove', move);
     addEventListener('mouseup', end);
+
+    // The lever. Touch it anywhere on the track and it goes there, then drags —
+    // a slider you have to grab by a handle is a slider nobody moves in a turn.
+    const lever = this.throttleEl;
+    const setFromY = (clientY) => {
+      const r = lever.getBoundingClientRect();
+      this._throttle = clamp(1 - (clientY - r.top) / Math.max(r.height, 1), 0, 1);
+    };
+    const leverStart = (e) => {
+      if (!this.enabled || !this.powered) return;
+      e.preventDefault();
+      this._leverId = e.changedTouches ? e.changedTouches[0].identifier : 'mouse';
+      lever.classList.add('down');
+      setFromY((e.changedTouches ? e.changedTouches[0] : e).clientY);
+    };
+    const leverMove = (e) => {
+      if (this._leverId == null) return;
+      for (const t of e.changedTouches ?? [e]) {
+        if ((t.identifier ?? 'mouse') !== this._leverId) continue;
+        setFromY(t.clientY);
+        e.preventDefault();
+      }
+    };
+    const leverEnd = () => {
+      this._leverId = null;
+      lever.classList.remove('down');
+    };
+    lever.addEventListener('touchstart', leverStart, { passive: false });
+    lever.addEventListener('touchmove', leverMove, { passive: false });
+    lever.addEventListener('touchend', leverEnd);
+    lever.addEventListener('touchcancel', leverEnd);
+    lever.addEventListener('mousedown', leverStart);
+    addEventListener('mousemove', leverMove);
+    addEventListener('mouseup', leverEnd);
 
     const hold = (btn, on, off) => {
       btn.addEventListener('touchstart', (e) => {
@@ -168,6 +227,7 @@ export class Controls {
       this.stick.y = 0;
       this.stickEl.hidden = true;
       this._brakeHeld = false;
+      this._leverId = null;
     }
   }
 
@@ -203,9 +263,29 @@ export class Controls {
     // home: they were the boost, they are where a thumb already goes, and
     // there is nothing else left for them to do.
     this.state.brake =
-      this._brakeHeld || k.has('KeyB') || k.has('ShiftLeft') || k.has('Space') || pad?.buttons?.[0]?.pressed
+      !this.powered &&
+      (this._brakeHeld || k.has('KeyB') || k.has('ShiftLeft') || k.has('Space') || pad?.buttons?.[0]?.pressed)
         ? 1
         : 0;
+
+    // The lever, off the keyboard and the right trigger as well as the slider.
+    // Ramped rather than stepped, because a throttle that snaps between idle
+    // and full is a switch, and half of flying this aeroplane is the bit in
+    // between.
+    if (this.powered) {
+      const dt = 1 / 60;
+      if (k.has('ShiftLeft') || k.has('Equal') || k.has('NumpadAdd')) this._throttle += 1.6 * dt;
+      if (k.has('ControlLeft') || k.has('Minus') || k.has('NumpadSubtract')) this._throttle -= 1.6 * dt;
+      const trigger = pad?.buttons?.[7]?.value ?? 0;
+      if (trigger > 0.02) this._throttle = trigger;
+      this._throttle = clamp(this._throttle, 0, 1);
+      this.state.throttle = this._throttle;
+      const pct = Math.round(this._throttle * 100);
+      this.throttleFill.style.height = `${pct}%`;
+      this.throttleText.textContent = pct;
+    } else {
+      this.state.throttle = 0;
+    }
     return this.state;
   }
 }

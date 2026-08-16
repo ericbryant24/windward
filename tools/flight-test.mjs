@@ -354,12 +354,17 @@ for (const spec of FLEET) {
   // with that, and a bound in metres would simply outlaw a fast one. What the
   // model has to get right is that the ship holds the bank and flies the
   // circle the arithmetic says it should.
-  if (!circle.closed) fail(`never completed a 360 at 45 degrees of bank`);
-  const ideal = circle.speed ** 2 / (G * Math.tan(THREE.MathUtils.degToRad(circle.bank)));
-  if (circle.radius < ideal * 0.9 || circle.radius > ideal * 1.8) {
-    fail(`circles at ${circle.radius.toFixed(0)} m where ${circle.bank.toFixed(0)} deg at ${circle.speed.toFixed(0)} m/s wants ${ideal.toFixed(0)} m`);
+  // Only for a ship whose stick commands an ATTITUDE. On a rate stick a held
+  // deflection is a continuous roll and there is no bank to fly a circle at —
+  // which is the aeroplane working, not the model failing.
+  if (!spec.rollRateStick) {
+    if (!circle.closed) fail(`never completed a 360 at 45 degrees of bank`);
+    const ideal = circle.speed ** 2 / (G * Math.tan(THREE.MathUtils.degToRad(circle.bank)));
+    if (circle.radius < ideal * 0.9 || circle.radius > ideal * 1.8) {
+      fail(`circles at ${circle.radius.toFixed(0)} m where ${circle.bank.toFixed(0)} deg at ${circle.speed.toFixed(0)} m/s wants ${ideal.toFixed(0)} m`);
+    }
+    if (circle.time > 90) fail(`360 takes ${circle.time.toFixed(0)} s`);
   }
-  if (circle.time > 90) fail(`360 takes ${circle.time.toFixed(0)} s`);
   // Only a ship that lives on thermals has to fit inside one.
   if (soarer && circle.radius > 400) fail(`too wide to core a thermal: ${circle.radius.toFixed(0)} m radius`);
 
@@ -381,15 +386,20 @@ for (const spec of FLEET) {
   if (!(dive.peakBuffet > 1)) fail('nothing buffets on the way to the redline');
   // Airbrakes are the answer, and they have to be a better answer than the
   // stick or there is no reason to reach for them.
-  if (braked.failedAfter !== null) fail('full brakes at Vne do not stop the dive');
-  if (!(braked.peak < spec.vne * 1.12)) {
-    fail(`brakes at Vne still let it run to ${braked.peak.toFixed(0)} m/s`);
-  }
-  if (!(brakeWindow > stickWindow)) {
-    fail(`brakes save no more of the dive than the stick does (${brakeWindow} s vs ${stickWindow} s)`);
-  }
-  if (!(brakeWindow > dive.failedAfter * 0.6)) {
-    fail(`brakes only work for the first ${brakeWindow} s of a ${dive.failedAfter.toFixed(1)} s dive`);
+  // And only on a ship that HAS boards. An aerobatic monoplane does not — it
+  // has a throttle instead, and the two are not the same control. Asserting
+  // otherwise was the test insisting every aeroplane is a sailplane.
+  if (spec.brakeDragFactor > 0) {
+    if (braked.failedAfter !== null) fail('full brakes at Vne do not stop the dive');
+    if (!(braked.peak < spec.vne * 1.12)) {
+      fail(`brakes at Vne still let it run to ${braked.peak.toFixed(0)} m/s`);
+    }
+    if (!(brakeWindow > stickWindow)) {
+      fail(`brakes save no more of the dive than the stick does (${brakeWindow} s vs ${stickWindow} s)`);
+    }
+    if (!(brakeWindow > dive.failedAfter * 0.6)) {
+      fail(`brakes only work for the first ${brakeWindow} s of a ${dive.failedAfter.toFixed(1)} s dive`);
+    }
   }
   // Letting go has to help. The stick is a rate command, so a dive is only
   // ever held on purpose; taking your hand off it must always buy time, and in
@@ -528,12 +538,33 @@ console.log('\ntwo laws — hold a bank, pin the stick to roll');
     }
     const revs = Math.abs(swept) / (2 * Math.PI);
 
-    const holdsOk = peak < 78 && Math.abs(held.bankDeg) > 25;
     const rollsOk = revs > 1;
-    if (!holdsOk) problems.push(`${spec.name}: a held stick did not hold a bank (settled ${held.bankDeg.toFixed(0)}, peak ${peak.toFixed(0)})`);
+    let holdsOk;
+    let note;
+    if (spec.rollRateStick) {
+      // The other pair of laws. A rate stick holds no bank at all — a held
+      // deflection keeps rolling — and what it must do instead is LEAVE the
+      // bank where the stick left it, because that is what flies an inverted
+      // pass. Rolled ninety degrees and then released, it stays there.
+      const left = new Glider(air, spec);
+      left.reset(new THREE.Vector3(0, 3000, 0), 0, spec.trimSpeed * 1.2);
+      const quarter = Math.PI / 2 / spec.maxRollRate;
+      for (let i = 0; i < quarter / step; i++) left.update(step, { roll: 1, pitch: 0, brake: 0, throttle: 1 });
+      const put = left.bankDeg;
+      for (let i = 0; i < 4 / step; i++) left.update(step, { roll: 0, pitch: 0, brake: 0, throttle: 1 });
+      holdsOk = Math.abs(left.bankDeg - put) < 25;
+      note = `put ${put.toFixed(0)} deg, four seconds later ${left.bankDeg.toFixed(0)} deg`;
+      if (!holdsOk) {
+        problems.push(`${spec.name}: a rate stick let the wings come back up (${put.toFixed(0)} → ${left.bankDeg.toFixed(0)} deg)`);
+      }
+    } else {
+      holdsOk = peak < 78 && Math.abs(held.bankDeg) > 25;
+      note = `holds ${held.bankDeg.toFixed(0).padStart(3)} deg`;
+      if (!holdsOk) problems.push(`${spec.name}: a held stick did not hold a bank (settled ${held.bankDeg.toFixed(0)}, peak ${peak.toFixed(0)})`);
+    }
     if (!rollsOk) problems.push(`${spec.name}: a pinned stick did not roll right over (${revs.toFixed(2)} turns in 6 s)`);
     console.log(
-      `  ${holdsOk && rollsOk ? 'ok  ' : 'FAIL'} ${spec.name.padEnd(9)} holds ${held.bankDeg.toFixed(0).padStart(3)} deg   pinned: ${revs.toFixed(1)} rolls in 6 s`
+      `  ${holdsOk && rollsOk ? 'ok  ' : 'FAIL'} ${spec.name.padEnd(9)} ${note.padEnd(44)} pinned: ${revs.toFixed(1)} rolls in 6 s`
     );
   }
 }

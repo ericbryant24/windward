@@ -10,12 +10,23 @@
  * ship's own wing loading, which is why each one settles where its card says
  * it will instead of drifting off to some other speed the moment you let go.
  *
- * None of them has thrust. There used to be a boost button, and it was the one
- * control that could answer a bad decision with something other than flying:
- * every task on the ladder ended up measured with a thumb on it, six of the
- * fourteen could only be finished by holding it down, and a game about height
- * being the only currency had a button that printed money. What is left is
- * lift, drag and weight.
+ * Five of the six have no thrust, and that used to be all of them. A boost
+ * button was tried and removed: on a sailplane it was the one control that
+ * could answer a bad decision with something other than flying, every task on
+ * the ladder ended up measured with a thumb on it, and a game about height
+ * being the only currency had a button that printed money.
+ *
+ * The Shrike is not that. An engine on an aerobatic monoplane is not a cheat
+ * bolted to a glider, it is the aeroplane — and it is described the way the
+ * rest of the spec is, by numbers the flight model reads:
+ *
+ *   power         watts at the propeller, after efficiency. Thrust is power
+ *                 over speed, which is why a prop pulls hardest slowest.
+ *   staticThrust  the cap on that, for the speeds where the arithmetic would
+ *                 otherwise go to infinity. Also what it can pull standing
+ *                 still, so `staticThrust / mass·g` is the thrust-to-weight.
+ *
+ * A ship with no `power` never reads either and flies exactly as it did.
  */
 
 const G = 9.80665;
@@ -203,6 +214,91 @@ export const FLEET = [
     },
   },
   {
+    // An unlimited aerobatic monoplane: the thing that flies race courses
+    // through pylons and spends half its life inverted. Everything about it is
+    // the opposite of the sailplanes above — a tenth of the span, five times
+    // the roll rate, a third of the glide, and three hundred horsepower to
+    // make up for all of it.
+    id: 'shrike',
+    name: 'Shrike 7',
+    kind: 'Unlimited aerobatic',
+    blurb: 'Three hundred horsepower and seven metres of wing. It will hold any attitude you put it in.',
+    // Numbers from the class: 580 kg all-up on 10.4 m² and a 7.4 m span, so an
+    // aspect ratio of 5.3 — a stubby wing that will not glide and does not care.
+    mass: 580,
+    wingArea: 10.4,
+    aspectRatio: 5.27,
+    // Fixed gear, a cowl the size of the pilot, wires and a flying wire brace.
+    // Draggy by sailplane standards and slippery for what it is.
+    cd0: 0.026,
+    oswald: 0.75,
+    clSlope: 5.0,
+    // A thick SYMMETRIC section, which is the whole point: it makes exactly as
+    // much lift upside down as it does the right way up, and the alpha limits
+    // say so by being symmetric too. Nothing else in the fleet is.
+    alphaStallDeg: 16.0,
+    alphaMaxDeg: 20,
+    alphaMinDeg: -20,
+    trimAlphaDeg: 3.04, // holds 58 m/s at this wing loading, engine off
+    trimSpeed: 58,
+    speedStability: 0.18,
+    // 420 degrees a second, which is the real figure for the class and five
+    // times the ballasted nineteen-metre. A pinned stick is a continuous roll
+    // in a fifth of a second rather than as a slow deliberate event.
+    maxRollRate: 7.3,
+    // A rate stick, not an attitude one — see the roll law in flight.js. The
+    // aileron commands a roll rate and nothing levels the wings for you, so a
+    // knife-edge or an inverted pass is held by leaving the stick alone.
+    rollRateStick: true,
+    maxBankDeg: 120, // unused while the stick is a rate; kept for the swap back
+    rollStability: 0.0, // no dihedral at all
+    // The only thing limiting load factor in this model is how fast the nose
+    // can be pulled round, so this is the g limit in disguise: 1.4 rad/s at
+    // 70 m/s is ten g, which is the class limit, and it loops in four and a
+    // half seconds. At 2.0 it pulled eighteen g and came out of every loop
+    // below the stall.
+    maxPitchRate: 1.4,
+    // No airbrakes. There is a throttle instead, and the two are not the same
+    // control — see the throttle in flight.js.
+    brakeDragFactor: 0,
+    brakeLiftLoss: 0,
+    vne: 118, // 425 km/h
+    // 152 kW at the prop gives about 1,900 N of excess at trim, which is a
+    // 19 m/s climb; and 6.2 kN standing still, which is 1.09 to one and means
+    // it will hang on the propeller. Both are what the real ones do.
+    power: 152000,
+    staticThrust: 6200,
+    look: {
+      span: 3.72,
+      chord: 1.45,
+      taperPower: 0.35, // nearly constant chord to a square tip
+      dihedral: 0.05,
+      sweep: 0.05,
+      wingY: -0.1, // mid-wing, through the middle of the fuselage
+      wingZ: 0.15,
+      fuseLength: 0.95,
+      fuseWidth: 1.0,
+      tail: 1.3, // big surfaces, because they have to work at zero airspeed
+      canopy: 0.8,
+      foil: 0.16, // thick and symmetric
+      // A stubby barrel with a cowl on the front, not a pod and a boom.
+      fuse: [
+        [-3.0, 0.5, 0.5, 0.0],
+        [-2.5, 0.6, 0.58, 0.02],
+        [-1.6, 0.56, 0.6, 0.02],
+        [-0.6, 0.48, 0.58, 0.0],
+        [0.6, 0.36, 0.44, 0.0],
+        [1.8, 0.24, 0.3, 0.02],
+        [3.0, 0.15, 0.2, 0.04],
+        [4.0, 0.1, 0.16, 0.05],
+      ],
+      prop: 'nose',
+      propR: 0.95,
+      body: [0.72, 0.08, 0.1],
+      trim: [0.92, 0.93, 0.96],
+    },
+  },
+  {
     id: 'javelin',
     name: 'Javelin 9',
     kind: 'Clipped-wing racer',
@@ -280,14 +376,14 @@ export const FLEET = [
  * every ship here still flies the way its numbers say it does. What has gone is
  * the choosing: there is no hangar on the menu, challenges no longer hand you a
  * different aeroplane when you cross their hoop, and so there is nothing a
- * player can arrive in by accident. Five aircraft is a decision to make before
+ * player can arrive in by accident. Six aircraft is a decision to make before
  * flying, and the menu has exactly one of those in it.
  *
  * Set this to null and the fleet comes back: the hangar renders, the saved
  * preference is honoured again and `shipFor` goes back to reading the ship each
  * challenge names. Everything downstream keys off this one constant.
  */
-export const ISSUED_AIRCRAFT = 'draco';
+export const ISSUED_AIRCRAFT = 'shrike';
 
 export const DEFAULT_AIRCRAFT = ISSUED_AIRCRAFT ?? FLEET[0].id;
 

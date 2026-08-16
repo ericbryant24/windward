@@ -261,18 +261,22 @@ export function createAircraft(sky, spec = getAircraft(), { ghost = false } = {}
     group.add(flame);
   }
 
-  // ---- pusher propeller --------------------------------------------------
+  // ---- propeller ---------------------------------------------------------
+  // `prop: true` is a pusher behind the pod, the way an ultralight carries one;
+  // `prop: 'nose'` is a tractor out in front, which is every aeroplane with the
+  // engine at the sharp end. Forward is -Z.
   let prop = null;
   let discMat = null;
   if (look.prop) {
+    const R = look.propR ?? 0.72;
     prop = new THREE.Group();
-    prop.position.set(0, look.wingY * 0.4 + 0.1, 1.35 * L);
-    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), trim);
+    prop.position.set(0, look.wingY * 0.4 + 0.1, (look.prop === 'nose' ? -3.15 : 1.35) * L);
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.16 * (R / 0.72), 10, 8), trim);
     prop.add(hub);
     for (const sign of [-1, 1]) {
       const blade = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), trim);
-      blade.scale.set(0.34, 0.07, 0.045);
-      blade.position.set(sign * 0.38, 0, 0);
+      blade.scale.set(R * 0.47, R * 0.1, 0.045);
+      blade.position.set(sign * R * 0.53, 0, 0);
       blade.rotation.z = sign * 0.3;
       prop.add(blade);
     }
@@ -284,7 +288,7 @@ export function createAircraft(sky, spec = getAircraft(), { ghost = false } = {}
       side: THREE.DoubleSide,
     });
     materials.push(discMat);
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.72, 20), discMat);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(R, 20), discMat);
     prop.add(disc);
     group.add(prop);
   }
@@ -292,14 +296,15 @@ export function createAircraft(sky, spec = getAircraft(), { ghost = false } = {}
   group.userData.materials = materials;
   group.userData.spec = spec;
   /**
-   * Nothing on this aeroplane is driven any more — there is no thrust in the
-   * game. A propeller still turns because the air is going through it, which is
-   * what a dead engine's prop does, and a jet pipe is just a hole.
+   * A prop with an engine behind it turns at the throttle and blurs into a
+   * disc; a prop with nothing behind it windmills on the air going through it,
+   * which is what a dead engine's does. A jet pipe is still just a hole.
    */
   group.userData.animate = (dt, glider) => {
     if (prop) {
-      prop.rotation.z += (2 + glider.airspeed * 0.22) * dt;
-      discMat.uniforms.uOpacity.value = 0.06;
+      const driven = spec.power ? glider.throttle ?? 0 : 0;
+      prop.rotation.z += (2 + glider.airspeed * 0.22 + driven * 110) * dt;
+      discMat.uniforms.uOpacity.value = 0.06 + 0.2 * driven;
     }
     if (flame) flame.visible = false;
   };

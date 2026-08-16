@@ -329,7 +329,7 @@ await step('a finished run leaves a ghost, and the next attempt races it', async
     // and this needs a whole run's worth of flight time.
     const real = g.controls.sample.bind(g.controls);
     let t = 0;
-    g.controls.sample = () => ((t += 1 / 120), { roll: Math.sin(t * 0.7) * 0.35, pitch: 0.05, brake: 0 });
+    g.controls.sample = () => ((t += 1 / 120), { roll: Math.sin(t * 0.7) * 0.35, pitch: 0.05, brake: 0, throttle: 1 });
     for (let i = 0; i < 95 * 120 && g.state === 'flying'; i++) g.update(1 / 120);
     g.controls.sample = real;
     const recorded = g.recorder.score.length;

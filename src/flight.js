@@ -29,6 +29,12 @@ const PIN_STICK = 0.94;
 const PIN_DELAY = 0.35;
 
 const FLUTTER_ONSET = 0.86;
+/**
+ * The speed below which propeller thrust stops rising, m/s. Thrust is power
+ * over speed and that runs away towards zero; a real prop stalls its own blades
+ * long before then, and `staticThrust` is where it actually tops out.
+ */
+const THRUST_FLOOR = 14;
 /** Fraction of the airframe used up per second at twice Vne, undamaged. */
 const OVERSPEED_DAMAGE = 0.26;
 /**
@@ -295,6 +301,10 @@ export class Glider {
     this.rolling = false;
     this.looping = false;
     this.brake = 0;
+    /** Where the lever is, 0..1, damped. Always 0 on a ship with no engine. */
+    this.throttle = 0;
+    /** And what that is worth right now, in newtons. */
+    this.thrust = 0;
     this.vario = 0;
     this.varioSmooth = 0;
     this.netto = 0;
@@ -314,6 +324,9 @@ export class Glider {
     this._up = new THREE.Vector3();
     this._right = new THREE.Vector3();
     this._tmp = new THREE.Vector3();
+    // Its own vector: `_tmp` is holding the drag direction where thrust is
+    // added, and quietly reusing it would push the aeroplane sideways.
+    this._thrustDir = new THREE.Vector3();
     this._q = new THREE.Quaternion();
     this._prevY = 0;
   }
@@ -360,6 +373,10 @@ export class Glider {
     this.forward(this._f);
     this.velocity.copy(this._f).multiplyScalar(speed);
     this.brake = 0;
+    // Full power on a reset. A ship dropped on a marker with the lever shut is
+    // a ship that starts every challenge behind.
+    this.throttle = this.spec.power ? 1 : 0;
+    this.thrust = 0;
     this.stalled = false;
     this.vario = 0;
     this.varioSmooth = 0;
@@ -478,7 +495,20 @@ export class Glider {
     this.looping = this.pitchPin > PIN_DELAY;
 
     let rollRate;
-    if (this.rolling) {
+    if (cfg.rollRateStick) {
+      // Aerobatic ships fly a RATE stick: the aileron is a roll rate and
+      // nothing puts the wings back for you. Centre it and the aeroplane stays
+      // exactly where it was left, knife-edge or upside down, which is the
+      // whole point of a symmetric wing with no dihedral in it.
+      //
+      // The attitude law below cannot do that at any setting. Its target is
+      // bank times the stick, so a centred stick always means wings level, and
+      // measured, the Shrike could be rolled inverted and could not be HELD
+      // there for a second — which for an unlimited monoplane is the one thing
+      // it is for. The pinned-stick promotion is not needed here either: full
+      // deflection already is a continuous roll.
+      rollRate = input.roll * cfg.maxRollRate * speedAuthority * stiff;
+    } else if (this.rolling) {
       rollRate = Math.sign(input.roll) * cfg.maxRollRate * speedAuthority * stiff;
     } else {
       const bankTarget = input.roll * THREE.MathUtils.degToRad(cfg.maxBankDeg);
@@ -520,7 +550,7 @@ export class Glider {
     // Coming out of a roll or a loop the attitude law has to recapture from
     // wherever the manoeuvre left the ship, and past ninety degrees of bank it
     // would otherwise drive the long way round. -sin(bank) takes the short way.
-    if (!this.rolling && Math.abs(this.bankRad) > Math.PI / 2) {
+    if (!cfg.rollRateStick && !this.rolling && Math.abs(this.bankRad) > Math.PI / 2) {
       this.#rotate(this._f.set(0, 0, -1), -Math.sin(this.bankRad) * cfg.rollStability * speedAuthority * dt);
     }
 
@@ -568,9 +598,27 @@ export class Glider {
       this.loadFactor = lift / (cfg.mass * G);
     }
 
-    // No thrust. The only forces on the ship are the air and its own weight,
-    // which is what makes every metre of height something that had to be found
-    // rather than bought.
+    // ---- thrust ------------------------------------------------------------
+    // A propeller converts power to thrust, and thrust is power over speed —
+    // which is why a prop pulls hardest standing still and falls away as the
+    // ship runs. `staticThrust` caps the low-speed end, where the arithmetic
+    // would otherwise go to infinity, and is also the honest figure for what
+    // the aeroplane can pull against a rope.
+    //
+    // Normally aspirated, so it thins out with the air: the same throttle is
+    // worth a fifth less over the Jungfraujoch than over Lake Michigan, which
+    // is a real thing about flying high and costs nothing to model.
+    //
+    // A ship with no `power` never reaches any of this and flies exactly as it
+    // always did — the sailplanes are untouched.
+    this.throttle = cfg.power ? THREE.MathUtils.damp(this.throttle, input.throttle ?? 0, 7, dt) : 0;
+    this.thrust = 0;
+    if (cfg.power && this.throttle > 1e-3) {
+      this.thrust =
+        Math.min(cfg.staticThrust, cfg.power / Math.max(V, THRUST_FLOOR)) * this.throttle * (rho / 1.225);
+      force.addScaledVector(this.forward(this._thrustDir), this.thrust);
+    }
+
     force.y -= cfg.mass * G;
 
     this.velocity.addScaledVector(force, dt / cfg.mass);

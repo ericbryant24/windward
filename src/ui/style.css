@@ -1021,10 +1021,77 @@ body {
   color: var(--dim);
 }
 
+/* `hidden` is display:none at the bottom of the cascade and loses to any class
+   that sets display — which both of the right-hand controls do. They are fitted
+   to the aeroplane one or the other, so this has to actually hide them. */
+.round-btn[hidden],
+.throttle[hidden] {
+  display: none;
+}
+
 .round-btn.down {
   transform: scale(0.94);
   background: rgba(40, 92, 124, 0.7);
   border-color: var(--accent);
+}
+
+/* ---------------------------------------------------------- throttle --- */
+/* Fitted instead of the airbrake button on an aeroplane with an engine, in
+   the same corner and to the same width, because it is the same thumb. Grab it
+   anywhere: a lever you have to catch by a handle is a lever nobody moves in a
+   turn. It also reads the keyboard and the right trigger, so the fill is
+   driven from the sampled state rather than from the drag. */
+.throttle {
+  width: 74px;
+  height: 176px;
+  border-radius: 37px;
+  border: 1.5px solid var(--stroke);
+  background: rgba(10, 22, 34, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: border-color 0.12s ease;
+  touch-action: none;
+}
+
+.throttle.down {
+  border-color: var(--accent);
+}
+
+.throttle-track {
+  position: relative;
+  flex: 1;
+  width: 26px;
+  border-radius: 13px;
+  background: rgba(4, 9, 15, 0.55);
+  overflow: hidden;
+}
+
+.throttle-track u {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  text-decoration: none;
+  border-radius: 13px;
+  /* Cool at idle, hot at the stop, so the corner of an eye can read it. */
+  background: linear-gradient(to top, rgba(97, 210, 255, 0.5), var(--accent-warm));
+}
+
+.throttle-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+}
+
+.throttle-label b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ------------------------------------------------------------ toasts --- */

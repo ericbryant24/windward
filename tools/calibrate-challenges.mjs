@@ -316,7 +316,12 @@ class Pilot {
       : this.p.floor
         ? Math.max(vneGuard, this.p.boards ? steeper : 0)
         : Math.max(vneGuard, steeper, clamp((g.airspeed - speedTarget * 1.05) / (speedTarget * 0.3), 0, 1));
-    return { roll, pitch, brake };
+    // A lever, for the ships that have one. Wide open, backed off only when the
+    // ship is running away from the speed it was asked to hold — which is the
+    // whole of what a throttle does on a course. Zero on a sailplane, where the
+    // flight model never reads it.
+    const throttle = this.p.power ? clamp(1 - (g.airspeed - speedTarget) / (speedTarget * 0.25), 0, 1) : 0;
+    return { roll, pitch, brake, throttle };
   }
 }
 
@@ -346,7 +351,9 @@ function fly(ctx, def, policy, guide) {
   // the windowed three the clock IS the task and overriding it would measure a
   // different challenge.
   if (!TYPES[def.type].windowed) run.limit = horizon;
-  const pilot = new Pilot(glider, policy);
+  // The pilot has to know whether the aeroplane has an engine before it flies
+  // one, and a policy is the only thing it is handed.
+  const pilot = new Pilot(glider, { ...policy, power: !!spec.power });
   const state = {
     ctx,
     def,

@@ -495,7 +495,7 @@ const TEMPLATE = /* html */ `
 <div class="loading">
   <div class="brand">
     <h1>WINDWARD</h1>
-    <p>Altitude is the only fuel you have</p>
+    <p>Three hundred horsepower over real ground</p>
   </div>
   <div class="loading-bar"><span></span></div>
   <div class="loading-note">reading the terrain…</div>
@@ -510,7 +510,7 @@ const TEMPLATE = /* html */ `
   <div class="menu-inner">
     <header>
       <h1>WINDWARD</h1>
-      <p class="sub">Altitude is the only fuel you have</p>
+      <p class="sub">Three hundred horsepower over real ground</p>
     </header>
 
     <button class="fly-btn" data-action="fly">

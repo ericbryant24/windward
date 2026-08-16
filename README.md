@@ -1,10 +1,11 @@
 # Windward
 
 A browser flight game set over the real Jungfrau region of the Bernese Alps.
-You fly a sailplane, and the only fuel you have is altitude.
+You fly an unlimited aerobatic monoplane — three hundred horsepower, seven
+metres of wing, and it will hold any attitude you put it in.
 
-Portrait phone is the primary target — one thumb on the stick, one button for
-the airbrakes — but it plays fine in landscape and on a desktop keyboard.
+Portrait phone is the primary target — one thumb on the stick, one on the
+throttle — but it plays fine in landscape and on a desktop keyboard.
 
 Play it at **https://ericbryant24.github.io/windward/** — the branch deploys
 itself to GitHub Pages on every push.
@@ -81,15 +82,25 @@ between reaching the next ridge and not.
 |---|---|---|
 | Bank | Drag anywhere on the left half | ← → or A D |
 | Pitch | Same stick, up/down | ↑ ↓ or W S |
-| Airbrakes | BRAKE button | B, Shift or Space |
+| Throttle | Lever on the right, grab it anywhere | Shift / Ctrl, or + / − |
 | Camera | Double-tap the right half | C |
 | Pause | ❚❚ | Esc or P |
 
-The stick moves **surfaces**: sideways is aileron and commands a roll rate,
-fore and aft is elevator and commands a pitch rate. There is no bank limit, so
-a pinned stick keeps rolling. What keeps the ship the right way up when you let
-go is modelled dihedral and static longitudinal stability, not an autopilot. Tilt
-steering is available in the menu if you prefer it.
+The stick moves **surfaces**. Sideways is aileron and on the Shrike it is a
+pure **rate** command: the stick is how fast it rolls, nothing puts the wings
+back for you, and a centred stick leaves the aeroplane exactly where you left
+it — knife-edge or upside down. That is the whole point of a symmetric wing
+with no dihedral, and it is the one control law that separates this from the
+sailplanes still in the fleet, which self-level and promote to a roll only when
+the stick is pinned to the stop. Fore and aft is elevator, and it commands
+angle of attack rather than attitude, so the aeroplane will not let you stall
+it by pulling. Tilt steering is available in the menu if you prefer it.
+
+The **throttle** is a lever where the airbrake button used to be, because no
+aeroplane in the fleet has both: thrust is power over speed, capped at what the
+propeller can pull standing still, and it thins out with the air the way a
+normally-aspirated engine really does. Full power is a 13 m/s climb hands-off,
+343 km/h flat out, and 1.09 to one standing still — it will hang on the prop.
 
 ### Flying, and challenges
 
@@ -183,12 +194,27 @@ a steep ramp and anything drawn on the rock would be inside it.
 
 ### The aeroplane
 
-There is one, the **Draco 19** — a ballasted nineteen-metre glider that runs and
-does not float. `src/fleet.js` still describes five, and everything that reads a
-spec still reads it, but the game issues this one for free flight and for every
-challenge; there is no hangar and nothing changes aeroplane underneath you.
-Unset `ISSUED_AIRCRAFT` in that file and the fleet comes back — but the medal
-ladder below is measured against the Draco, so it would want re-calibrating.
+There is one, the **Shrike 7** — an unlimited aerobatic monoplane. 580 kg on
+10.4 m², a 7.4 m span, 420 degrees a second of roll, a symmetric wing that makes
+exactly as much lift upside down as the right way up, and 300 hp on the front.
+It glides at 11:1 with the engine off, which is a brick, and it does not care.
+
+`src/fleet.js` still describes six and everything that reads a spec still reads
+it, but the game issues this one for free flight and for every challenge; there
+is no hangar and nothing changes aeroplane underneath you. Unset
+`ISSUED_AIRCRAFT` in that file and the fleet comes back.
+
+Five of the six are sailplanes and fly exactly as they always did — a ship with
+no `power` never reaches the thrust term, and one without `rollRateStick` keeps
+the self-levelling stick. The aeroplane is entirely in its own numbers.
+
+> **The medal ladders below are the sailplane's, and they are now wrong.**
+> Measured against the Shrike: every slalom gold is about twice as slow as it
+> needs to be, both distance golds are 60 per cent short, and the two **height**
+> tasks are simply gone — the Breithorn Wall asks for 190 m in sixty seconds and
+> full power with the stick back gains 995. The two **deck** runs survive nearly
+> untouched, because what limits them is a corridor and a ceiling rather than
+> energy. Re-cutting the table is the open question, not a bug.
 
 ## How it renders
 
@@ -285,7 +311,7 @@ src/
   network.js          roads, rails, cables, and the traffic on them
   binary.js           shared loaders for the packed data files
   flight.js           air mass and glider dynamics
-  aircraft.js         the sailplane, built procedurally
+  aircraft.js         the aeroplane, built procedurally
   game.js             rules, scoring, camera, progression
   challenges.js       the fourteen tasks, their markers, and the medal book
   controls.js         touch stick, keyboard, gamepad, tilt

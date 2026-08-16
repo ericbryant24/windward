@@ -152,6 +152,7 @@ export class Game {
     });
 
     this.hud.setFleet(FLEET, this.spec.id);
+    this.controls.setAircraft(this.spec);
     // Park the ship somewhere sane so nothing sits at the world origin while
     // the menu camera drifts over the peaks.
     const start = this.spawnFor();
@@ -179,6 +180,9 @@ export class Game {
     this.spec = spec;
     this.polar = polar(spec);
     this.hud.setShip(spec);
+    // An engine means a lever where the airbrake button was, so the stick is
+    // not the only thing that changes when the aeroplane does.
+    this.controls.setAircraft(spec);
     this.glider.setAircraft(spec);
     this.scene.remove(this.aircraft);
     disposeAircraft(this.aircraft);
