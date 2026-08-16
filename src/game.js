@@ -799,8 +799,15 @@ export class Game {
       return;
     }
 
-    const dist = mode === 'far' ? 46 : 24;
-    const height = mode === 'far' ? 13 : 6.4;
+    // Framed off the WINGSPAN, not off a constant. 24 m behind an aeroplane is
+    // a chase camera on a nineteen-metre sailplane and a speck on a
+    // seven-metre monoplane — same distance, forty per cent of the apparent
+    // size — and "it feels small on screen" is that arithmetic, not the
+    // aeroplane. The multipliers are the old numbers divided by the Draco's
+    // span, so nothing about the sailplanes moves.
+    const span = Math.max(4, (this.spec.look?.span ?? 9.4) * 2);
+    const dist = Math.max(mode === 'far' ? 19 : 10, span * (mode === 'far' ? 2.45 : 1.28));
+    const height = span * (mode === 'far' ? 0.69 : 0.34);
 
     // Follow the heading, but let a little of the bank through so hard turns
     // feel like turns rather than the world sliding sideways.
@@ -821,7 +828,7 @@ export class Game {
       this.camera.position.lerp(desired, k);
     }
 
-    const aim = this._camAim.copy(g.position).addScaledVector(fwd, 16).addScaledVector(g.velocity, 0.12);
+    const aim = this._camAim.copy(g.position).addScaledVector(fwd, span * 0.85).addScaledVector(g.velocity, 0.12);
     this.camera.lookAt(aim);
 
     // Speed reads as speed relative to what this ship calls fast.

@@ -294,8 +294,10 @@ export const FLEET = [
       ],
       prop: 'nose',
       propR: 0.95,
-      body: [0.72, 0.08, 0.1],
-      trim: [0.92, 0.93, 0.96],
+      // Deep, because the lit material adds a lot of sky on top: 0.72 red came
+      // out of the shader as pink.
+      body: [0.4, 0.035, 0.045],
+      trim: [0.9, 0.91, 0.95],
     },
   },
   {
