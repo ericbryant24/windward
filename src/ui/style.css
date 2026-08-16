@@ -780,6 +780,25 @@ body {
   color: var(--dim);
 }
 
+/* How far ahead of your own best you are, right now. Green when you are
+   winning, because that is the only reason to look at it. */
+.task u.ghost {
+  display: none;
+  font-size: 11.5px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  color: var(--danger);
+}
+
+.task u.ghost.on {
+  display: inline;
+}
+
+.task u.ghost.ahead {
+  color: var(--lift);
+}
+
 /* Time left. Small and quiet until it is the thing about to end the flight. */
 .task i {
   font-style: normal;

@@ -128,6 +128,18 @@ Two rules make a challenge a designed thing rather than a stopwatch:
   rest raise their markers as the count climbs, and the count spans both levels,
   so golds over the Alps open the lakefront.
 
+**Your best run flies with you.** Beat a challenge and the path is kept; every
+attempt after that has a translucent copy of it on the field, starting when you
+start and flying exactly what you flew. A results card tells you that you were
+four seconds slower — a ghost tells you where you lost them. On the three
+windowed kinds the instruments also carry the difference as a number, because
+"eighteen metres up on your best" is the thing you want at second forty.
+
+What is stored is the flown path rather than the inputs: replaying a stick
+position into air that has breathed on since would fly the ghost into a hill.
+Eight samples a second, quantised into about ten kilobytes a run, and the write
+gives up quietly rather than ever costing you a medal. See `src/ghost.js`.
+
 Landing counts: put it down slowly on gentle ground and it is a landing rather
 than a wreck.
 

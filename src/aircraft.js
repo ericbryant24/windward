@@ -10,22 +10,37 @@ import { getAircraft } from './fleet.js';
  * Everything here is driven off the same spec the physics reads, so a 29-metre
  * open-class ship really does have twice the span of the trainer on screen.
  */
-export function createAircraft(sky, spec = getAircraft()) {
+export function createAircraft(sky, spec = getAircraft(), { ghost = false } = {}) {
   const look = spec.look;
   const group = new THREE.Group();
 
-  const shell = makeLitMaterial(sky, {
-    color: new THREE.Color(...look.body),
+  // A ghost is the same aeroplane and must read as one — same span, same
+  // silhouette, so that seeing it half a wing ahead of you means something.
+  // What changes is that it is made of light: one pale colour instead of the
+  // paint scheme, so it can never be mistaken for the ship you are flying.
+  const glass = (colour, options) =>
+    makeLitMaterial(
+      sky,
+      ghost
+        ? {
+            color: new THREE.Color(0.55, 0.78, 0.95),
+            emissive: new THREE.Color(0.18, 0.42, 0.6),
+            emissiveStrength: 0.9,
+            roughness: 0.8,
+            fresnel: 0.9,
+            opacity: 0.3,
+            transparent: true,
+            side: THREE.DoubleSide,
+          }
+        : { color: colour, ...options }
+    );
+
+  const shell = glass(new THREE.Color(...look.body), {
     roughness: look.matte ? 0.42 : 0.16,
     fresnel: look.matte ? 0.2 : 0.5,
   });
-  const trim = makeLitMaterial(sky, {
-    color: new THREE.Color(...look.trim),
-    roughness: 0.22,
-    fresnel: 0.4,
-  });
-  const canopyMat = makeLitMaterial(sky, {
-    color: new THREE.Color(0.05, 0.09, 0.13),
+  const trim = glass(new THREE.Color(...look.trim), { roughness: 0.22, fresnel: 0.4 });
+  const canopyMat = glass(new THREE.Color(0.05, 0.09, 0.13), {
     roughness: 0.03,
     fresnel: 0.95,
     opacity: 0.62,

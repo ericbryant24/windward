@@ -227,6 +227,39 @@ await step('every challenge is one of the four kinds, with a ladder that climbs'
   if (bad.length) throw new Error(bad.join(', '));
 });
 
+await step('a finished run leaves a ghost, and the next attempt races it', async () => {
+  const out = await page.evaluate(async () => {
+    const g = window.WINDWARD.game;
+    const { findChallenge } = await import('/src/challenges.js');
+    const def = g.challenges.defs.find((d) => d.type === 'aerobatic') ?? g.challenges.defs[0];
+    g.startChallenge(findChallenge(def.id));
+    // Step the sim directly: software rendering manages about a frame a second
+    // and this needs a whole run's worth of flight time.
+    const real = g.controls.sample.bind(g.controls);
+    let t = 0;
+    g.controls.sample = () => ((t += 1 / 120), { roll: t % 8 < 3 ? 1 : 0, pitch: 0.1, brake: 0 });
+    for (let i = 0; i < 95 * 120 && g.state === 'flying'; i++) g.update(1 / 120);
+    g.controls.sample = real;
+    const recorded = g.recorder.score.length;
+    const stored = (localStorage.getItem('windward.ghosts.v1') || '').length;
+
+    // Go again: the ghost must load, be on screen, and move with the clock.
+    g.resumeFree();
+    g.startChallenge(findChallenge(def.id));
+    const loaded = !!g.ghost.track;
+    const a = g.ghost.mesh.position.clone();
+    for (let i = 0; i < 6 * 120; i++) g.update(1 / 120);
+    return { id: def.id, recorded, stored, loaded, visible: g.ghost.mesh.visible, moved: g.ghost.mesh.position.distanceTo(a) };
+  });
+  if (out.recorded < 50) throw new Error(`only ${out.recorded} samples recorded`);
+  if (!out.stored) throw new Error('nothing was written to the ghost book');
+  if (!out.loaded) throw new Error('the ghost did not load on the second attempt');
+  if (!out.visible) throw new Error('the ghost is not on screen');
+  if (!(out.moved > 20)) throw new Error(`the ghost moved ${out.moved.toFixed(0)} m in six seconds`);
+  await page.evaluate(() => window.WINDWARD.game.toMenu());
+  await page.waitForSelector('.menu.open', { timeout: 5000 });
+});
+
 await step('picking the other level and pressing Fly puts you over it', async () => {
   const other = map === 'jungfrau' ? 'chicago' : 'jungfrau';
   await page.waitForSelector('.menu.open', { timeout: 5000 });

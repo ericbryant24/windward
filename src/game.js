@@ -7,6 +7,7 @@ import { Wreck } from './wreck.js';
 import { World, createThermalClouds } from './world.js';
 import { Trees } from './trees.js';
 import { createFalls } from './falls.js';
+import { Ghost, Recorder, saveGhost } from './ghost.js';
 import { Buildings } from './buildings.js';
 import { Network } from './network.js';
 import { Minimap } from './minimap.js';
@@ -112,6 +113,9 @@ export class Game {
     // ends up buried inside a tower.
     this.challenges = new Challenges(this.world, heightfield, sky, scene, region.id, this.buildings);
     this.wreck = new Wreck(scene, sky, heightfield, this.buildings);
+    // Your best run at whatever you are flying, flying it again beside you.
+    this.ghost = new Ghost(scene, sky, this.spec);
+    this.recorder = new Recorder();
 
     this.state = 'menu';
     this.cameraMode = 0;
@@ -208,6 +212,8 @@ export class Game {
     this.maxAltitude = 0;
     this.wreck.end();
     this.challenges.forget();
+    this.ghost.clear();
+    this.recorder.reset();
     this.challenges.setVisible(true);
     this.hud.dismissAsk();
 
@@ -230,11 +236,15 @@ export class Game {
   #beginChallenge(def) {
     this.setAircraft(shipFor(def).id, false);
     this.challenges.arm(def);
+    this.recorder.reset();
+    // Both clocks start here, so the ghost is always at the same point of its
+    // run as you are of yours — which is the whole of what makes it readable.
+    const racing = this.ghost.load(def.id);
     // What gold asks for, said in the task's own units — "gold in 54 s" for a
     // slalom, "gold at 190 m" for the three that are scored upwards.
     const gold = formatMetric(def, def.medals[2]);
     const target = def.type === 'slalom' ? `gold in ${gold}` : `${def.window} s · gold at ${gold}`;
-    this.hud.toast(`<b>${def.name}</b> · ${target}`);
+    this.hud.toast(`<b>${def.name}</b> · ${target}${racing ? ' · your best is out there' : ''}`);
     this.audio?.cue('gate');
   }
 
@@ -258,6 +268,7 @@ export class Game {
     this.state = 'menu';
     this.wreck.end();
     this.challenges.forget();
+    this.ghost.clear();
     this.challenges.setVisible(false);
     this.hud.dismissAsk();
     this.controls.setVisible(false);
@@ -393,7 +404,7 @@ export class Game {
         ground,
         objective,
         camera: this.camera,
-        challenge: this.challenges.hudState(),
+        challenge: this.#challengeHud(),
       });
       this.audio?.update(dt, {
         airspeed: this.glider.airspeed,
@@ -413,6 +424,21 @@ export class Game {
         discovered: this.progress.discovered,
       });
     }
+  }
+
+  /**
+   * The challenge band, with the ghost folded in. How far ahead of your own
+   * best you are RIGHT NOW is the number a ghost exists to produce, and for the
+   * three types scored on a quantity it is a number rather than a picture — the
+   * aeroplane out in front already tells a slalom's story.
+   */
+  #challengeHud() {
+    const state = this.challenges.hudState();
+    const run = this.challenges.active;
+    if (state && run && this.ghost.track && run.def.type !== 'slalom') {
+      state.ghost = run.value - this.ghost.score;
+    }
+    return state;
   }
 
   #simulate(dt) {
@@ -492,6 +518,15 @@ export class Game {
 
     this.timer += dt;
 
+    // ---- the ghost ---------------------------------------------------------
+    // Driven off the run's own clock rather than the frame's, so a hitch moves
+    // the ghost and the ship by exactly the same amount.
+    const run = this.challenges.active;
+    if (run) {
+      this.recorder.sample(run.elapsed, g, run.def.type === 'slalom' ? run.gateIndex : run.value);
+      this.ghost.seek(run.elapsed);
+    }
+
     // ---- challenges --------------------------------------------------------
     for (const ev of this.challenges.update(dt, g.position, this._prevPos, agl, g)) {
       if (ev.kind === 'armed') this.#armFromMarker(ev.def);
@@ -526,6 +561,9 @@ export class Game {
 
   #finishChallenge(ev) {
     const { def, value, medal, improved, opened } = ev;
+    // Only the best run is kept. A ghost of a worse run than the one you have
+    // already flown is a ghost you would beat by doing nothing.
+    if (improved) saveGhost(def.id, this.recorder.encode());
     this.state = 'done';
     this.audio?.cue('finish');
     this.controls.setVisible(false);
@@ -590,6 +628,7 @@ export class Game {
   dismissChallenge() {
     this.hud.dismissAsk();
     this.challenges.forget();
+    this.ghost.clear();
   }
 
   /** Put the results card away and carry on from where the task ended. */
@@ -597,6 +636,7 @@ export class Game {
     this.hud.hideResults();
     this.hud.dismissAsk();
     this.challenges.forget();
+    this.ghost.clear();
     this.state = 'flying';
     this.controls.setVisible(true);
   }
@@ -670,7 +710,12 @@ export class Game {
     // A running challenge has to die with the ship, not keep counting while
     // the wreck waits to respawn.
     const failed = this.challenges.crashed();
-    if (failed) this.#failChallenge(failed);
+    // The run is over, so the ghost stops being a race and becomes an aeroplane
+    // hanging in the air next to a wreck.
+    if (failed) {
+      this.ghost.clear();
+      this.#failChallenge(failed);
+    }
     else this.hud.toast(crashLine(cause, severity), 'bad');
   }
 
@@ -819,6 +864,7 @@ export class Game {
     this.world.setLighting(sunRadiance, skyAmbient);
     this.challenges.setLighting(sunRadiance, skyAmbient);
     this.wreck.setLighting(sunRadiance, skyAmbient);
+    this.ghost.setLighting(sunRadiance, skyAmbient);
     this.clouds.userData.setLighting(sunRadiance, skyAmbient);
     this.airviz.setLighting(sunRadiance, skyAmbient);
     this.trees?.setLighting(sunRadiance, skyAmbient);

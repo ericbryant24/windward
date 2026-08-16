@@ -43,6 +43,7 @@ export class Hud {
     this.taskProgress = this.el('[data-taskprogress]');
     this.taskClock = this.el('[data-taskclock]');
     this.taskTime = this.el('[data-tasktime]');
+    this.taskGhost = this.el('[data-taskghost]');
     this.ship = this.el('[data-ship]');
     this.shipPolar = this.el('[data-shippolar]');
     this.wear = this.el('.wear');
@@ -444,6 +445,14 @@ export class Hud {
       this.taskClock.dataset.standing = challenge.standing ?? '';
       this.taskTime.textContent = `−${formatClock(challenge.remaining)}`;
       this.taskTime.classList.toggle('low', challenge.remaining < 10);
+      // Against your own best, at this point of the run. Only shown when there
+      // is a ghost to be measured against.
+      const d = challenge.ghost;
+      this.taskGhost.classList.toggle('on', d != null);
+      if (d != null) {
+        this.taskGhost.textContent = `${d >= 0 ? '+' : '−'}${Math.abs(Math.round(d))}`;
+        this.taskGhost.classList.toggle('ahead', d >= 0);
+      }
     }
   }
 
@@ -604,6 +613,7 @@ const TEMPLATE = /* html */ `
     <b data-taskprogress>—</b>
     <em class="clock" data-taskclock>—</em>
     <i data-tasktime>—</i>
+    <u class="ghost" data-taskghost></u>
   </div>
   <div class="warn"></div>
   <div class="gate-arrow">➤</div>
