@@ -56,6 +56,25 @@ const GLIDE_REALISM = 0.75;
 const REDRAW = 1 / 20;
 const TAU = Math.PI * 2;
 
+/**
+ * How quickly the map comes round to the nose, as an e-fold in seconds.
+ *
+ * Track-up maps are read by holding the picture still in your head and turning
+ * the world under it, and a map that snaps to every twitch of the nose is
+ * unreadable in rough air. A fifth of a second is short enough that rolling
+ * into a turn moves the map immediately and long enough that thermal bumps do
+ * not shake it.
+ */
+const TURN_TAU = 0.22;
+/**
+ * Hard ceiling on how fast the map may spin, rad/s. A 60-degree turn at trim
+ * comes round at about 0.4 rad/s, so this never touches ordinary flight; what
+ * it is for is the aerobatic challenges, where heading is briefly meaningless —
+ * pointed at the sky, the smallest wobble swings it through 180 degrees — and
+ * without a ceiling the map strobes.
+ */
+const TURN_MAX = TAU;
+
 /** Bronze, silver, gold and the unearned ring, matching the world labels. */
 const MEDAL_INK = ['#61d2ff', '#b06f3c', '#e2ecf5', '#ffcf70'];
 
@@ -97,6 +116,7 @@ export class Minimap {
     this.airPlan = document.createElement('canvas');
     this.rebake();
     this._acc = REDRAW; // draw on the very first update, not a twentieth late
+    this._rot = null; // snaps to the heading on the first frame rather than spinning up to it
   }
 
   /** One honest Air.sample per cell. Costly, and the sky it describes is fixed. */
@@ -153,10 +173,36 @@ export class Minimap {
    *   pointing at, and which landmarks have been found.
    */
   update(dt, state) {
+    // Every frame, not every redraw: the rotation is a filter with a memory of
+    // its own, and feeding it at a twentieth of the rate it is tuned for would
+    // make the smoothing depend on how often the map happens to be drawn.
+    this.#turn(dt, state.headingDeg);
     this._acc += dt;
     if (this._acc < REDRAW) return;
     this._acc = 0;
     this.#draw(state);
+  }
+
+  /**
+   * Bring the map round so the nose points up the screen. Wrap-aware — the
+   * short way round 359 to 1 degrees is two degrees, not three hundred and
+   * fifty-eight — damped, and rate-limited.
+   */
+  #turn(dt, headingDeg) {
+    // Screen x is world x and screen y is world z, so a nose bearing of h draws
+    // as (sin h, -cos h); rotating the canvas by -h puts that on (0, -1), which
+    // is straight up.
+    const want = -THREE.MathUtils.degToRad(headingDeg ?? 0);
+    if (this._rot == null) {
+      this._rot = want; // first frame of a flight: start pointing the right way
+      return;
+    }
+    let d = (want - this._rot) % TAU;
+    if (d > Math.PI) d -= TAU;
+    if (d < -Math.PI) d += TAU;
+    const cap = TURN_MAX * dt;
+    const move = THREE.MathUtils.clamp(d * (1 - Math.exp(-dt / TURN_TAU)), -cap, cap);
+    this._rot = (this._rot + move) % TAU;
   }
 
   // -------------------------------------------------------------- bake ---
@@ -324,7 +370,20 @@ export class Minimap {
     const c = size / 2;
     const r = c - 1.5;
     const mpp = this.range / r;
-    const at = (x, z) => [c + (x - position.x) / mpp, c + (z - position.z) / mpp];
+    const rot = this._rot ?? -THREE.MathUtils.degToRad(headingDeg);
+    const cs = Math.cos(rot);
+    const sn = Math.sin(rot);
+    // Everything vector goes through this, so it comes out in final screen
+    // coordinates: the rim clamping downstream stays a plain distance from the
+    // centre, and the labels stay upright because nothing ever rotates the pen.
+    const at = (x, z) => {
+      const dx = (x - position.x) / mpp;
+      const dz = (z - position.z) / mpp;
+      return [c + dx * cs - dz * sn, c + dx * sn + dz * cs];
+    };
+    // The two baked rasters are square and axis-aligned, so they are placed by
+    // their unturned corner and turned by the canvas instead.
+    const flat = (x, z) => [c + (x - position.x) / mpp, c + (z - position.z) / mpp];
 
     ctx.save();
     ctx.beginPath();
@@ -337,9 +396,14 @@ export class Minimap {
     ctx.fillRect(0, 0, size, size);
 
     const span = (this.half * 2) / mpp;
-    const [ox, oy] = at(-this.half, -this.half);
+    const [ox, oy] = flat(-this.half, -this.half);
+    ctx.save();
+    ctx.translate(c, c);
+    ctx.rotate(rot);
+    ctx.translate(-c, -c);
     ctx.drawImage(this.ground, ox, oy, span, span);
     this.#drawAir(ctx, size, s, ox, oy, span, mpp, position.y);
+    ctx.restore();
 
     // Half the window, so a glance converts pixels to kilometres.
     ctx.strokeStyle = 'rgba(190, 216, 238, 0.16)';
@@ -355,24 +419,24 @@ export class Minimap {
     // first letter of one: over Kleine Scheidegg the ring lands on the K.
     if (named) this.#drawPlaceName(ctx, named, r, c);
     if (objective?.position) this.#drawObjective(ctx, at, objective.position, r, c);
-    this.#drawShip(ctx, c, headingDeg);
+    this.#drawShip(ctx, c);
     ctx.restore();
 
-    // The rim, and the north mark on it. North-up: the map holds still and the
-    // ship turns inside it, which is what builds a memory of the place. Which
-    // way the nose is pointing is on the compass tape anyway.
+    // The rim, and the north mark running round it.
+    //
+    // Track-up: the ship is nailed to the middle pointing at the top of the
+    // screen and the world turns underneath. What that buys is that left on the
+    // map is left out of the window — the one question this thing is asked in a
+    // hurry, low, in a valley, is "which way do I break", and a north-up map
+    // makes you do the rotation in your head at the exact moment you have
+    // nothing spare to do it with. The cost is that the map no longer sits
+    // still in memory, so north gets a mark of its own on the rim.
     ctx.strokeStyle = 'rgba(150, 190, 220, 0.45)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(c, c, r, 0, TAU);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(226, 240, 252, 0.75)';
-    ctx.beginPath();
-    ctx.moveTo(c, 1);
-    ctx.lineTo(c - 3.4, 6.5);
-    ctx.lineTo(c + 3.4, 6.5);
-    ctx.closePath();
-    ctx.fill();
+    this.#drawNorth(ctx, c, r, rot);
 
     // The scale, inside the rim and haloed. It used to sit bare in the square
     // corner outside the disc, which worked while the widget was opaque and had
@@ -618,10 +682,45 @@ export class Minimap {
     ctx.stroke();
   }
 
-  #drawShip(ctx, c, headingDeg) {
+  /**
+   * North, as a pip on the rim with its letter beside it.
+   *
+   * The triangle alone was enough while it lived at the top of the disc and
+   * could only ever have meant one thing. Loose on the rim it needs saying, and
+   * the letter is written upright rather than turned with the mark: a rotating
+   * N is a puzzle, and at seven pixels it is an unsolvable one.
+   */
+  #drawNorth(ctx, c, r, rot) {
+    const sn = Math.sin(rot);
+    const cs = Math.cos(rot);
     ctx.save();
     ctx.translate(c, c);
-    ctx.rotate(THREE.MathUtils.degToRad(headingDeg));
+    ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(226, 240, 252, 0.75)';
+    ctx.beginPath();
+    ctx.moveTo(0, -r - 0.5);
+    ctx.lineTo(-3.4, -r + 5);
+    ctx.lineTo(3.4, -r + 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.font = '700 8px ui-rounded, -apple-system, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const lx = c + sn * (r - 11);
+    const ly = c - cs * (r - 11);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(4, 9, 15, 0.9)';
+    ctx.strokeText('N', lx, ly);
+    ctx.fillStyle = 'rgba(226, 240, 252, 0.8)';
+    ctx.fillText('N', lx, ly);
+  }
+
+  /** Always up the screen, always in the middle. That is the whole idea. */
+  #drawShip(ctx, c) {
+    ctx.save();
+    ctx.translate(c, c);
     ctx.beginPath();
     ctx.moveTo(0, -6.5);
     ctx.lineTo(4.6, 5);

@@ -252,6 +252,32 @@ await step('there is traffic on the roads', async () => {
   console.log(`        ${out.movers} vehicles, kinds ${out.kinds.join(',')}`);
 });
 
+await step('the minimap is track-up and comes round to the nose', async () => {
+  const out = await page.evaluate(() => {
+    const g = window.WINDWARD.game;
+    const V = g.glider.position.constructor;
+    g.startFlight();
+    const seen = [];
+    for (const hdg of [40, 215]) {
+      const p = g.glider.position;
+      g.glider.reset(new V(p.x, p.y, p.z), hdg, 44);
+      // Two seconds of sim is eight e-folds of the map's turn filter, so what
+      // is left is where it settles rather than how it got there.
+      for (let i = 0; i < 2 * 120; i++) g.update(1 / 120);
+      const want = -g.glider.headingDeg;
+      const got = (g.minimap._rot * 180) / Math.PI;
+      seen.push({ hdg, off: ((((got - want) % 360) + 540) % 360) - 180 });
+    }
+    return seen;
+  });
+  for (const { hdg, off } of out) {
+    // The map is turned by minus the heading; anything else and the nose is not
+    // up the screen. A degree or two of filter lag is the design.
+    if (Math.abs(off) > 4) throw new Error(`on ${hdg}deg the map sat ${off.toFixed(1)}deg out`);
+  }
+  console.log(`        lag ${out.map((o) => `${o.hdg}deg:${o.off.toFixed(1)}`).join(', ')}`);
+});
+
 await step('a finished run leaves a ghost, and the next attempt races it', async () => {
   const out = await page.evaluate(async () => {
     const g = window.WINDWARD.game;
