@@ -315,6 +315,77 @@ await step('a balloon shot down scores, and the magazine runs down', async () =>
   console.log(`        ${out.id}: ${out.popped} of ${out.balloons} down for ${out.spent} rounds`);
 });
 
+await step('it lands on its wheels, rolls out, and takes off again', async () => {
+  const out = await page.evaluate(async (map) => {
+    const g = window.WINDWARD.game;
+    const V = g.glider.position.constructor;
+    // Flat, building-free ground on each map, checked with the same heightfield
+    // the game flies over. Placed on short final rather than flown there: what
+    // is under test is the contact rule and the roll, not an autopilot.
+    // Chicago is a city and has almost no clear dry run in it; this is
+    // Northerly Island, which is where Meigs Field was, and about the only
+    // strip on that map with no buildings along it.
+    const [lat, lon, hdg] = map === 'chicago' ? [41.8555, -87.6085, 0] : [46.677, 7.855, 60];
+    const real = g.controls.sample.bind(g.controls);
+    const site = () => {
+      const v = g.world.toLocal(lat, lon);
+      return { v, gr: g.hf.heightAt(v.x, v.z) };
+    };
+    const flare = (kmh, sink) => {
+      g.startFlight();
+      const { v, gr } = site();
+      g.glider.reset(new V(v.x, gr + 4.4, v.z), hdg, kmh / 3.6);
+      g.glider.velocity.y = sink;
+      g.controls.sample = () => ({ roll: 0, pitch: 0, brake: 0, throttle: 0.3, fire: false });
+      let n = 0;
+      while (n < 3 * 120 && g.state === 'flying' && !g.glider.onGround && !g.wreck.active) {
+        g.update(1 / 120);
+        n++;
+      }
+      return g.glider.onGround ? 'landed' : g.wreck.active ? 'crash' : 'flying';
+    };
+    const gentle = flare(160, -2);
+    const hard = flare(160, -10);
+    if (flare(150, -2) !== 'landed') {
+      g.controls.sample = real;
+      return { gentle, hard, rolled: 0 };
+    }
+    // Lever shut: the wheel brakes are the bottom of the throttle.
+    const p0 = g.glider.position.clone();
+    g.controls.sample = () => ({ roll: 0, pitch: 0, brake: 0, throttle: 0, fire: false });
+    let n = 0;
+    while (n < 40 * 120 && Math.hypot(g.glider.velocity.x, g.glider.velocity.z) > 0.5) {
+      g.update(1 / 120);
+      n++;
+    }
+    const rolled = Math.round(g.glider.position.distanceTo(p0));
+    const stopped = g.state;
+    // And away again.
+    const p1 = g.glider.position.clone();
+    g.controls.sample = () => ({ roll: 0, pitch: 1, brake: 0, throttle: 1, fire: false });
+    n = 0;
+    while (n < 30 * 120 && g.glider.onGround) {
+      g.update(1 / 120);
+      n++;
+    }
+    const run = Math.round(g.glider.position.distanceTo(p1));
+    for (let i = 0; i < 10 * 120; i++) g.update(1 / 120);
+    const agl = Math.round(g.glider.position.y - g.hf.heightAt(g.glider.position.x, g.glider.position.z));
+    // Hand the stick back, or every step after this one flies with the pitch
+    // pinned and loops its way through whatever it was trying to measure.
+    g.controls.sample = real;
+    return { gentle, hard, rolled, stopped, run, agl, state: g.state };
+  }, map);
+  if (out.gentle !== 'landed') throw new Error(`a two metre a second arrival was a ${out.gentle}`);
+  if (out.hard !== 'crash') throw new Error(`a ten metre a second arrival was a ${out.hard}`);
+  if (!(out.rolled > 40 && out.rolled < 600)) throw new Error(`landing roll ${out.rolled} m`);
+  // The whole point: a landing is not the end of the flight any more.
+  if (out.stopped !== 'flying') throw new Error(`stopping on the runway ended the flight (${out.stopped})`);
+  if (!(out.run > 20 && out.run < 500)) throw new Error(`take-off run ${out.run} m`);
+  if (!(out.agl > 80)) throw new Error(`ten seconds after take-off it is only ${out.agl} m up`);
+  console.log(`        down in ${out.rolled} m, off again in ${out.run} m, ${out.agl} m up ten seconds later`);
+});
+
 await step('there is traffic on the roads', async () => {
   const out = await page.evaluate(async (m) => {
     const g = window.WINDWARD.game;
@@ -348,7 +419,10 @@ await step('the minimap is track-up and comes round to the nose', async () => {
     const seen = [];
     for (const hdg of [40, 215]) {
       const p = g.glider.position;
-      g.glider.reset(new V(p.x, p.y, p.z), hdg, 44);
+      // Well clear of the ground: a step before this one may have left the
+      // aeroplane parked on it, and resetting onto the grass puts it back on
+      // its wheels, where the heading comes off the wheels and not the stick.
+      g.glider.reset(new V(p.x, g.hf.heightAt(p.x, p.z) + 900, p.z), hdg, 44);
       // Two seconds of sim is eight e-folds of the map's turn filter, so what
       // is left is where it settles rather than how it got there.
       for (let i = 0; i < 2 * 120; i++) g.update(1 / 120);

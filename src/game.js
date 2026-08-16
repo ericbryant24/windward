@@ -578,15 +578,29 @@ export class Game {
     const agl = g.position.y - ground;
 
     // ---- terrain contact ---------------------------------------------------
-    if (agl < 3.5) {
+    // A landing no longer ends the flight. It puts the aeroplane on its wheels
+    // and leaves it there, rolling, with the lever in your hand — which is the
+    // whole difference between an aeroplane and a sailplane, and the reason
+    // the results card used to appear the moment you got one right.
+    const gearHeight = (this.spec.gear ?? 0.9) + 2.6;
+    if (!g.onGround && agl < gearHeight) {
       const water = this.hf.isWater(g.position.x, g.position.z);
       const normal = this.hf.normalAt(g.position.x, g.position.z, 30, this._v);
       const gentle = normal.y > 0.93;
       // Touching down is a speed relative to the ship: the trainer arrives at
       // 20 m/s and the open-class ship cannot get below 26 without stalling.
+      // Sink matters more than speed now there are wheels under it. Six metres
+      // a second is a firm arrival and the gear takes it; anything past that is
+      // an arrival rather than a landing. Worth knowing before you try: this
+      // aeroplane glides at eleven to one, so an engine-off approach comes down
+      // at seven and will always break something. You fly a powered approach or
+      // you do not land it.
       const trim = this.spec.trimSpeed;
-      const slow = g.airspeed < trim * 0.79 && Math.abs(g.vario) < trim * 0.18;
-      if (gentle && slow && !water) this.#land();
+      const slow = g.airspeed < trim * 0.92 && Math.abs(g.vario) < 6;
+      // Wings level too, now that there are wheels to put down: arriving on
+      // one of them at forty degrees of bank is not a landing.
+      const level = Math.abs(g.bankDeg) < 22;
+      if (gentle && slow && level && !water) this.#touchDown();
       else this.#crash(water ? 'water' : 'terrain', { normal, point: this._v2.set(g.position.x, ground, g.position.z) });
       return;
     }
@@ -764,20 +778,24 @@ export class Game {
     return { name: `Lift ${lift.w.toFixed(1)} m/s`, position: this._liftPos.set(lift.x, lift.y, lift.z) };
   }
 
-  #land() {
-    this.state = 'done';
-    this.challenges.abort();
-    this.audio?.cue('finish');
-    this.controls.setVisible(false);
-    const lines = [
-      ['Landed at', `${Math.round(this.hf.heightAt(this.glider.position.x, this.glider.position.z))} m`],
-      ['Highest point', `${Math.round(this.maxAltitude)} m`],
-      ['Time aloft', formatClock(this.timer)],
-    ];
-    this.hud.showResults('Safe landing', lines, [
-      { label: 'Fly again', action: 'restart', primary: true },
-      { label: 'Menu', action: 'menu' },
-    ]);
+  /**
+   * Down, and still flying in the sense that matters: the clock keeps running,
+   * the challenge keeps going, and the throttle is right there. Said once,
+   * because after the first time you know what a runway is for.
+   */
+  #touchDown() {
+    this.glider.touchDown();
+    this.audio?.cue('gate');
+    if (!this.progress.hints.includes('landed')) {
+      this.progress.hints.push('landed');
+      saveProgress(this.progress);
+      this.hud.toast(
+        '<b>Down</b><br>Lever shut is the wheel brakes. Open it again and pull back to go round.',
+        'discovery'
+      );
+    } else {
+      this.hud.toast('<b>Down</b>');
+    }
   }
 
   /**

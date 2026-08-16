@@ -47,6 +47,20 @@ const OVERSPEED_DAMAGE = 0.26;
 const BREAK_CD = 0.85;
 const BREAK_AREA = 0.07;
 
+/** Rolling resistance on grass, as a fraction of weight. */
+const ROLL_MU = 0.045;
+/** And what the wheel brakes add on top, fully on. */
+const BRAKE_MU = 0.5;
+/**
+ * Below this throttle setting the brakes come on, hard at zero. There is no
+ * separate brake control on a ship with a lever — an aerobatic monoplane has
+ * no airbrakes and the button is gone — and chopping the throttle to stop is
+ * what a hand does anyway.
+ */
+const BRAKE_BELOW = 0.08;
+/** How hard a touchdown has to be before it is an arrival rather than a landing. */
+const GEAR_LIMIT = 4.5;
+
 /** Alpine defaults; a region overrides what differs. */
 const AIR_DEFAULTS = {
   cloudBase: 2950,
@@ -301,6 +315,12 @@ export class Glider {
     this.rolling = false;
     this.looping = false;
     this.brake = 0;
+    /** Wheels down and rolling. See #roll. */
+    this.onGround = false;
+    /** How far the nose is held up off the ground, radians. */
+    this.rotation = 0;
+    /** Where the wheels are pointed while rolling, radians. */
+    this._groundHdg = 0;
     /** Where the lever is, 0..1, damped. Always 0 on a ship with no engine. */
     this.throttle = 0;
     /** And what that is worth right now, in newtons. */
@@ -384,6 +404,8 @@ export class Glider {
     this.forward(this._f);
     this.velocity.copy(this._f).multiplyScalar(speed);
     this.brake = 0;
+    this.onGround = false;
+    this.rotation = 0;
     // Full power on a reset. A ship dropped on a marker with the lever shut is
     // a ship that starts every challenge behind.
     this.throttle = this.spec.power ? 1 : 0;
@@ -431,6 +453,7 @@ export class Glider {
   update(dt, input) {
     const cfg = this.spec;
     if (this.broken) return this.#fall(dt);
+    if (this.onGround) return this.#roll(dt, input);
 
     this.air.sample(this.position, this.wind);
     this.airVelocity.copy(this.velocity).sub(this.wind);
@@ -652,6 +675,114 @@ export class Glider {
       if (this.damage >= 1) this.#breakUp();
     }
 
+    this.#instruments(dt);
+  }
+
+  /**
+   * Put it on the wheels. The game decides whether an arrival was a landing —
+   * it owns the slope test and knows about water — and this is what it calls
+   * when it was.
+   */
+  touchDown() {
+    if (this.onGround || this.broken) return;
+    this.onGround = true;
+    this.rotation = 0;
+    this._groundHdg = Math.atan2(this.velocity.x, -this.velocity.z);
+    this.velocity.y = 0;
+  }
+
+  /**
+   * Rolling.
+   *
+   * Not a special case bolted onto flight: it is its own short model, because
+   * an aeroplane on its wheels is a different machine. The wing is still there
+   * and still making lift, but the wheels own the attitude — they hold it
+   * level with the slope and pointed where the nose is pointed — and what
+   * decides everything is a one-dimensional sum along the ground: thrust,
+   * rolling resistance, brakes and drag.
+   *
+   * Coming off is not a decision, it is arithmetic. Hold the stick back and
+   * the nose comes up as far as the gear allows; when the wing at that angle
+   * makes more lift than the aeroplane weighs, it flies. On the Shrike that
+   * happens at about 32 m/s after some sixty metres of grass, which is what a
+   * one-to-one aerobatic monoplane really does.
+   */
+  #roll(dt, input) {
+    const cfg = this.spec;
+    const hf = this.air.hf;
+    const gear = cfg.gear ?? 0.9;
+    const x = this.position.x;
+    const z = this.position.z;
+    const ground = hf.heightAt(x, z);
+    const n = hf.normalAt(x, z, 30, this._up);
+
+    // ---- attitude: the wheels own it ---------------------------------------
+    // Steering falls away with speed, because a nosewheel that could still
+    // swing the aeroplane at eighty metres a second would be a car.
+    const speed = Math.hypot(this.velocity.x, this.velocity.z);
+    const authority = 1 / (1 + (speed / 22) ** 2);
+    // Read back off the velocity while there is one, so a swing on landing is
+    // real; held from the last frame once stopped, where velocity says nothing.
+    if (speed > 0.5) this._groundHdg = Math.atan2(this.velocity.x, -this.velocity.z);
+    this._groundHdg += input.roll * (cfg.steerRate ?? 0.9) * authority * dt;
+
+    this.rotation = THREE.MathUtils.damp(
+      this.rotation,
+      Math.max(0, input.pitch) * THREE.MathUtils.degToRad(cfg.rotateDeg ?? 11),
+      6,
+      dt
+    );
+
+    // Forward along the slope, nose lifted by however much the stick asked
+    // for, wings level with the ground under them.
+    const f = this._f.set(Math.sin(this._groundHdg), 0, -Math.cos(this._groundHdg));
+    f.addScaledVector(n, -f.dot(n)).normalize();
+    const right = this._right.crossVectors(f, n).normalize();
+    f.applyAxisAngle(right, this.rotation).normalize();
+    const up = this._tmp.crossVectors(right, f).normalize();
+    this._m ??= new THREE.Matrix4();
+    this._m.makeBasis(right, up, f.multiplyScalar(-1));
+    this.quaternion.setFromRotationMatrix(this._m);
+
+    // ---- along the ground --------------------------------------------------
+    const rho = Air.density(this.position.y);
+    const q = 0.5 * rho * speed * speed * cfg.wingArea;
+    const thrust = cfg.power
+      ? Math.min(cfg.staticThrust, cfg.power / Math.max(speed, THRUST_FLOOR)) * this.throttle * (rho / RHO0)
+      : 0;
+    this.throttle = cfg.power ? THREE.MathUtils.damp(this.throttle, input.throttle ?? 0, 7, dt) : 0;
+    // Brakes off the bottom of the lever. There is nowhere else to put them.
+    const wheelBrake = cfg.power ? THREE.MathUtils.clamp((BRAKE_BELOW - this.throttle) / BRAKE_BELOW, 0, 1) : input.brake;
+    // Twice the clean drag: the gear is down and the wing is at no useful angle.
+    const drag = q * cfg.cd0 * 2;
+    const friction = cfg.mass * G * (ROLL_MU + BRAKE_MU * wheelBrake);
+    const along = (thrust - drag - Math.min(friction, speed > 0.4 ? friction : 0)) / cfg.mass;
+
+    const nextSpeed = Math.max(0, speed + along * dt);
+    this.velocity.set(Math.sin(this._groundHdg) * nextSpeed, 0, -Math.cos(this._groundHdg) * nextSpeed);
+    this.position.addScaledVector(this.velocity, dt);
+    this.position.y = hf.heightAt(this.position.x, this.position.z) + gear;
+
+    // ---- and whether it is still on the ground -----------------------------
+    this.airVelocity.copy(this.velocity).sub(this.air.sample(this.position, this.wind));
+    this.airspeed = this.airVelocity.length();
+    this.alpha = this.rotation;
+    this.beta = 0;
+    const lift = 0.5 * rho * this.airspeed * this.airspeed * cfg.wingArea * cfg.clSlope * this.rotation;
+    this.loadFactor = lift / (cfg.mass * G);
+    if (lift > cfg.mass * G) {
+      this.onGround = false;
+      // Off the wheels with the climb it has actually earned, so the first
+      // instant of flight is continuous with the last instant of the roll.
+      this.velocity.y = ((lift - cfg.mass * G) / cfg.mass) * dt;
+    }
+
+    this.stalled = false;
+    this.buffet = 0;
+    this.rollPin = 0;
+    this.pitchPin = 0;
+    this.rolling = false;
+    this.looping = false;
     this.#instruments(dt);
   }
 

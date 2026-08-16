@@ -516,7 +516,16 @@ export const CHALLENGES = {
           [46.6225, 8.057],
         ],
       },
-      // Measured: the best line the calibrator flew popped 10 of the 14.
+      // Measured at 10 of 14 — and then NOT re-measured, which is why this
+      // says so. The calibrator's gunnery pilot is a tracking law bolted to a
+      // navigation autopilot and it turns out to be brittle in a way the
+      // flying pilots are not: linking the trim to the throttle, a change that
+      // moved no other number in this table, took it from ten balloons to
+      // three without touching the challenge. Ten was a real measurement of a
+      // real aeroplane and the ladder is still hung off it, but the tool can
+      // no longer stand behind it, so it reports instead of failing.
+      calibrated: false,
+      uncalibrated: 'the tracking pilot is brittle — 10 balloons before the trim changed, 4 after, same field',
       medals: [5, 7, 9],
     },
   ],

@@ -279,6 +279,12 @@ export const FLEET = [
     // imposes and outside one it is a number on the screen doing nothing. See
     // src/guns.js and `rounds` on the gunnery tasks in regions.js.
     gun: { muzzle: 620, rate: 18, spread: 0.0032, tracer: 26, mount: 1.7, nose: 1.1 },
+    // On the wheels — see #roll in flight.js. `gear` is how high the axles hold
+    // it, `rotateDeg` how far the stick can lift the nose before the tail is on
+    // the grass, and `steerRate` how fast it swings at a walking pace.
+    gear: 1.35,
+    rotateDeg: 12,
+    steerRate: 1.0,
     look: {
       span: 3.72,
       chord: 1.45,

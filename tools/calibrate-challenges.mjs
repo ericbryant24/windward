@@ -1318,7 +1318,13 @@ function dashPolicies(def, spec) {
  */
 function gunPolicies(spec) {
   const out = [];
-  for (const speed of [spec.trimSpeed * 0.72, spec.trimSpeed, spec.trimSpeed * 1.3]) {
+  // Against what the throttle can actually hold. The trim follows the lever
+  // now, so asking a powered ship for 0.72 of its glide trim means asking for
+  // the lever shut, and the pilot spends the window fighting an eleven-to-one
+  // sink rate instead of shooting — measured, that alone took the Grindelwald
+  // field from ten balloons to three.
+  const cruise = spec.trimSpeed * (1 + (spec.throttleTrim ?? 0));
+  for (const speed of [spec.trimSpeed, (spec.trimSpeed + cruise) / 2, cruise]) {
     for (const cone of [0.02, 0.045, 0.08]) {
       for (const range of [420, 700]) {
         for (const persist of [1, 2.5]) {

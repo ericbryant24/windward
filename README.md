@@ -154,8 +154,27 @@ position into air that has breathed on since would fly the ghost into a hill.
 Eight samples a second, quantised into about ten kilobytes a run, and the write
 gives up quietly rather than ever costing you a medal. See `src/ghost.js`.
 
-Landing counts: put it down slowly on gentle ground and it is a landing rather
-than a wreck.
+### Landing, and going round again
+
+A landing is not the end of the flight. Put it down on gentle ground, wings
+level, under six metres a second of sink, and the aeroplane is on its wheels
+and rolling — the clock keeps running, the challenge keeps going, and the
+throttle is in your hand. Shut the lever and the wheel brakes come on; open it
+again and pull back and you are away.
+
+On the wheels it is a different machine and gets its own short model: the
+wheels own the attitude, holding it level with the slope and pointed where the
+nose is pointed, and everything else is a one-dimensional sum along the ground
+of thrust, rolling resistance, brakes and drag. Coming off is not a decision
+but arithmetic — hold the stick back, the nose comes up as far as the gear
+allows, and when the wing at that angle makes more lift than the aeroplane
+weighs, it flies. Measured on grass: 202 m to stop from 166 km/h with the lever
+shut, and 49 m to unstick from a standstill at full power.
+
+Worth knowing before you try it: the Shrike glides at eleven to one, so an
+engine-off approach comes down at seven metres a second and will always break
+something. You fly a powered approach or you do not land it. There are no
+authored runways yet — any gentle ground will do, which suits the aeroplane.
 
 Two things the measurements decided rather than the design. A **height** run is
 a ridge beat, not a thermal — this aeroplane takes thirty-seven seconds to fly
@@ -197,12 +216,15 @@ of making them readable — a bright shape hanging in front of a valley wall is
 very hard to range, and the same shape on a string to a point on the ground is
 not. See `src/guns.js` and `src/balloons.js`.
 
-> The **Harbour Line**'s medals are the one set in this game that were not
-> measured. The calibrator's gunnery pilot pops 10 of 14 over Grindelwald and 4
-> over the harbour — open water, no obstacles, same count, the easier site by
-> any reading — so the four is an artefact of the autopilot rather than a fact
-> about the challenge. The table says `calibrated: false` and gives the reason,
-> and the tool reports instead of failing on it. Re-cut it against real play.
+> **Both gunnery ladders are the only numbers in this game the tool does not
+> stand behind**, and they say so with `calibrated: false` and a reason. The
+> gunnery pilot is a tracking law bolted to a navigation autopilot and it is
+> brittle in a way the flying pilots are not. It pops 10 of 14 over Grindelwald
+> and 4 over the harbour — open water, no obstacles, same count, the easier
+> site by any reading — and then linking the trim to the throttle, a change
+> that moved no other number in the table, took Grindelwald from 10 to 3
+> without touching the challenge. The ladders are hung off the best real
+> measurement taken; re-cut them against real play.
 
 ### The waterfalls
 
