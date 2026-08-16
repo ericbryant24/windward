@@ -529,7 +529,7 @@ export class Game {
     }
 
     // ---- challenges --------------------------------------------------------
-    for (const ev of this.challenges.update(dt, g.position, this._prevPos, agl, g)) {
+    for (const ev of this.challenges.update(dt, g.position, this._prevPos, agl)) {
       if (ev.kind === 'armed') this.#armFromMarker(ev.def);
       else if (ev.kind === 'note') this.#noteChallenge(ev);
       else if (ev.kind === 'done') this.#finishChallenge(ev);

@@ -438,10 +438,14 @@ export class Hud {
     if (challenge) {
       this.taskName.textContent = challenge.name;
       this.taskProgress.textContent = challenge.progress;
-      // Elapsed is the figure a medal ladder is flown against: it says which
-      // rung you are still on for while there is time to fly differently.
-      // Remaining only becomes interesting when it is about to end the run.
-      this.taskClock.textContent = formatClock(challenge.elapsed);
+      // A deck run's progress line IS its state — on the deck, too high, off
+      // the line — and the colour carries most of that at a glance. Everything
+      // else leaves the attribute empty and keeps the warm default.
+      this.task.dataset.flag = challenge.flag ?? '';
+      // The figure the medal ladder is flown against: it says which rung you
+      // are still on for while there is time to fly differently. Remaining
+      // only becomes interesting when it is about to end the run.
+      this.taskClock.textContent = formatClock(challenge.clock);
       this.taskClock.dataset.standing = challenge.standing ?? '';
       this.taskTime.textContent = `−${formatClock(challenge.remaining)}`;
       this.taskTime.classList.toggle('low', challenge.remaining < 10);

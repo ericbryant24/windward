@@ -13,8 +13,9 @@ import { store } from './store.js';
  * next marker is already two kilometres down the river. A mode would mean a
  * menu, a teleport and a reload between every sixty-second task.
  *
- * Everything scores on one number and lower always wins, so a single medal
- * rule serves all four types. See CHALLENGES in regions.js for the content.
+ * Everything scores on one number, and which direction wins is a property of
+ * the type rather than of the challenge, so a single medal rule serves all
+ * four. See CHALLENGES in regions.js for the content.
  *
  * The medal book at the bottom of this file is deliberately map-blind. One
  * store, keyed by challenge id, read the same way whichever terrain happens to
@@ -48,9 +49,9 @@ const MEDAL_TINTS = [
  *              only one that can be failed by being slow.
  *   height     sixty seconds. How much of it can you turn into altitude?
  *   distance   ninety seconds. How far from here can you be at the end of it?
- *   aerobatic  a window, and how many clean rolls you fit into it. Rolling
- *              costs height and speed, so the task is really about managing
- *              both against the redline and the ground.
+ *   deck       sixty seconds, a corridor and a ceiling: how much of the window
+ *              can you spend down on the deck inside it? The only score in the
+ *              game that is a measure of nerve.
  *
  * Three of the four are fixed windows, and that is the shape of the whole set:
  * the clock is the task rather than a deadline attached to one. You cannot fail
@@ -66,7 +67,7 @@ export const TYPES = {
   slalom: { wins: 'low', unit: 'time', windowed: false },
   height: { wins: 'high', unit: 'height', windowed: true },
   distance: { wins: 'high', unit: 'distance', windowed: true },
-  aerobatic: { wins: 'high', unit: 'count', windowed: true },
+  deck: { wins: 'high', unit: 'time', windowed: true },
 };
 
 /** Which medal a result earns. Thresholds are [bronze, silver, gold]. */
@@ -112,8 +113,6 @@ export function formatMetric(def, value) {
       return `${Math.round(value)} m`;
     case 'distance':
       return value >= 1000 ? `${(value / 1000).toFixed(2)} km` : `${Math.round(value)} m`;
-    case 'count':
-      return `${Math.round(value)}`;
     default:
       return formatClock(value);
   }
@@ -177,6 +176,65 @@ export function findChallenge(id) {
 export function shipFor(def) {
   return getAircraft(ISSUED_AIRCRAFT ?? def.ship);
 }
+
+// ----------------------------------------------------------- the corridor ---
+/**
+ * A deck run's line: the river, or the floor of the valley, as a chain of
+ * points with the running distance along it.
+ *
+ * Everything a deck run needs is one of two questions about this — how far off
+ * the line am I, and what is the line doing a few hundred metres ahead — so it
+ * is built once per challenge and both answers are a walk along the same array.
+ * Plan view only: the corridor is a shape on the map and the ceiling is the
+ * other half of the rule.
+ */
+export function buildCorridor(world, def) {
+  const pts = def.deck.path.map(([lat, lon]) => world.toLocal(lat, lon));
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+  }
+  return { pts, cum, length: cum[cum.length - 1], width: def.deck.width, ceiling: def.deck.ceiling };
+}
+
+/** How far off the line, and how far along it, the nearest point is. */
+export function onCorridor(line, x, z) {
+  let best = Infinity;
+  let at = 0;
+  for (let i = 1; i < line.pts.length; i++) {
+    const a = line.pts[i - 1];
+    const b = line.pts[i];
+    const vx = b.x - a.x;
+    const vz = b.z - a.z;
+    const len2 = vx * vx + vz * vz;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * vx + (z - a.z) * vz) / len2)) : 0;
+    const dx = x - (a.x + vx * t);
+    const dz = z - (a.z + vz * t);
+    const d = dx * dx + dz * dz;
+    if (d < best) {
+      best = d;
+      at = line.cum[i - 1] + Math.sqrt(len2) * t;
+    }
+  }
+  return { off: Math.sqrt(best), at };
+}
+
+/** The point this far along the line, clamped to its ends. */
+export function corridorAt(line, s, out = { x: 0, z: 0 }) {
+  const d = Math.max(0, Math.min(line.length, s));
+  let i = 1;
+  while (i < line.cum.length - 1 && line.cum[i] < d) i++;
+  const a = line.pts[i - 1];
+  const b = line.pts[i];
+  const span = line.cum[i] - line.cum[i - 1];
+  const t = span > 0 ? (d - line.cum[i - 1]) / span : 0;
+  out.x = a.x + (b.x - a.x) * t;
+  out.z = a.z + (b.z - a.z) * t;
+  return out;
+}
+
+/** How far ahead a deck run's arrow points, and the calibrator aims. */
+export const CORRIDOR_LOOKAHEAD = 620;
 
 /** Every task but a height run drops you in at this multiple of trim speed. */
 const START_SPEED = 1.33;
@@ -292,7 +350,11 @@ export class Challenges {
       beacon.scale.setY(height / BEACON_HEIGHT);
       beacon.renderOrder = 20;
       this.group.add(beacon);
-      return { def, position, normal, radius: MARKER_RADIUS, mesh, beacon, facing, locked: false };
+      // A deck run's corridor is fixed geometry, so it is built with the marker
+      // rather than when the task arms: the minimap and the HUD arrow both want
+      // it, and the calibrator wants it without flying anything.
+      const line = def.type === 'deck' ? buildCorridor(world, def) : null;
+      return { def, position, normal, radius: MARKER_RADIUS, mesh, beacon, facing, line, locked: false };
     });
     this.refreshUnlocks();
 
@@ -372,8 +434,13 @@ export class Challenges {
       run.startY = marker.position.y;
     } else if (def.type === 'distance') {
       run.from = marker.position.clone();
-    } else if (def.type === 'aerobatic') {
-      run.figures = new Figures();
+    } else if (def.type === 'deck') {
+      run.line = marker.line;
+      run.on = false;
+      run.flip = 0;
+      run.off = 0;
+      run.at = 0;
+      run.agl = 0;
     }
     return run;
   }
@@ -406,7 +473,7 @@ export class Challenges {
   }
 
   // -------------------------------------------------------------- loop ---
-  update(dt, position, prevPos, agl, glider = null) {
+  update(dt, position, prevPos, agl) {
     this.events.length = 0;
     this.spin += dt * 0.6;
     // About the hoop's own axis, so the ring stays across the course and only
@@ -419,7 +486,7 @@ export class Challenges {
     for (const m of this.materials) m.uniforms.uPulse.value += dt * 2.6;
     for (const m of this.beaconMaterials) m.uniforms.uPulse.value += dt * 2.6;
 
-    if (this.active) this.#step(dt, position, prevPos, agl, glider);
+    if (this.active) this.#step(dt, position, prevPos, agl);
     else this.#checkMarkers(position, prevPos);
     return this.events;
   }
@@ -444,7 +511,7 @@ export class Challenges {
     }
   }
 
-  #step(dt, position, prevPos, agl, glider) {
+  #step(dt, position, prevPos, agl) {
     const run = this.active;
     const def = run.def;
     run.elapsed += dt;
@@ -477,10 +544,29 @@ export class Challenges {
       run.value = position.y - run.startY;
     } else if (def.type === 'distance') {
       run.value = Math.hypot(position.x - run.from.x, position.z - run.from.z);
-    } else if (def.type === 'aerobatic') {
-      if (run.figures.update(glider)) {
-        run.value += 1;
-        this.events.push({ kind: 'note', def, text: `${run.value} roll${run.value === 1 ? '' : 's'}`, cue: 'gate' });
+    } else if (def.type === 'deck') {
+      // Two conditions, and the clock only runs while both hold: under the
+      // ceiling, and over the line. Neither alone is the task — a hundred
+      // metres up the river is a sightseeing flight, and thirty metres over
+      // the railyard is a field.
+      const { off, at } = onCorridor(run.line, position.x, position.z);
+      run.off = off;
+      run.at = at;
+      run.agl = agl;
+      const on = agl <= run.line.ceiling && off <= run.line.width;
+      // The bank is what you keep. Coming off the deck does not cost you the
+      // seconds already flown — that would make one bump the end of the run,
+      // and the whole point of a window is that there is always a score.
+      if (on) run.value += dt;
+      // The state the HUD shows lags the raw test by a third of a second, so a
+      // wing bobbing across the ceiling does not strobe the band or fire the
+      // cue thirty times. The SCORE is not debounced — every frame under the
+      // line counts, which is the honest way to measure it.
+      if (on === run.on) run.flip = 0;
+      else if ((run.flip += dt) >= 0.35) {
+        run.on = on;
+        run.flip = 0;
+        this.events.push({ kind: 'note', def, text: on ? 'On the deck' : 'Off the deck', cue: on ? 'gate' : undefined });
       }
     }
     // The window closing is the end of the task, not a failure: whatever is on
@@ -514,6 +600,16 @@ export class Challenges {
         const gate = this.world.gates[run.gateIndex];
         if (gate) return { name: `Gate ${run.gateIndex + 1} · ${gate.name}`, position: gate.position };
       }
+      // A deck corridor has nothing standing in it to aim at, and it is the one
+      // task where not knowing where the line goes next is the whole failure.
+      // So the arrow gets a point on it, six hundred metres on — far enough to
+      // be a direction rather than a twitch, near enough to show the bend.
+      if (run.def.type === 'deck') {
+        const p = corridorAt(run.line, run.at + CORRIDOR_LOOKAHEAD, this._ahead ??= {});
+        const at = (this._aheadPos ??= new THREE.Vector3());
+        at.set(p.x, this.hf.heightAt(p.x, p.z) + run.line.ceiling * 0.6, p.z);
+        return { name: run.def.name, position: at };
+      }
       return null;
     }
     // Not running one: point at a nearby task still worth flying, so leaving
@@ -539,19 +635,35 @@ export class Challenges {
     if (!run) return null;
     const def = run.def;
     let progress = '';
+    let flag = null;
     if (def.type === 'slalom') progress = `Gate ${run.gateIndex}/${def.gates.length}`;
     else if (def.type === 'height') progress = `${run.value > 0 ? '+' : ''}${Math.round(run.value)} m`;
     else if (def.type === 'distance') progress = `${(run.value / 1000).toFixed(2)} km`;
-    else progress = `${run.value} roll${run.value === 1 ? '' : 's'}`;
+    else {
+      // Why the clock is or is not running, in three words, because there are
+      // exactly two ways to be off the deck and they want opposite
+      // corrections. An invisible corridor with no readout is a rule nobody
+      // can learn. It is the whole of the progress line rather than sitting
+      // beside a count of seconds: a deck run's SCORE is seconds, so a band
+      // reading "12.4 s" next to a clock reading "26.6 s" is two numbers in
+      // the same units meaning different things.
+      progress = run.on ? 'on the deck' : run.off > run.line.width ? 'off the line' : 'too high';
+      flag = progress;
+    }
     // What the run is on for as it stands. A slalom's is its clock, because
     // that is what it will be scored on; the windowed three are already
     // carrying their own score in `progress`, so the standing is that.
-    const standing = medalFor(def, def.type === 'slalom' ? run.elapsed : run.value);
+    const scored = def.type === 'slalom' ? run.elapsed : run.value;
     return {
       name: def.name,
       progress,
-      elapsed: run.elapsed,
-      standing,
+      flag,
+      // The big tinted figure. Time into the run for everything else, because
+      // that is the number those tasks are read against — and for a deck run
+      // the seconds actually banked, because those are the score and the
+      // elapsed clock is already on screen counting down beside it.
+      clock: def.type === 'deck' ? run.value : run.elapsed,
+      standing: medalFor(def, scored),
       remaining: Math.max(0, run.limit - run.elapsed),
     };
   }
@@ -561,69 +673,6 @@ export class Challenges {
       m.uniforms.uSunRadiance.value.copy(sunRadiance);
       m.uniforms.uSkyAmbient.value.copy(skyAmbient);
     }
-  }
-}
-
-/**
- * Counting rolls.
- *
- * The honest way to do this is to measure what the airframe actually did rather
- * than watch the stick: the rotation between one frame and the next, taken in
- * BODY axes, splits cleanly into roll, pitch and yaw whatever attitude the ship
- * is in. Integrate the roll component and a full turn of it is a roll.
- *
- * Body axes here are the ones flight.js rotates about: +X right, +Y up, -Z
- * forward — so roll is the -Z component.
- *
- * Two guards stop ordinary flying scoring. The figure has to pass through
- * inverted, which nothing short of actually rolling will do; and the integral
- * is thrown away if the wings come back level before it completes, so a wallow
- * cannot be banked half a roll at a time. Measured against the real model: a
- * pinned stick scores six in thirty seconds, and a forty-degree turn, a steep
- * turn and straight-and-level all score nothing.
- *
- * Only rolls. A loop is the other figure a pilot would name and this aeroplane
- * cannot fly one: the model's static stability rolls it upright over the top
- * before it is halfway round, which is correct for a nineteen-metre glass ship
- * and means a clean loop is not a thing the game can ask for.
- */
-class Figures {
-  constructor() {
-    this.prev = new THREE.Quaternion();
-    this.rel = new THREE.Quaternion();
-    this.up = new THREE.Vector3();
-    this.first = true;
-    this.roll = 0;
-    this.inverted = false;
-  }
-
-  /** @returns true on the frame a roll completes. */
-  update(glider) {
-    if (!glider) return false;
-    if (this.first) {
-      this.prev.copy(glider.quaternion);
-      this.first = false;
-      return false;
-    }
-    // The rotation from the last attitude to this one, in the body frame the
-    // ship started the step in. Small-angle: for a hundred-and-twentieth of a
-    // second the quaternion's vector part is half the rotation vector, and
-    // nothing in the game turns far enough in one step for that to matter.
-    this.rel.copy(this.prev).invert().multiply(glider.quaternion);
-    this.prev.copy(glider.quaternion);
-    this.roll += -this.rel.z * (this.rel.w < 0 ? -2 : 2);
-
-    const upright = glider.up(this.up).y;
-    if (upright < -0.15) this.inverted = true;
-    if (Math.abs(this.roll) >= Math.PI * 2 && this.inverted) {
-      this.roll = 0;
-      this.inverted = false;
-      return true;
-    }
-    // Back level the right way up without having gone round: not half a roll,
-    // just a wobble. Start again.
-    if (!this.inverted && upright > 0.97) this.roll = 0;
-    return false;
   }
 }
 

@@ -57,7 +57,16 @@ import { Heightfield } from '../src/heightfield.js';
 import { Air, Glider } from '../src/flight.js';
 import { REGIONS, CHALLENGES } from '../src/regions.js';
 import { World } from '../src/world.js';
-import { Challenges, TYPES, medalFor, challengeMetric, entrySpeed, shipFor } from '../src/challenges.js';
+import {
+  Challenges,
+  TYPES,
+  medalFor,
+  challengeMetric,
+  entrySpeed,
+  shipFor,
+  onCorridor,
+  corridorAt,
+} from '../src/challenges.js';
 import { loadBuildings, Buildings } from '../src/buildings.js';
 import { polar } from '../src/fleet.js';
 import { TIME_PRESETS } from '../src/sky.js';
@@ -260,7 +269,17 @@ class Pilot {
     // attitude is all there is, so those policies ask for it back.
     const path = clamp(Math.atan2(dy, Math.max(D, 30)), -0.75, 0.5);
     const holdOnStick = this.p.brakes === false;
-    const speedErr = clamp((g.airspeed - speedTarget) * 0.02, -0.35, holdOnStick ? 0.3 : 0);
+    // A third mode, for the deck runs: fly the LINE and let the speed be
+    // whatever the air leaves you. On a task scored in seconds under a ceiling
+    // there is no cruise number to hold — the corridor is flown on the energy
+    // you arrived with, and any loop that trades the line for a speed puts the
+    // nose down into the river to buy back three knots. All that is kept is a
+    // floor, so the ship does not mush to a stop.
+    const speedErr = this.p.floor
+      ? Math.min(0, (g.airspeed - this.p.floor) * 0.02) < -0.35
+        ? -0.35
+        : Math.min(0, (g.airspeed - this.p.floor) * 0.02)
+      : clamp((g.airspeed - speedTarget) * 0.02, -0.35, holdOnStick ? 0.3 : 0);
     const turnComp = 0.5 * (1 / Math.max(Math.cos(bank), 0.3) - 1);
     const attCmd = clamp(path + speedErr, -0.7, 0.5);
     let pitch = clamp((attCmd - pitchAtt) * 2.6 - pitchRate * 0.22 + turnComp * 0.35, -1, 1);
@@ -281,9 +300,22 @@ class Pilot {
     // a brake setting, which is what a pilot does with the same information.
     const flown = g.velocity.length() > 1 ? Math.asin(clamp(g.velocity.y / g.velocity.length(), -1, 1)) : 0;
     const steeper = clamp((flown - path) * 3, 0, 1);
+    // In path mode the cruise term goes and `steeper` becomes a policy, because
+    // the two deck runs want opposite answers and both are real flying.
+    //
+    // Under the Falls arrives forty per cent over trim with ninety metres to
+    // lose: asked to descend at nine degrees the ship simply does not — the
+    // stick alone cannot spend that much energy, and it CLIMBED eleven metres
+    // over the first six seconds of every line flown with the aim point below
+    // it. Boards are how a glider goes down. River Level is the other case
+    // entirely: sixty seconds in air that is not giving anything back, where
+    // every joule spent on drag is a second off the deck at the far end, and
+    // the same boards cost it the whole run. So the sweep flies both.
     const brake = holdOnStick
       ? vneGuard
-      : Math.max(vneGuard, steeper, clamp((g.airspeed - speedTarget * 1.05) / (speedTarget * 0.3), 0, 1));
+      : this.p.floor
+        ? Math.max(vneGuard, this.p.boards ? steeper : 0)
+        : Math.max(vneGuard, steeper, clamp((g.airspeed - speedTarget * 1.05) / (speedTarget * 0.3), 0, 1));
     return { roll, pitch, brake };
   }
 }
@@ -318,6 +350,10 @@ function fly(ctx, def, policy, guide) {
   const state = {
     ctx,
     def,
+    // A deck run's corridor, built by Challenges with the marker. Read from
+    // there rather than rebuilt here, so the tool scores against the same
+    // geometry the game does.
+    line: challenges.markers.find((m) => m.def === def)?.line ?? null,
     policy,
     glider,
     run,
@@ -368,7 +404,7 @@ function fly(ctx, def, policy, guide) {
       trace.push(
         `      t${state.t.toFixed(0).padStart(4)}s  ${glider.position.y.toFixed(0).padStart(5)} m (${agl.toFixed(0).padStart(4)} agl)  ` +
           `${glider.airspeed.toFixed(0).padStart(3)} m/s  air ${glider.nettoSmooth.toFixed(1).padStart(5)}  ` +
-          `${off.toFixed(0).padStart(5)} m out  ${challenges.hudState()?.progress ?? ''}`
+          `${off.toFixed(0).padStart(5)} m out  ${readout(challenges.hudState()) ?? ''}`
       );
     }
     if (agl < 3.5) {
@@ -376,13 +412,13 @@ function fly(ctx, def, policy, guide) {
       break;
     }
 
-    for (const ev of challenges.update(TICK, glider.position, prev, agl, glider)) {
+    for (const ev of challenges.update(TICK, glider.position, prev, agl)) {
       if (ev.kind === 'done') out = { finished: true, value: ev.value, elapsed: state.t };
       else if (ev.kind === 'failed') out = { reason: ev.reason === 'time' ? 'out of time' : ev.reason };
     }
     if (out) break;
   }
-  const progress = challenges.hudState()?.progress ?? null;
+  const progress = readout(challenges.hudState());
   challenges.abort();
   if (!out) out = { reason: 'out of time' };
   out.progress = out.progress ?? progress;
@@ -395,6 +431,17 @@ function fly(ctx, def, policy, guide) {
     heightUsed: state.startY - state.lowY,
     peakSpeed: state.peakSpeed,
   };
+}
+
+/**
+ * The band as the player sees it, except for a deck run, where the band shows
+ * the state in words and keeps the seconds on the clock beside it. A tool
+ * report that says "too high" where it used to say how much was banked is a
+ * tool report with the measurement taken out of it.
+ */
+function readout(hud) {
+  if (!hud) return null;
+  return hud.flag ? `${fmt(hud.clock)} s on the deck` : hud.progress;
 }
 
 // ------------------------------------------------------------- guidance ---
@@ -620,7 +667,13 @@ function avoid(state, target) {
   // Straight ahead but higher first, then progressively wider. In a canyon
   // there is nowhere to the side to go — the way out is up, over the parapet —
   // and over open ground the small yaw wins before the climb is ever tried.
-  for (const [yaw, lift] of [[0, 70], [0.26, 30], [-0.26, 30], [0, 160], [0.5, 40], [-0.5, 40], [0.9, 60], [-0.9, 60]]) {
+  // A deck run's entire score is being low, so an escape that buys clearance by
+  // climbing seventy metres is not an escape — it is a failure with a survivor.
+  // Those policies look sideways first and only go up with nowhere left to go.
+  const escapes = state.policy.hugs
+    ? [[0.22, 6], [-0.22, 6], [0.45, 12], [-0.45, 12], [0.85, 22], [-0.85, 22], [0, 60], [0, 150]]
+    : [[0, 70], [0.26, 30], [-0.26, 30], [0, 160], [0.5, 40], [-0.5, 40], [0.9, 60], [-0.9, 60]];
+  for (const [yaw, lift] of escapes) {
     const clear = test(yaw, lift);
     if (clear) {
       state.avoidTarget = clear;
@@ -802,32 +855,114 @@ function glideAt(spec, v) {
 }
 
 /**
- * Aerobatics: sixty seconds, and how many rolls fit into them.
+ * Deck run: sixty seconds, a corridor and a ceiling, and the clock only runs
+ * while both hold.
  *
- * Pinning the stick rolls fastest and dives the ship into the redline, so the
- * policy is a duty cycle — roll for a while, then recover the attitude and bleed
- * the speed — and the sweep over cycles and recovery speeds is the tool finding
- * the rhythm. Which is the task: a player who simply holds the stick over takes
- * the wings off.
+ * Two loops, and they pull against each other, which is the task. Laterally the
+ * pilot aims at a point a few hundred metres up the corridor, biased back
+ * towards the centreline by however far off it has drifted — a pure carrot
+ * cuts every corner and a pure centreline chase weaves. Vertically it holds a
+ * height above the ground UNDER THE AIM POINT rather than under the ship, so it
+ * starts climbing at a rising floor before it arrives at it instead of after.
+ *
+ * The target height is the policy. Flying at the ceiling scores from the first
+ * second and loses the lot on the first bump; flying well under it never loses
+ * a second and has no room for the terrain. Which of those pays is the thing
+ * being measured, so both are on the list.
  */
-function aeroGuide(state, dt) {
+function deckGuide(state, dt) {
   const g = state.glider;
   const p = state.policy;
-  const spec = g.spec;
-  state.phase = (state.phase ?? 0) + dt;
-  const tooFast = g.airspeed > spec.vne * p.redline;
-  const rolling = !tooFast && state.phase % (p.rollFor + p.restFor) < p.rollFor;
-  if (rolling) {
-    // Pinned, which is what puts the model into its continuous-roll law.
-    return { roll: 1, pitch: 0.06, brake: 0 };
+  const { hf } = state.ctx;
+  const line = state.line;
+  const here = onCorridor(line, g.position.x, g.position.z);
+
+  // Look further ahead the faster you are going: a fixed carrot is a twitch at
+  // sixty metres a second and a shortcut at thirty.
+  const reach = clamp(g.airspeed * p.lead, 180, 900);
+  const ahead = corridorAt(line, here.at + reach, (state.aim ??= {}));
+  const target = (state.target ??= new THREE.Vector3()).set(ahead.x, 0, ahead.z);
+  // Pulled back onto the line in proportion to how far off it is, capped so a
+  // ship that has been thrown wide does not turn ninety degrees to the corridor
+  // and fly across it.
+  if (here.off > 1) {
+    const on = corridorAt(line, here.at, (state.onLine ??= {}));
+    const k = clamp((here.off / Math.max(line.width, 1)) * p.centre, 0, 0.85);
+    target.x += (on.x - target.x) * k;
+    target.z += (on.z - target.z) * k;
   }
-  // Wings level, nose up, boards out: get the speed back under control and the
-  // attitude somewhere a roll can start from again.
-  const f = g.forward(new THREE.Vector3());
-  const bank = g.bankRad;
-  const level = clamp(-bank * 1.4, -0.9, 0.9);
-  const pitch = clamp((0.05 - Math.asin(clamp(f.y, -1, 1))) * 2.2, -0.6, 0.8);
-  return { roll: level, pitch, brake: tooFast ? 1 : p.brake };
+
+  // The floor under where it is GOING, and under the halfway point too: a
+  // corridor that rises between here and there is one to start climbing for
+  // now rather than on arrival.
+  const floorAhead = Math.max(
+    hf.heightAt(ahead.x, ahead.z),
+    hf.heightAt((ahead.x + g.position.x) / 2, (ahead.z + g.position.z) / 2)
+  );
+  const floorHere = hf.heightAt(g.position.x, g.position.z);
+  const nowAgl = g.position.y - floorHere;
+  const wantAgl = line.ceiling * p.hold;
+
+  // Vertically the aim is a flight path ANGLE, not a point, and this is the
+  // whole difference between a deck run and a crash. The lateral aim point is
+  // six hundred metres away because that is what steers smoothly — but at that
+  // range a twenty metre height error bends the line to it by two degrees, so
+  // the pitch loop corrects at under two metres a second while the valley floor
+  // moves twenty metres in two hundred. Every line flown that way either flew
+  // through the deck into the ground or porpoised across it. So: work out the
+  // angle wanted, then put the aim point on it at whatever range steering wants.
+  //
+  //   the floor's own slope   what it takes just to stay parallel to the ground
+  //   the error term          closes the height error over p.tau seconds
+  const away = Math.max(Math.hypot(target.x - g.position.x, target.z - g.position.z), 30);
+  const floorSlope = clamp((floorAhead - floorHere) / Math.max(reach, 1), -0.2, 0.2);
+  const closing = clamp((wantAgl - nowAgl) / Math.max(g.airspeed * p.tau, 1), -0.13, 0.1);
+  let gamma = clamp(floorSlope + closing, -0.16, 0.1);
+  // Then the other half: scan the corridor a long way out and take the
+  // shallowest angle that still arrives over every rising metre of it at the
+  // working height. The Narrows has a fifty metre step in it where the 25 m
+  // grid bridges the gorge at Zweilütschinen, and it climbs at 17 per cent —
+  // faster than this ship can pull up from thirty metres. Seen only at the aim
+  // point it is unflyable; seen seven hundred metres out it is a gentle climb
+  // begun early, which is what a pilot does with the same information.
+  // Then the ground, scanned along the corridor in two ranges, because the two
+  // ranges answer different questions.
+  const q = (state.scan ??= {});
+  const safety = line.ceiling * 0.35;
+  const ask = (d) => {
+    corridorAt(line, here.at + d, q);
+    return (hf.heightAt(q.x, q.z) + safety - g.position.y) / d;
+  };
+  // Near — the next three seconds, over which a straight line is a fair model
+  // of what the ship is going to do. This one may limit a descent, because out
+  // to there the ship really is committed to the angle it is flying.
+  const near = Math.max(140, g.airspeed * 3);
+  for (let d = 60; d <= near; d += 60) gamma = Math.max(gamma, Math.min(0.26, ask(d)));
+  // Far — rising ground and nothing else. The Narrows falls a hundred metres
+  // over its length, so out at nine hundred metres the shallowest angle that
+  // "clears" the floor is shallower than the descent the ship wants; read as a
+  // constraint rather than as a climb demand it pins a ship that arrived high
+  // up at sixty metres for half the window, which is measured, and is exactly
+  // what it did. Only a positive reading means anything out here.
+  const scan = clamp(g.airspeed * 15, 450, 950);
+  for (let d = near + 90; d <= scan; d += 90) {
+    const need = ask(d);
+    if (need > 0) gamma = Math.max(gamma, Math.min(0.26, need));
+  }
+  // Finally, trim onto the path actually being flown. The pitch loop holds an
+  // ATTITUDE, and attitude is not flight path: the air over the Chicago river
+  // sinks at 1.9 m/s, so a wings-level ship there descends at three degrees
+  // while believing it is holding the line, and every line the calibrator flew
+  // down the branch went into the water at twenty-five seconds doing exactly
+  // that. This is the integral that finds the extra attitude the air is
+  // charging, and it costs speed, which is the honest price.
+  const speed = g.velocity.length();
+  const flying = speed > 1 ? Math.asin(clamp(g.velocity.y / speed, -1, 1)) : 0;
+  state.trim = clamp((state.trim ?? 0) + (gamma - flying) * dt * 1.6, -0.16, 0.16);
+  target.y = g.position.y + clamp(gamma + state.trim, -0.16, 0.26) * away;
+  // And never aim into the dirt whatever the arithmetic says.
+  target.y = Math.max(target.y, floorAhead + safety);
+  return state.pilot.fly(dt, avoid(state, target), p.speed);
 }
 
 /**
@@ -1042,25 +1177,40 @@ function dashPolicies(def, spec) {
 }
 
 /**
- * Aerobatics: how long to hold the stick over before letting the ship recover,
- * and how hard to recover. Pinning it for the whole minute is on the list and
- * is meant to lose — that is the shape of the task.
+ * Deck run: how low to aim, how far ahead to look, and how hard to pull back
+ * onto the line. The slow end of the speed ladder is on the list and usually
+ * wins — a corridor is worth seconds, not metres, and the ship that covers it
+ * in forty seconds banks forty rather than the twenty-eight a fast one does.
+ *
+ * `clearance` is fourteen metres against the usual fifty-five. The terrain
+ * guard exists to stop an autopilot flying into a col it should have crossed
+ * high; on this task the whole point is to be under it, and left at its default
+ * it lifts every aim point clean through the ceiling and scores nothing.
  */
-function aeroPolicies() {
+function deckPolicies(spec) {
+  const book = polar(spec);
   const out = [];
-  for (const rollFor of [3, 5, 8, 60]) {
-    for (const restFor of [2, 4, 7]) {
-      for (const brake of [0, 0.6]) {
-        out.push({
-          kind: 'aero',
-          rollFor,
-          restFor,
-          brake,
-          redline: 0.94,
-          bankMax: 1.4,
-          clearance: 60,
-          label: `roll ${rollFor}s / rest ${restFor}s${brake ? ' · boards' : ''}`,
-        });
+  for (const hold of [0.45, 0.65, 0.85]) {
+    for (const lead of [7, 11]) {
+      for (const tau of [1.6, 3.2]) {
+        for (const floor of [book.stallSpeed * 1.25, book.stallSpeed * 1.6]) {
+          for (const boards of [false, true]) {
+            out.push({
+              kind: 'deck',
+              speed: spec.trimSpeed,
+              floor: Math.round(floor),
+              boards,
+              hold,
+              lead,
+              tau,
+              centre: 0.8,
+              bankMax: 1.1,
+              clearance: 14,
+              hugs: true,
+              label: `hold ${Math.round(hold * 100)}% · lead ${lead}s · flare ${tau}s · floor ${Math.round(floor)} m/s${boards ? ' · boards' : ''}`,
+            });
+          }
+        }
       }
     }
   }
@@ -1338,9 +1488,23 @@ for (const mapId of MAPS) {
       guide = dashGuide;
       note(`   ${def.window} s; at best glide from ${fmt(marker.y - ctx.hf.heightAt(marker.x, marker.z), 0)} m over the ground the still-air reach is ${fmt(((marker.y - ctx.hf.heightAt(marker.x, marker.z)) * book.bestLD) / 1000, 2)} km`);
     } else {
-      policies = aeroPolicies();
-      guide = aeroGuide;
-      note(`   ${def.window} s of rolls, ${fmt(marker.y - ctx.hf.heightAt(marker.x, marker.z), 0)} m of air underneath and a ${spec.vne} m/s redline`);
+      policies = deckPolicies(spec);
+      guide = deckGuide;
+      const line = ctx.challenges.markers.find((m) => m.def === def).line;
+      const entry = entrySpeed(def, spec);
+      note(
+        `   ${def.window} s under ${line.ceiling} m agl, inside ${line.width} m of a ${fmt(line.length / 1000, 2)} km line`
+      );
+      // A corridor shorter than the window can cover is a task that runs out of
+      // ground before it runs out of clock, which caps the score at something
+      // no ladder can be hung off.
+      const reach = entry * def.window;
+      note(`   ${fmt(entry, 0)} m/s for the whole window would cover ${fmt(reach / 1000, 2)} km of it`);
+      if (line.length < reach * 0.55) {
+        problems.push(
+          `${def.id}: the corridor is ${fmt(line.length / 1000, 2)} km and the window reaches ${fmt(reach / 1000, 2)} km — the line runs out mid-run`
+        );
+      }
     }
 
     // ---- fly it -----------------------------------------------------------
@@ -1360,7 +1524,14 @@ for (const mapId of MAPS) {
     if (!done.length) {
       problems.push(`${def.id}: not one of ${results.length} lines finished — the challenge is not completable as authored`);
       note('   !! NOT COMPLETABLE as authored');
-      if (VERBOSE) for (const r of results.slice(0, 6)) note(`      ${r.policy.label}: ${r.reason}${r.where ? ` at ${r.where}` : ''} after ${fmt(r.seconds)} s${r.progress ? ` (${r.progress})` : ''}`);
+      // Longest-lived first. When nothing finished, the six lines that got
+      // nearest are the diagnosis and the six that died first are noise — and
+      // policy order puts the slowest speed at the top, which is neither.
+      if (VERBOSE) {
+        for (const r of [...results].sort((a, b) => b.seconds - a.seconds).slice(0, 8)) {
+          note(`      ${r.policy.label}: ${r.reason}${r.where ? ` at ${r.where}` : ''} after ${fmt(r.seconds)} s${r.progress ? ` (${r.progress})` : ''}`);
+        }
+      }
       // The run that got furthest, said out loud. A challenge nobody finished
       // is the one place a trace is most worth having, and printing only the
       // winner's meant --trace went silent exactly when it was needed.
@@ -1373,7 +1544,7 @@ for (const mapId of MAPS) {
       continue;
     }
 
-    const unit = { time: 's', height: 'm', distance: 'm', count: 'rolls' }[challengeMetric(def)];
+    const unit = { time: 's', height: 'm', distance: 'm' }[challengeMetric(def)];
     const median = done[Math.floor(done.length / 2)];
     note(`   best ${fmt(anchor.value)} ${unit} (${anchor.policy.label})`);
     note(`   median finish ${fmt(median.value)} ${unit} · worst ${fmt(done[done.length - 1].value)} ${unit}`);

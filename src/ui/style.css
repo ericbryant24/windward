@@ -730,7 +730,8 @@ body {
   max-width: min(58vw, 260px);
   display: none;
   align-items: baseline;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 2px 8px;
   padding: 5px 10px;
   border-radius: 10px;
   background: var(--panel);
@@ -752,6 +753,18 @@ body {
 .task b {
   font-size: 12.5px;
   color: var(--accent-warm);
+}
+
+/* A deck run says why its clock is stopped, and the colour is most of the
+   message: green while the seconds are going on the board, amber while they
+   are not. Read at thirty metres, in a gorge, out of the corner of an eye. */
+.task[data-flag='on the deck'] b {
+  color: var(--lift);
+}
+
+.task[data-flag='too high'] b,
+.task[data-flag='off the line'] b {
+  color: var(--danger);
 }
 
 /* The running clock, tinted with the medal it is still inside. Primary,

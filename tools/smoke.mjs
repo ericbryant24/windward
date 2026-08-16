@@ -227,6 +227,44 @@ await step('every challenge is one of the four kinds, with a ladder that climbs'
   if (bad.length) throw new Error(bad.join(', '));
 });
 
+await step("a deck run's clock runs under the ceiling, on the line, and nowhere else", async () => {
+  const out = await page.evaluate(async () => {
+    const { corridorAt } = await import('/src/challenges.js');
+    const g = window.WINDWARD.game;
+    g.startFlight();
+    const def = g.challenges.defs.find((d) => d.type === 'deck');
+    const run = g.challenges.arm(def);
+    const line = run.line;
+    const V = g.glider.position.constructor;
+    // Scored straight through Challenges with made-up positions rather than by
+    // flying: what is under test is the rule, and a flown ship cannot be put
+    // three corridor widths sideways without hitting the wall that is there.
+    const hold = (x, z, agl) => {
+      const before = run.value;
+      const p = new V(x, g.hf.heightAt(x, z) + agl, z);
+      for (let i = 0; i < 60; i++) g.challenges.update(1 / 60, p, p, agl);
+      return run.value - before;
+    };
+    const on = corridorAt(line, line.length * 0.4, {});
+    const next = corridorAt(line, line.length * 0.4 + 120, {});
+    const dx = next.x - on.x;
+    const dz = next.z - on.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const wide = { x: on.x - (dz / len) * line.width * 3, z: on.z + (dx / len) * line.width * 3 };
+    const banked = {
+      low: hold(on.x, on.z, line.ceiling * 0.5),
+      high: hold(on.x, on.z, line.ceiling * 3),
+      off: hold(wide.x, wide.z, line.ceiling * 0.5),
+    };
+    g.challenges.abort();
+    return { ...banked, id: def.id, ceiling: line.ceiling, width: line.width };
+  });
+  if (Math.abs(out.low - 1) > 0.05) throw new Error(`a second under the ceiling banked ${out.low.toFixed(2)} s`);
+  if (out.high > 0.01) throw new Error(`${out.ceiling * 3} m up still banked ${out.high.toFixed(2)} s`);
+  if (out.off > 0.01) throw new Error(`${out.width * 3} m off the line still banked ${out.off.toFixed(2)} s`);
+  console.log(`        ${out.id}: under ${out.ceiling} m within ${out.width} m counts, nothing else does`);
+});
+
 await step('there is traffic on the roads', async () => {
   const out = await page.evaluate(async (m) => {
     const g = window.WINDWARD.game;
@@ -282,13 +320,16 @@ await step('a finished run leaves a ghost, and the next attempt races it', async
   const out = await page.evaluate(async () => {
     const g = window.WINDWARD.game;
     const { findChallenge } = await import('/src/challenges.js');
-    const def = g.challenges.defs.find((d) => d.type === 'aerobatic') ?? g.challenges.defs[0];
+    // A distance run: ninety seconds at altitude with nothing to hit. What is
+    // under test is the recorder and the replay, and a deck run — sixty metres
+    // over a gorge floor with a wandering stick — tests the wall.
+    const def = g.challenges.defs.find((d) => d.type === 'distance') ?? g.challenges.defs[0];
     g.startChallenge(findChallenge(def.id));
     // Step the sim directly: software rendering manages about a frame a second
     // and this needs a whole run's worth of flight time.
     const real = g.controls.sample.bind(g.controls);
     let t = 0;
-    g.controls.sample = () => ((t += 1 / 120), { roll: t % 8 < 3 ? 1 : 0, pitch: 0.1, brake: 0 });
+    g.controls.sample = () => ((t += 1 / 120), { roll: Math.sin(t * 0.7) * 0.35, pitch: 0.05, brake: 0 });
     for (let i = 0; i < 95 * 120 && g.state === 'flying'; i++) g.update(1 / 120);
     g.controls.sample = real;
     const recorded = g.recorder.score.length;

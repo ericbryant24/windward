@@ -298,8 +298,14 @@ export const PLACES = {
  *              thing the terrain is most useful for.
  *   height     sixty seconds of it. How much altitude can you find?
  *   distance   ninety seconds. How far from the hoop can you be at the end?
- *   aerobatic  sixty seconds, and how many clean rolls fit inside them
- *              without hitting the redline or the ground.
+ *   deck       sixty seconds, a corridor and a ceiling. How much of the window
+ *              can you hold down on the deck inside it?
+ *
+ * A deck run carries a `deck` block: `ceiling` metres above the ground,
+ * `width` metres either side of `path`, and the path itself as lat/lon. Both
+ * paths were traced out of the baked data — the river out of Chicago's water
+ * mask, the valley floor out of the Jungfrau's heightfield — rather than off a
+ * map, because what has to be flyable is the terrain as it bakes.
  *
  * Nothing runs longer than ninety seconds. That is the rule the whole table is
  * cut to, and it is why the two map-spanning circuits are gone: the Jungfrau
@@ -423,17 +429,55 @@ export const CHALLENGES = {
       medals: [2900, 4100, 5100],
     },
     {
-      // High over the trench, because rolling costs height and speed and the
-      // floor is eight hundred metres down.
-      id: 'lauterbrunnen-rolls',
-      type: 'aerobatic',
-      name: 'Lauterbrunnen Rolls',
-      where: 'Over the valley, high',
-      blurb: 'Sixty seconds of rolls. Each one costs height and speed, and there is a redline.',
+      // The trench floor, traced off the baked heightfield as the CENTROID of
+      // everything within forty metres of the lowest ground rather than as the
+      // lowest pixel: the argmin wanders from one side of a 750 m valley to the
+      // other and makes a centreline that zigzags across it.
+      //
+      // It stops at Zweilütschinen and that is not arbitrary. The 25 m grid
+      // bridges the gorge where the two Lütschine meet, and what it bakes is a
+      // sixty metre step at a 25 per cent grade — measured, a glider on the
+      // deck at forty metres cannot climb it, and every line the calibrator
+      // flew through it hit the wall at forty-four seconds. The corridor ends
+      // four hundred metres short of it.
+      //
+      // The slalom flies the southern half of this trench two hundred metres
+      // up and rewards a fast line. This is the same rock at thirty-five and
+      // rewards nerve, and it carries on two and a half kilometres past where
+      // the gates stop. It also goes under every one of the falls.
+      id: 'lauterbrunnen-narrows',
+      type: 'deck',
+      name: 'Under the Falls',
+      where: 'The trench floor, Trümmelbach to Zweilütschinen',
+      blurb: 'Sixty seconds on the valley floor. The clock runs only while you are under thirty-five metres and between the walls.',
       needs: 1,
-      marker: { lat: 46.5861, lon: 7.9088, agl: 2200, heading: 20 },
+      marker: { lat: 46.568, lon: 7.9091, agl: 60, heading: 8 },
       window: 60,
-      medals: [6, 8, 10],
+      deck: {
+        ceiling: 35,
+        width: 200,
+        path: [
+          [46.568, 7.9091],
+          [46.571, 7.9097],
+          [46.574, 7.9094],
+          [46.577, 7.9106],
+          [46.58, 7.9124],
+          [46.583, 7.912],
+          [46.586, 7.9117],
+          [46.589, 7.9111],
+          [46.592, 7.9099],
+          [46.595, 7.9096],
+          [46.598, 7.9091],
+          [46.601, 7.9079],
+          [46.604, 7.907],
+          [46.607, 7.9052],
+        ],
+      },
+      // Measured: the best line the calibrator flew banked 47.2 s of the 60,
+      // and it needed the boards to do it — the hoop hands you forty per cent
+      // over trim and ninety metres to lose, and the stick alone cannot spend
+      // that. Every line that tried climbed away from the deck instead.
+      medals: [25, 35, 45],
     },
   ],
 
@@ -541,15 +585,51 @@ export const CHALLENGES = {
       medals: [3100, 4300, 5400],
     },
     {
-      id: 'loop-rolls',
-      type: 'aerobatic',
-      name: 'Loop Rolls',
-      where: 'Over Grant Park, high',
-      blurb: 'Sixty seconds of rolls above the city. Height is all you have to spend.',
+      // Chicago has no terrain, so its deck run is made of buildings. The path
+      // is the water mask's own centreline — 95 per cent of it is river — and
+      // it is flown south to north on purpose: the first fifteen seconds are
+      // over the railyards where nothing is taller than twenty-five metres,
+      // then Willis and 311 South Wacker close in to four hundred, then the
+      // corner at Wolf Point, and only then the straight run out to the lake.
+      // Easy, hard, hardest, release.
+      //
+      // The corridor is 110 m either side of a river 90 m wide, so the banks
+      // are inside it. That is deliberate: the corridor decides whether the
+      // clock runs and the buildings decide whether you live, and keeping those
+      // two rules apart is what stops it being a tunnel with invisible walls.
+      id: 'river-level',
+      type: 'deck',
+      name: 'River Level',
+      where: 'The South Branch out to the lake',
+      blurb: 'Sixty seconds under forty metres, between the towers. Wolf Point is a right-angle at river level.',
       needs: 1,
-      marker: { lat: 41.8789, lon: -87.62, agl: 1150, heading: 180 },
+      marker: { lat: 41.8706, lon: -87.635, agl: 55, heading: 346 },
       window: 60,
-      medals: [6, 8, 10],
+      deck: {
+        ceiling: 40,
+        width: 110,
+        path: [
+          [41.8706, -87.635],
+          [41.8742, -87.6362],
+          [41.8778, -87.6378],
+          [41.8812, -87.6382],
+          [41.8845, -87.6386],
+          [41.887, -87.638],
+          [41.8875, -87.635],
+          [41.8875, -87.63],
+          [41.888, -87.627],
+          [41.8888, -87.624],
+          [41.8885, -87.619],
+          [41.889, -87.6155],
+          [41.8876, -87.6122],
+        ],
+      },
+      // Measured at 43.3 s of the 60, and the winning line uses no boards at
+      // all — the opposite of Under the Falls. Sixty seconds down here is an
+      // energy problem: the air gives nothing back, the ship arrives with all
+      // it is ever going to have, and every joule spent on drag is a second
+      // short at the far end.
+      medals: [20, 30, 40],
     },
   ],
 };

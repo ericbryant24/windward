@@ -87,8 +87,8 @@ between reaching the next ridge and not.
 
 The stick moves **surfaces**: sideways is aileron and commands a roll rate,
 fore and aft is elevator and commands a pitch rate. There is no bank limit, so
-rolls and loops work. What keeps the ship the right way up when you let go is
-modelled dihedral and static longitudinal stability, not an autopilot. Tilt
+a pinned stick keeps rolling. What keeps the ship the right way up when you let
+go is modelled dihedral and static longitudinal stability, not an autopilot. Tilt
 steering is available in the menu if you prefer it.
 
 ### Flying, and challenges
@@ -108,7 +108,7 @@ nothing runs longer than ninety seconds:
 | slalom | gates threaded through the terrain, against the clock |
 | height | sixty seconds — how much of it can you turn into altitude? |
 | distance | ninety seconds — how far from the hoop can you be at the end? |
-| aerobatic | sixty seconds, and how many clean rolls fit inside them |
+| deck | sixty seconds, a corridor and a ceiling — how much of the window can you hold down on the deck? |
 
 A slalom is seconds and lower wins. The other three are quantities and more is
 better, and all three are fixed windows: the clock closing IS the score, so they
@@ -146,10 +146,20 @@ than a wreck.
 Two things the measurements decided rather than the design. A **height** run is
 a ridge beat, not a thermal — this aeroplane takes thirty-seven seconds to fly
 one turn, so a minute of circling loses height, while a windward face pays from
-the moment you are on it. And an **aerobatic** run counts rolls only: the flight
-model's static stability rolls the ship upright over the top of a loop before it
-is halfway round, which is correct for a nineteen-metre glass ship and means a
-clean loop is not something the game can ask for.
+the moment you are on it. And the two **deck** runs want opposite flying: Under
+the Falls hands you forty per cent over trim with ninety metres to lose, and the
+boards are the only way down in time; River Level is sixty seconds in air that
+gives nothing back, where the same boards cost you the far end of the run.
+
+A deck run is the one rule in the game with no edge you can see out of the
+window, so the corridor is drawn on the minimap and the band says which of the
+two ways you are off it — *too high* or *off the line* — in the colour rather
+than in a number. Both corridors were traced out of the baked data rather than
+off a map: the Chicago river out of the water mask, the Lauterbrunnen floor as
+the centroid of everything within forty metres of the lowest ground. Under the
+Falls stops at Zweilütschinen because the 25 m grid bridges the gorge there and
+bakes a sixty metre step at a 25 per cent grade, which measurably nothing can
+climb from the deck.
 
 ### The waterfalls
 

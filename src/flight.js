@@ -214,9 +214,17 @@ export class Air {
       // thermal is a column of air on the move, and the ship circling inside
       // it is in that air whether or not it is in the best of it.
       core0 = Math.max(core0, smoothstep(1.5, 0.8, Math.sqrt(r2) / R) * cap * ramp);
-      // gentle sink in the collar around a working thermal
+      // Gentle sink in the collar around a working thermal — ramped by the
+      // same height the lift is, and it was not. A column takes 180 m to spin
+      // up, so down at thirty metres the core is worth almost nothing; the
+      // collar, left unramped, was worth all of its sink. Over the Loop that
+      // put the whole river between 1 and 2.9 m/s DOWN at deck height with no
+      // lift anywhere to pay for it, which is not a city on a hot afternoon,
+      // it is an arithmetic accident. The return flow around a thermal is what
+      // happens above it; at the surface the air is converging inwards and
+      // going up, and neither of those is a metre a second of sink.
       const collar = Math.exp(-((Math.sqrt(r2) - R * 1.9) ** 2) / (R * R * 0.55));
-      lift -= t.strength * 0.16 * collar * cap;
+      lift -= t.strength * 0.16 * collar * cap * ramp;
     }
     out.y += lift;
 

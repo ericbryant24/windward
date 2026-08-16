@@ -69,7 +69,7 @@ const TURN_TAU = 0.22;
 /**
  * Hard ceiling on how fast the map may spin, rad/s. A 60-degree turn at trim
  * comes round at about 0.4 rad/s, so this never touches ordinary flight; what
- * it is for is the aerobatic challenges, where heading is briefly meaningless —
+ * it is for is a wing dropped hard in a gorge, where heading briefly runs away —
  * pointed at the sky, the smallest wobble swings it through 180 degrees — and
  * without a ceiling the map strobes.
  */
@@ -413,6 +413,9 @@ export class Minimap {
     ctx.stroke();
 
     this.#drawGlide(ctx, position, bestLD, mpp, r, c);
+    // Under the places and the hoops: it is the ground the run is flown over,
+    // not a thing standing on it.
+    this.#drawCorridor(ctx, at, mpp);
     const named = this.#drawPlaces(ctx, at, position, discovered, r, c);
     this.#drawTasks(ctx, at, r, c);
     // After the hoops. A marker is worth more than a name, but not worth the
@@ -490,6 +493,40 @@ export class Minimap {
     }
     sx.globalCompositeOperation = 'source-over';
     ctx.drawImage(scratch, 0, 0, size, size);
+  }
+
+  /**
+   * A deck run's corridor, while one is being flown.
+   *
+   * This is the only rule in the game with no edge you can see out of the
+   * window — the river has banks and the trench has walls, but "within two
+   * hundred metres of this line" does not — so the map has to draw it or the
+   * player is being scored against something invisible. Two strokes: the band
+   * itself in the width it really is, and the centreline inside it, because at
+   * three kilometres to the disc the band alone is a smear.
+   *
+   * Track-up earns its keep here. The corridor turns with the map, so which way
+   * it bends ahead is which way you are about to have to bank.
+   */
+  #drawCorridor(ctx, at, mpp) {
+    const run = this.challenges.active;
+    if (run?.def.type !== 'deck' || !run.line) return;
+    const path = new Path2D();
+    run.line.pts.forEach((p, i) => {
+      const [x, y] = at(p.x, p.z);
+      if (i) path.lineTo(x, y);
+      else path.moveTo(x, y);
+    });
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(2, (run.line.width * 2) / mpp);
+    ctx.strokeStyle = run.on ? 'rgba(111, 242, 168, 0.22)' : 'rgba(97, 210, 255, 0.16)';
+    ctx.stroke(path);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = run.on ? 'rgba(111, 242, 168, 0.85)' : 'rgba(97, 210, 255, 0.6)';
+    ctx.stroke(path);
+    ctx.restore();
   }
 
   /**
