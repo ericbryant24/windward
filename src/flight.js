@@ -574,10 +574,19 @@ export class Glider {
     this.rolling = this.rollPin > PIN_DELAY;
     this.looping = this.pitchPin > PIN_DELAY;
 
-    // A stick that can ask for more than ninety degrees of bank can already say
-    // "upside down, and stay there". Promoting a pinned stick to a continuous
-    // rate roll would take that away — you would hold full deflection expecting
-    // to sit inverted and get a barrel roll instead.
+    // Three things off one axis, and every ship gets all three:
+    //
+    //   a little stick   a bank, held, and released it levels
+    //   near the rim     up to 176 degrees on the ships that reach it, so
+    //                    almost-inverted can be PARKED
+    //   pinned to the rim after PIN_DELAY it promotes to a continuous roll
+    //
+    // The middle one was the whole of the last change and the third one was
+    // switched off to make room for it, which was the wrong trade: the first
+    // report from play was "I can't roll it". They do not conflict — 158
+    // degrees is what 0.94 of deflection asks for, so the parked attitude and
+    // the promotion sit either side of the same threshold, and letting go
+    // levels the wings out of either of them.
     const canInvert = cfg.maxBankDeg > 90;
 
     let rollRate;
@@ -593,7 +602,7 @@ export class Glider {
       // phone has to remember to make. The attitude law below reaches inverted
       // too — it just needs the stick HELD there.
       rollRate = input.roll * cfg.maxRollRate * speedAuthority * stiff;
-    } else if (this.rolling && !canInvert) {
+    } else if (this.rolling) {
       rollRate = Math.sign(input.roll) * cfg.maxRollRate * speedAuthority * stiff;
     } else {
       const bankTarget = bankCommand(input.roll, cfg.maxBankDeg);
@@ -633,7 +642,15 @@ export class Glider {
     // rather than a turn. Feed in the back pressure a pilot would: enough
     // alpha to hold the load factor a level turn needs. Capped, because near
     // ninety degrees the real answer goes to infinity.
-    const loadTrim = THREE.MathUtils.clamp(1 / Math.max(0.25, Math.cos(this.bankRad)) - 1, 0, 1.4) * 2.6;
+    // ...and only while the aeroplane is the right way up. Past about seventy
+    // degrees there is no level turn left to compensate for, and beyond ninety
+    // the honest answer changes sign: an inverted wing holds its height on
+    // NEGATIVE alpha. Left un-faded it commanded eleven degrees of nose-up
+    // while upside down, which pitched the ship straight out of the bank —
+    // measured, a parked 145 degrees sagged to 65 in six seconds. Holding
+    // inverted is the player's job; this term is for turns.
+    const upright = THREE.MathUtils.clamp(Math.cos(this.bankRad) / 0.35, 0, 1);
+    const loadTrim = THREE.MathUtils.clamp(1 / Math.max(0.25, Math.cos(this.bankRad)) - 1, 0, 2.6) * 4.5 * upright;
 
     let pitchRate;
     if (this.looping) {

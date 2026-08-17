@@ -506,6 +506,47 @@ if (g.bankDeg < 20) problems.push('right stick did not produce a right bank');
 // not be a death sentence, and the wear it leaves must be worth noticing.
 if (g.broken) problems.push('rolling the ship tore it apart');
 
+// ------------------------------------------------- a turn, hands off pitch ---
+// Does banking alone actually TURN, or does it just tilt?
+//
+// A bank only turns because the lift vector is tipped sideways, and tipping it
+// sideways takes lift out of the vertical — so unless something puts that lift
+// back the aeroplane descends instead of turning, and the player has to pull.
+// That is exactly right and exactly wrong for a thumb: the first report from
+// play was "if I go to turn, it just tilts, I have to pull the stick back in
+// the middle of the turn". flight.js carries a loadTrim term for this and the
+// question is whether it is strong enough. Measured with pitch at neutral,
+// which is how anybody actually turns.
+console.log('\na turn on bank alone — pitch neutral, throttle 0.7');
+for (const spec of FLEET) {
+  const t = new Glider(air, spec);
+  const stick = Math.min(0.9, stickForBank(THREE.MathUtils.degToRad(50), spec.maxBankDeg));
+  t.reset(new THREE.Vector3(0, 3000, 0), 0, spec.trimSpeed * 1.05);
+  const step = 1 / 120;
+  for (let i = 0; i < 3 / step; i++) t.update(step, { roll: stick, pitch: 0, brake: 0, throttle: 0.7 });
+  const h0 = t.headingDeg;
+  const y0 = t.position.y;
+  for (let i = 0; i < 6 / step; i++) t.update(step, { roll: stick, pitch: 0, brake: 0, throttle: 0.7 });
+  let dh = ((t.headingDeg - h0) % 360 + 540) % 360 - 180;
+  const rate = dh / 6;
+  const vs = (t.position.y - y0) / 6;
+  // Geometry says g*tan(bank)/V for a level turn. Anything much under half of
+  // that is a ship that tilts rather than turns.
+  const want = (THREE.MathUtils.radToDeg(9.80665 * Math.tan(t.bankRad) / Math.max(t.airspeed, 1)));
+  const ok = Math.abs(rate) > Math.abs(want) * 0.5 && vs > -14;
+  if (!ok) {
+    problems.push(
+      `${spec.name}: a ${t.bankDeg.toFixed(0)} deg bank on stick alone turned ${rate.toFixed(1)} deg/s ` +
+        `against ${want.toFixed(1)} geometric, sinking ${vs.toFixed(1)} m/s — it tilts rather than turns`
+    );
+  }
+  console.log(
+    `  ${ok ? 'ok  ' : 'FAIL'} ${spec.name.padEnd(9)} bank ${t.bankDeg.toFixed(0).padStart(3)} deg  ` +
+      `turn ${rate.toFixed(1).padStart(5)} deg/s (geometry ${want.toFixed(1).padStart(5)})  ` +
+      `vs ${vs.toFixed(1).padStart(6)} m/s  V ${t.airspeed.toFixed(0)}`
+  );
+}
+
 // ------------------------------------------------------------ two laws ---
 // The whole point of the control model: a stick short of the stop HOLDS a bank,
 // and letting go puts the wings back. If the first were false the game would be
@@ -584,20 +625,26 @@ console.log('\ntwo laws — hold a bank, let go and level');
       // Full deflection means upside down and stay there. Pitch has to be held
       // too — an inverted wing at positive alpha pulls at the ground, so a
       // pilot who lets the nose fall falls out of it, and so should the model.
+      // Just INSIDE the rim, below the pin threshold: this is the attitude the
+      // stick can park, and near-inverted has to stay put. Pinned to the rim is
+      // the continuous roll and is checked by revs, same as every other ship.
       const inv = new Glider(air, spec);
       inv.reset(new THREE.Vector3(0, 3000, 0), 0, spec.trimSpeed * 1.2);
-      for (let i = 0; i < 2.5 / step; i++) inv.update(step, { roll: 1, pitch: -0.35, brake: 0, throttle: 0.7 });
+      const park = 0.9;
+      for (let i = 0; i < 2.5 / step; i++) inv.update(step, { roll: park, pitch: -0.3, brake: 0, throttle: 0.7 });
       const rolled = Math.abs(inv.bankDeg);
       let worst = rolled;
       for (let i = 0; i < 6 / step; i++) {
-        inv.update(step, { roll: 1, pitch: -0.35, brake: 0, throttle: 0.7 });
+        inv.update(step, { roll: park, pitch: -0.3, brake: 0, throttle: 0.7 });
         worst = Math.min(worst, Math.abs(inv.bankDeg));
       }
-      extraOk = rolled > 150 && worst > 140;
-      note = `rolls to ${rolled.toFixed(0)} deg and holds ${worst.toFixed(0)}, level in ${level.toFixed(1)} s`;
-      if (!extraOk) {
-        problems.push(`${spec.name}: full stick did not hold inverted (reached ${rolled.toFixed(0)}, sagged to ${worst.toFixed(0)} deg)`);
+      const parksOk = rolled > 120 && worst > 110;
+      extraOk = parksOk && revs > 1;
+      note = `parks ${rolled.toFixed(0)} deg and holds ${worst.toFixed(0)}, level in ${level.toFixed(1)} s`;
+      if (!parksOk) {
+        problems.push(`${spec.name}: the stick short of the rim did not park a steep bank (reached ${rolled.toFixed(0)}, sagged to ${worst.toFixed(0)} deg)`);
       }
+      if (revs <= 1) problems.push(`${spec.name}: a pinned stick did not roll right over (${revs.toFixed(2)} turns in 6 s)`);
     } else {
       // A ship that cannot reach inverted keeps the pinned-stick promotion, and
       // that is still how it barrel-rolls.
@@ -607,7 +654,7 @@ console.log('\ntwo laws — hold a bank, let go and level');
     }
     console.log(
       `  ${holdsOk && levelsOk && extraOk ? 'ok  ' : 'FAIL'} ${spec.name.padEnd(9)} ${note.padEnd(52)}` +
-        `${canInvert ? '' : `pinned: ${revs.toFixed(1)} rolls in 6 s`}`
+        `pinned: ${revs.toFixed(1)} rolls in 6 s`
     );
   }
 }

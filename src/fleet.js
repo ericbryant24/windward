@@ -245,7 +245,7 @@ export const FLEET = [
     // Autotrim with the lever — see the pitch law in flight.js. At full power
     // it trims for half again the speed and two degrees less alpha, so hands
     // off at cruise is a cruise instead of a climb.
-    throttleTrim: 0.5,
+    throttleTrim: 0.18,
     throttleAlpha: 1.2,
     // 420 degrees a second, which is the real figure for the class and five
     // times the ballasted nineteen-metre. A pinned stick is a continuous roll
