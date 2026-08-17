@@ -9,6 +9,7 @@ import { Trees } from './trees.js';
 import { createFalls } from './falls.js';
 import { Ghost, Recorder, loadGhost, saveGhost } from './ghost.js';
 import { Guns } from './guns.js';
+import { Secrets } from './secrets.js';
 import { Buildings } from './buildings.js';
 import { Network } from './network.js';
 import { Minimap } from './minimap.js';
@@ -25,7 +26,7 @@ import {
   unlocked,
   shipFor,
 } from './challenges.js';
-import { PLACES } from './regions.js';
+import { PLACES, SECRETS } from './regions.js';
 import { store } from './store.js';
 
 const CAMERA_MODES = ['chase', 'far', 'cockpit'];
@@ -130,6 +131,9 @@ export class Game {
     this.timer = 0;
     this.maxAltitude = 0;
     this.progress = loadProgress();
+    // The things nobody points at. Built off the same world the labels use, so
+    // a secret's coordinates and a place's coordinates mean the same thing.
+    this.secrets = new Secrets(this.world, heightfield, SECRETS[region.id] ?? [], this.progress.secrets);
 
     this._camPos = new THREE.Vector3();
     this._camAim = new THREE.Vector3();
@@ -235,6 +239,9 @@ export class Game {
     this.ghost.clear();
     this.guns.clear();
     this.recorder.reset();
+    // A half-flown trace does not survive being put back in the air somewhere
+    // else. Nothing else about a secret is per-flight.
+    this.secrets.reset();
     this.challenges.setVisible(true);
     this.hud.dismissAsk();
 
@@ -453,6 +460,10 @@ export class Game {
       medalled: rows.filter((r) => r.medal > 0).length,
       discovered: this.progress.discovered.length,
       places: (only ? [PLACES[only] ?? []] : Object.values(PLACES)).reduce((n, list) => n + list.length, 0),
+      // Only this map's. A secret is a thing about a piece of ground, and
+      // listing Chicago's hints on the Jungfrau menu would be handing out
+      // riddles about somewhere you cannot currently fly.
+      secrets: this.secrets.all,
     };
   }
 
@@ -715,6 +726,12 @@ export class Game {
 
     if (g.position.y > this.maxAltitude) this.maxAltitude = g.position.y;
 
+    // ---- the secrets -------------------------------------------------------
+    // Before the named places, so that a secret and a landmark in the same
+    // valley announce themselves in the order that reads better: the thing you
+    // went looking for, and then the thing that was always going to tick.
+    for (const ev of this.secrets.update(dt, g, agl)) this.#foundSecret(ev.def);
+
     // ---- discovery ---------------------------------------------------------
     for (const p of this.world.places) {
       if (this.progress.discovered.includes(p.name)) continue;
@@ -767,6 +784,21 @@ export class Game {
     this.#placeCamera(true);
     if (brief) this.#brief(def, 'air');
     else this.#beginChallenge(def);
+  }
+
+  /**
+   * You found one. Said loudly and kept forever.
+   *
+   * A secret has no medal, no time and no ladder, and it should not have: the
+   * whole value of it is that nobody told you it was there, and a score would
+   * turn it into a task with the signpost removed. What it gets is the loudest
+   * toast in the game and a permanent line in the menu.
+   */
+  #foundSecret(def) {
+    this.progress.secrets.push(def.id);
+    saveProgress(this.progress);
+    this.hud.toast(`<b>${def.name}</b><br>${def.note}`, 'discovery');
+    this.audio?.cue('discovery');
   }
 
   #noteChallenge(ev) {
@@ -1239,9 +1271,9 @@ class LabelLayer {
 function loadProgress() {
   try {
     const raw = JSON.parse(store.get(STORE_KEY) ?? '{}');
-    return { discovered: raw.discovered ?? [], hints: raw.hints ?? [] };
+    return { discovered: raw.discovered ?? [], hints: raw.hints ?? [], secrets: raw.secrets ?? [] };
   } catch {
-    return { discovered: [], hints: [] };
+    return { discovered: [], hints: [], secrets: [] };
   }
 }
 

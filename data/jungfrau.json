@@ -3,44 +3,53 @@
   "region": "jungfrau",
   "name": "Jungfrau",
   "source": "AWS Terrain Tiles (terrarium) — see ATTRIBUTION.md",
-  "sourceZoom": 13,
+  "sourceZoom": 14,
   "centerLat": 46.6,
   "centerLon": 7.93,
   "halfSize": 19000,
-  "size": 1536,
-  "step": 24.7557003257329,
+  "size": 3072,
+  "step": 12.373819602735265,
   "encoding": {
     "bias": 512,
     "scale": 2,
-    "waterChannel": "b",
-    "vegetationChannel": null
+    "waterChannel": "b"
   },
-  "minHeight": 545.5,
-  "maxHeight": 4128.9,
+  "minHeight": 534.9,
+  "maxHeight": 4133,
   "lakes": [
     {
       "name": "Thunersee",
       "level": 558,
-      "cells": 59224,
+      "cells": 237090,
       "bounds": {
-        "minX": -19024.75570032573,
-        "maxX": -6176.547231270358,
-        "minZ": -13900.325732899024,
-        "maxZ": -6028.013029315961
+        "minX": -19012.373819602737,
+        "maxX": -6180.722891566265,
+        "minZ": -13889.612504070335,
+        "maxZ": -6032.2370563334425
       }
     },
     {
       "name": "Brienzersee",
       "level": 564,
-      "cells": 54070,
+      "cells": 216533,
       "bounds": {
-        "minX": -4914.006514657979,
-        "maxX": 11226.71009771987,
-        "minZ": -17613.680781758958,
-        "maxZ": -9320.521172638435
+        "minX": -4906.219472484532,
+        "maxX": 11241.615109084987,
+        "minZ": -17601.758384890916,
+        "maxZ": -9323.673070661023
       }
     }
   ],
-  "vegetation": null,
-  "sha256": "5340897cda016bf0"
+  "vegetation": {
+    "mode": "osm",
+    "cells": 2076442,
+    "tags": [
+      "landuse=forest",
+      "natural=wood",
+      "natural=scrub"
+    ],
+    "size": 1536,
+    "file": "data/jungfrau-vegetation.png"
+  },
+  "sha256": "79279ad779d6d581"
 }

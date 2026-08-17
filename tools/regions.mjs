@@ -24,8 +24,23 @@ export const REGIONS = {
     centerLat: 46.6,
     centerLon: 7.93,
     halfSize: 19000, // metres; play area is 38 x 38 km
-    size: 1536,
-    sourceZoom: 13,
+    // 3072 rather than 1536, which is 12.4 m a sample instead of 24.8.
+    //
+    // The old field was coarser than the mesh drawn over it: the CDLOD leaves
+    // bottom out at 18.6 m between vertices, so every patch was interpolating a
+    // field it could already out-resolve, and no amount of quality tier could
+    // show a shape the data did not carry. It is also why the waterfalls had to
+    // be hand-placed — a three-hundred-metre Lauterbrunnen wall is twelve
+    // samples wide at 24.8 m and bakes as a smooth ramp.
+    //
+    // Costs about 8 MB of download and 47 MB of typed array. Chicago stays at
+    // 1536: 9.1 m over a 14 km box is already finer than its source.
+    size: 3072,
+    // Zoom 13 is 13.1 m a pixel at this latitude — coarser than the 12.4 m the
+    // new field wants, so the extra samples would be interpolation rather than
+    // survey. Zoom 14 is 6.6 m, which keeps the same ~2:1 downsample the old
+    // bake had and means every new sample is a measured one.
+    sourceZoom: 14,
     water: {
       mode: 'flood',
       seeds: [
@@ -33,8 +48,19 @@ export const REGIONS = {
         { name: 'Brienzersee', lat: 46.7245, lon: 7.9705, level: 564 },
       ],
     },
-    // Alpine tree line rules are generated at runtime; nothing to bake.
-    vegetation: null,
+    // The Alpine forests used to be invented at runtime: a tree line at about
+    // 1,980 m, an fbm patch mask and a slope term. Plausible, and wrong
+    // everywhere it mattered — the wooded shoulder above Wengen, the bare
+    // avalanche paths cut through it, the treeless floor of the Lauterbrunnen
+    // trench. Switzerland has surveyed all of it and the baker already knew how
+    // to rasterise a survey; this region simply never asked it to.
+    vegetation: {
+      mode: 'osm',
+      // Forest and wood are the same thing under two schemas and both are used
+      // heavily in the Alps. Scrub is the krummholz band just under the tree
+      // line, which is the edge that reads from the air.
+      tags: ['landuse=forest', 'natural=wood', 'natural=scrub'],
+    },
     buildings: {
       // Almost nothing in the Alps carries a height tag, so these fall back to
       // footprint area and building type. The 14 m2 floor keeps the woodsheds

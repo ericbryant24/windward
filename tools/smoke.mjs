@@ -304,6 +304,133 @@ await step('a challenge briefs first, holds everything still, and starts on the 
   console.log(`        ${out.id}: card up, ship still, ${out.ran.toFixed(1)} s on the clock a second after Start`);
 });
 
+await step('a secret is earned by doing the thing, and never signposted', async () => {
+  const out = await page.evaluate(async () => {
+    const { SECRETS } = await import('/src/regions.js');
+    const g = window.WINDWARD.game;
+    const defs = SECRETS[g.region.id] ?? [];
+    g.startFlight();
+    const at = (d) => g.world.toLocal(d.lat, d.lon);
+    // The MIDDLE of whatever height rule a secret carries, never its edge. Sat
+    // exactly on a band's ceiling the aeroplane climbed 0.8 mm in one step and
+    // fell out of it, which is the band working correctly and the test being
+    // silly.
+    const mid = (d) => (d.agl ? (d.agl[0] + d.agl[1]) / 2 : d.below * 0.6);
+
+    // ---- the wiring, through the real loop -------------------------------
+    // Somewhere the aeroplane can actually be put without being inside a
+    // building: several of these are authored hard against a tower on purpose,
+    // and the whole point of the height band is that you fly BESIDE the thing.
+    const clear = defs.find((d) => {
+      if (d.kind !== 'place') return false;
+      const v = at(d);
+      const ground = g.hf.heightAt(v.x, v.z);
+      const y = ground + mid(d);
+      return (g.buildings?.topNear(v.x, v.z) ?? -Infinity) < y - 50;
+    });
+    const cv = at(clear);
+    const cg = g.hf.heightAt(cv.x, cv.z);
+    g.glider.position.set(cv.x, cg + mid(clear), cv.z);
+    g.glider.velocity.set(0, 0, -40);
+    // One real step, so Game's own handler runs: the toast, the profile and the
+    // write to storage are all on that path and none of them are in Secrets.
+    g.update(1 / 120);
+    const wired = g.progress.secrets.includes(clear.id);
+    const persisted = (JSON.parse(localStorage.getItem('windward.progress.v2') || '{}').secrets ?? []).includes(clear.id);
+
+    // ---- the rules, straight through Secrets ------------------------------
+    const band = defs.find((d) => d.kind === 'place' && d.agl && !g.secrets.found.has(d.id));
+    let idleHolds = true;
+    let bandHolds = true;
+    if (band) {
+      const v = at(band);
+      const ground = g.hf.heightAt(v.x, v.z);
+      const mid = (band.agl[0] + band.agl[1]) / 2;
+      // Four kilometres away, at exactly the right height.
+      g.glider.position.set(v.x + 4000, ground + mid, v.z);
+      g.secrets.update(1 / 60, g.glider, mid);
+      idleHolds = !g.secrets.found.has(band.id);
+      // Right place, nine hundred metres above the band.
+      g.glider.position.set(v.x, ground + band.agl[1] + 900, v.z);
+      g.secrets.update(1 / 60, g.glider, band.agl[1] + 900);
+      bandHolds = !g.secrets.found.has(band.id);
+      // Right place, right height.
+      g.glider.position.set(v.x, ground + mid, v.z);
+      g.secrets.update(1 / 60, g.glider, mid);
+    }
+    const bandEarned = band ? g.secrets.found.has(band.id) : null;
+
+    // A trace has to be held, not touched.
+    const trace = defs.find((d) => d.kind === 'trace');
+    let traceTouch = null;
+    let traceHeld = null;
+    if (trace) {
+      const put = (k) => {
+        const pt = g.world.toLocal(trace.path[k][0], trace.path[k][1]);
+        const pg = g.hf.heightAt(pt.x, pt.z);
+        g.glider.position.set(pt.x, pg + trace.ceiling * 0.5, pt.z);
+        return trace.ceiling * 0.5;
+      };
+      g.secrets.update(1 / 60, g.glider, put(0));
+      traceTouch = g.secrets.found.has(trace.id);
+      const steps = Math.ceil(trace.seconds * 60) + 60;
+      for (let i = 0; i < steps; i++) {
+        const k = Math.min(trace.path.length - 1, Math.floor((i / steps) * (trace.path.length - 1)));
+        g.secrets.update(1 / 60, g.glider, put(k));
+      }
+      traceHeld = g.secrets.found.has(trace.id);
+    }
+
+    // Nothing about a secret may appear in the world. No label, no marker.
+    const labels = [...document.querySelectorAll('.labels *')].map((e) => e.textContent).join(' | ');
+    const leaked = defs.filter((d) => labels.includes(d.name)).map((d) => d.name);
+
+    // The menu shows hints for the unfound and names for the found.
+    g.toMenu();
+    const rows = [...document.querySelectorAll('.secret-row')];
+    const unfoundShowName = rows
+      .filter((r) => !r.classList.contains('got'))
+      .some((r) => defs.some((d) => r.textContent.includes(d.name)));
+    const gotShowName = rows
+      .filter((r) => r.classList.contains('got'))
+      .every((r) => defs.some((d) => r.textContent.includes(d.name)));
+
+    return {
+      map: g.region.id,
+      total: defs.length,
+      wired,
+      persisted,
+      clear: clear.id,
+      idleHolds,
+      bandHolds,
+      bandEarned,
+      traceTouch,
+      traceHeld,
+      leaked,
+      rows: rows.length,
+      got: rows.filter((r) => r.classList.contains('got')).length,
+      unfoundShowName,
+      gotShowName,
+    };
+  });
+  if (out.total < 5) throw new Error(`${out.map} only authors ${out.total} secrets`);
+  if (!out.wired) throw new Error(`being at ${out.clear} did not register through the game loop`);
+  if (!out.persisted) throw new Error('a found secret was not written to the profile');
+  if (!out.idleHolds) throw new Error('a secret ticked from four kilometres away');
+  if (!out.bandHolds) throw new Error('a height band did not hold — it ticked 900 m above its ceiling');
+  if (out.bandEarned === false) throw new Error('being in the band did not earn it');
+  if (out.traceTouch === true) throw new Error('a trace was earned by touching the line for one frame');
+  if (out.traceHeld === false) throw new Error('a trace was not earned by flying its whole length');
+  if (out.leaked.length) throw new Error(`secret named in the world: ${out.leaked.join(', ')}`);
+  if (out.rows !== out.total) throw new Error(`${out.rows} rows in the menu for ${out.total} secrets`);
+  if (out.unfoundShowName) throw new Error('an unfound secret shows its name in the menu');
+  if (!out.gotShowName) throw new Error('a found secret does not show its name in the menu');
+  console.log(
+    `        ${out.map}: ${out.total} authored, ${out.got} earned, trace needs the whole line, ` +
+      `nothing named in the world`
+  );
+});
+
 await step("a deck run's clock runs under the ceiling, on the line, and nowhere else", async () => {
   const out = await page.evaluate(async () => {
     const { corridorAt } = await import('/src/challenges.js');

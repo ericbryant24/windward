@@ -740,6 +740,274 @@ export const CHALLENGES = {
   ],
 };
 
+/**
+ * The secrets. Nothing points at any of these.
+ *
+ * The rule for what belongs here: it must be a thing you DID, it must be
+ * possible to do it by accident approximately never, and the map must already
+ * contain whatever makes it worth doing. Every one of these is hung off
+ * surveyed data that was already in the build and that nobody could reach —
+ * a rack railway, a bulldozed airfield, a street canyon, two round towers with
+ * a gap between them.
+ *
+ * `hint` is what the menu shows for one you have not found. It has to be true
+ * and it has to be useless as an instruction: a hint that names the place is a
+ * quest marker with extra steps. `note` is what you get when you find it, and
+ * that one can say whatever it likes.
+ *
+ * See src/secrets.js for the three verbs.
+ */
+export const SECRETS = {
+  jungfrau: [
+    {
+      // The Grütschalp–Mürren railway, which runs along the lip of the
+      // Lauterbrunnen west wall at about 1,550 m with seven hundred metres of
+      // air off the right-hand side. Mürren has no road to it: you get there by
+      // cable car from the valley floor and then this train, and that is the
+      // whole reason the line exists.
+      //
+      // These coordinates are not authored — they are the surveyed track, pulled
+      // out of data/jungfrau-network.bin.gz by chaining the NARROW_GAUGE
+      // fragments that share endpoints and thinning to 200 m. The first attempt
+      // at this secret WAS authored, by eye, aiming at the Wengernalpbahn
+      // instead, and tools/verify-secrets.mjs reported the line I had drawn
+      // climbing at 123% — I had run it up the face of a cliff rather than along
+      // the shelf the railway uses. The tool is the reason this is real track.
+      id: 'murren-terrace',
+      kind: 'trace',
+      name: 'The Mürren Terrace',
+      hint: 'A railway runs along the top of the west wall to a village with no road to it. There is a shelf up there wide enough to fly.',
+      note: 'The Grütschalp line, along the lip of the Lauterbrunnen wall with seven hundred metres off the wingtip.',
+      // Wide enough to be flyable and tight enough that drifting off the shelf
+      // ends it: two hundred metres to the right the ground is 700 m down and
+      // the ceiling stops counting immediately.
+      width: 140,
+      ceiling: 110,
+      seconds: 18,
+      path: [
+        [46.57867, 7.8968], // 1608 m — above Mürren
+        [46.58049, 7.89562], // 1592 m
+        [46.5826, 7.89599], // 1574 m
+        [46.58458, 7.89442], // 1562 m
+        [46.58641, 7.89301], // 1549 m
+        [46.58843, 7.89382], // 1535 m
+        [46.59041, 7.8937], // 1531 m
+        [46.59276, 7.89289], // 1503 m
+        [46.59441, 7.89087], // 1507 m
+        [46.59713, 7.89041], // 1501 m — Grütschalp, top of the cable car
+      ],
+    },
+    {
+      // The observatory on the rock above the Jungfraujoch, 3,571 m, and one of
+      // the two hand-modelled meshes on this map. You could always fly past it.
+      // Nothing ever noticed.
+      id: 'sphinx-window',
+      kind: 'place',
+      name: 'The Sphinx',
+      hint: 'There is a window at the top of Europe and nobody has ever waved at it.',
+      note: 'The Sphinx observatory, 3,571 m. Somebody up there is watching the weather.',
+      lat: 46.5474,
+      lon: 7.9806,
+      radius: 240,
+      // Off the col, not off the aeroplane: the ground under you and the ground
+      // under the observatory are a long way apart up there.
+      agl: [60, 200],
+    },
+    {
+      // Where the Aletsch's four feeder glaciers meet, 2,780 m, behind the
+      // Jungfrau. No challenge goes within six kilometres and there is no lift
+      // on the way out.
+      //
+      // This was "be near Konkordiaplatz" and that was wrong twice over:
+      // Konkordiaplatz is already a labelled place, so its name hung on the
+      // horizon and the discovery toast fired before you had done anything, and
+      // "be near it" is not an act. Landing on the ice is. It also means
+      // committing to a glacier basin at 2,800 m with nothing to climb out on,
+      // which is the real content of going there.
+      id: 'aletsch-landing',
+      kind: 'land',
+      name: 'Down on the Aletsch',
+      hint: 'Four glaciers run into one behind the big three. There is no lift out there and the ice is flat.',
+      note: 'Wheels down on the Aletsch at 2,800 m, with nine hundred metres of ice underneath you and no lift for six kilometres.',
+      lat: 46.5033,
+      lon: 8.05,
+      radius: 520,
+    },
+    {
+      // The saddle the map opens above, which is flat, grassy, two kilometres
+      // long and has never once been landed on.
+      id: 'land-at-scheidegg',
+      kind: 'land',
+      name: 'Down at the Scheidegg',
+      hint: 'You start eight hundred metres above somewhere flat.',
+      note: 'Wheels down at Kleine Scheidegg, 2,061 m, with the Eiger over your shoulder.',
+      lat: 46.5853,
+      lon: 7.9614,
+      radius: 340,
+    },
+    {
+      // Three hundred metres of water, most of it airborne before it lands.
+      // Going under it is easy. The other condition is not.
+      id: 'staubbach-inverted',
+      kind: 'place',
+      name: 'Under the Staubbach, Upside Down',
+      hint: 'The tallest fall in the valley throws its water well clear of the rock. There is room behind it, if you are prepared to be the wrong way round.',
+      note: 'Inverted under three hundred metres of falling water. Nobody asked you to do that.',
+      lat: 46.5906,
+      lon: 7.9058,
+      radius: 170,
+      // Under the ribbon, measured off the ground beneath the aeroplane rather
+      // than off the cliff the fall is keyed to.
+      below: 140,
+      inverted: true,
+    },
+    {
+      // The one fall that comes out of the cliff instead of over it, and it
+      // comes out about ninety metres above the valley floor.
+      id: 'trummelbach-mouth',
+      kind: 'place',
+      name: 'The Trümmelbach Mouth',
+      hint: 'One of the falls runs inside the mountain and only shows for the last of it. You will have to be low.',
+      note: 'The Trümmelbach, coming out of the rock rather than over it.',
+      lat: 46.5758,
+      lon: 7.9074,
+      radius: 180,
+      below: 90,
+    },
+    {
+      // The revolving restaurant on top of the Schilthorn at 2,970 m, built for
+      // the 1969 film and named after the villain's lair in it. It is one of the
+      // two hand-modelled meshes on this map and nothing has ever had a reason
+      // to go and look at it.
+      //
+      // Was Bachalpsee, which is a labelled place and therefore announced itself
+      // — same fault as Konkordiaplatz. This is better anyway: the mountain is
+      // labelled, the building on it is not, and the building is the point.
+      id: 'piz-gloria',
+      kind: 'place',
+      name: 'Piz Gloria',
+      hint: 'Blofeld ran his operation out of a revolving restaurant on an alp. They did not build the set — they used a real one, and it is on this map.',
+      note: "Piz Gloria, 2,970 m. The revolving restaurant from On Her Majesty's Secret Service, and it is still up there serving lunch.",
+      lat: 46.5556,
+      lon: 7.8347,
+      radius: 240,
+      agl: [30, 170],
+    },
+  ],
+
+  chicago: [
+    {
+      // The best easter egg either map can offer, and it was already sitting
+      // there as flat ground with nothing on it.
+      //
+      // Meigs Field, single runway 36/18 on Northerly Island, the default
+      // airport that a generation of people learned to fly in front of. The
+      // mayor sent bulldozers to cut Xs into it in the middle of the night on
+      // 31 March 2003 with aircraft still parked on the apron. The island is
+      // in the terrain, it is the only clear strip on this map, and landing on
+      // it should mean something.
+      id: 'meigs-field',
+      kind: 'land',
+      name: 'Meigs Field',
+      hint: 'There was a runway on the island until somebody sent bulldozers at midnight. The ground is still flat.',
+      note: 'Meigs Field, CGX. Closed at 02:00 on 31 March 2003 by six bulldozers and no notice, with sixteen aeroplanes still parked on it. You just landed anyway.',
+      lat: 41.8618,
+      lon: -87.6086,
+      radius: 420,
+    },
+    {
+      // North Michigan Avenue between the river and the Water Tower: a straight
+      // kilometre of street with three-hundred-metre buildings down both sides,
+      // all of it surveyed footprints and real heights. A canyon run through
+      // geometry that will absolutely kill you.
+      id: 'magnificent-mile',
+      kind: 'trace',
+      name: 'The Magnificent Mile',
+      hint: 'There is a straight street north of the river with the tallest things in the city down both sides of it.',
+      note: 'North Michigan Avenue at rooftop height, river to the Water Tower.',
+      width: 80,
+      ceiling: 150,
+      seconds: 10,
+      path: [
+        [41.8885, -87.6245],
+        [41.892, -87.6244],
+        [41.8955, -87.6243],
+        [41.899, -87.6242],
+      ],
+    },
+    {
+      // 442 m to the roof and 527 to the tips of the two masts.
+      id: 'willis-antennas',
+      kind: 'place',
+      name: 'The Willis Antennas',
+      hint: 'The tallest thing on the map is not as tall as the things on top of it.',
+      note: 'Level with the Willis Tower masts, 527 m, which is higher than anything else here goes.',
+      lat: 41.8789,
+      lon: -87.6359,
+      radius: 220,
+      agl: [430, 580],
+    },
+    {
+      // Two round towers on the river with a gap between them. The footprints
+      // are surveyed, so the gap is the real gap.
+      id: 'marina-city-gap',
+      kind: 'place',
+      name: 'Between the Corncobs',
+      hint: 'Two round towers stand on the river. They are not touching.',
+      note: 'Through the gap at Marina City. The towers are where the survey says they are.',
+      lat: 41.8881,
+      lon: -87.6288,
+      radius: 95,
+      agl: [30, 200],
+    },
+    {
+      // Hand-modelled, mirror-polished, and ten metres tall in a park full of
+      // nothing else.
+      id: 'cloud-gate-low',
+      kind: 'place',
+      name: 'The Bean',
+      hint: 'Something in Millennium Park is polished like a mirror. You would have to be low to be in it.',
+      note: 'Low over Cloud Gate. You are in it now, upside down and stretched.',
+      lat: 41.8827,
+      lon: -87.6233,
+      radius: 140,
+      below: 90,
+    },
+    {
+      // Was Wrigley Field, which is 624 m outside the flyable box — the ballpark
+      // is in the places table and on the map, and the invisible wall that
+      // turns you round is inside it. verify-secrets caught that; nothing at
+      // runtime would have.
+      //
+      // Soldier Field instead, which is hand-modelled: the 1924 colonnade with
+      // the 2003 seating bowl dropped down between the columns. It cost the
+      // stadium its National Historic Landmark listing the following year.
+      id: 'soldier-colonnade',
+      kind: 'place',
+      name: 'The Colonnade',
+      hint: 'They lowered a spaceship into a stadium from the twenties and kept the pillars standing round it.',
+      note: "Soldier Field's 1924 colonnade. Dropping the new bowl inside it cost the stadium its National Historic Landmark status a year later.",
+      lat: 41.8623,
+      lon: -87.6167,
+      radius: 200,
+      below: 110,
+    },
+    {
+      // Hand-modelled, out at the end of the breakwater, and nothing has ever
+      // had any reason to go near it.
+      id: 'harbour-light',
+      kind: 'place',
+      name: 'The Harbour Light',
+      hint: 'Something small and white sits out where the breakwater ends. It is not a building.',
+      note: 'The Chicago Harbor Lighthouse, out at the harbour mouth on its own.',
+      lat: 41.8896,
+      lon: -87.5906,
+      radius: 190,
+      below: 130,
+    },
+  ],
+};
+
 export const DEFAULT_REGION = 'jungfrau';
 
 export function getRegion(id) {

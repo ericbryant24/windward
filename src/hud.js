@@ -149,6 +149,7 @@ export class Hud {
 
     this.el('[data-discovered]').textContent = `${view.discovered}/${view.places}`;
     this.el('[data-medalstat]').textContent = `${view.medalled}/${view.total}`;
+    this.#drawSecrets(view.secrets ?? []);
     this.#drawLevel();
   }
 
@@ -166,6 +167,36 @@ export class Hud {
       b.classList.toggle('on', b.dataset.value === id);
     }
     this.#drawLevel();
+  }
+
+  /**
+   * The discoveries block: what you have found, by name, and what you have not,
+   * by riddle.
+   *
+   * The unfound rows are the whole design. A locked challenge shows its name and
+   * what it wants, because a challenge is a thing the game is offering you. A
+   * secret is not offered — so the row shows only a sentence that is true about
+   * somewhere on this map and useless as a set of directions. Once found it
+   * flips to the name and the story, and stays there.
+   */
+  #drawSecrets(secrets) {
+    const found = secrets.filter((s) => s.found).length;
+    this.el('[data-secretcount]').textContent = `${found} of ${secrets.length}`;
+    this.el('[data-secretstat]').textContent = `${found}/${secrets.length}`;
+    this.el('.secrets').hidden = !secrets.length;
+    this.el('.secret-list').innerHTML = secrets
+      .map(({ def, found: got }) =>
+        got
+          ? `<div class="secret-row got">
+               <i>✦</i>
+               <div><span>${def.name}</span><em>${def.note}</em></div>
+             </div>`
+          : `<div class="secret-row">
+               <i>?</i>
+               <div><em>${def.hint}</em></div>
+             </div>`
+      )
+      .join('');
   }
 
   #drawLevel() {
@@ -607,9 +638,19 @@ const TEMPLATE = /* html */ `
       <div class="fleet-list"></div>
     </div>
 
+    <div class="secrets">
+      <div class="task-head">
+        <span>Discoveries</span>
+        <b data-secretcount>0 of 0</b>
+      </div>
+      <p class="task-note">Nothing points at these. Nobody will tell you when you are close.</p>
+      <div class="secret-list"></div>
+    </div>
+
     <div class="stats">
       <div><span>Landmarks</span><b data-discovered>0/0</b></div>
       <div><span>Medalled</span><b data-medalstat>0/0</b></div>
+      <div><span>Discoveries</span><b data-secretstat>0/0</b></div>
     </div>
 
     <div class="settings">

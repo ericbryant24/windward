@@ -424,28 +424,34 @@ async function main() {
   // Vegetation goes in its own greyscale file, at the resolution the runtime
   // forest mask actually uses.
   if (vegetation) {
-    const VN = 768;
+    // Half the terrain's resolution, capped. At 1536 that is the 768 this
+    // always wrote; at 3072 it is 1536, which is 24.8 m a forest cell instead
+    // of 49.5 — and a forest EDGE is most of what a wooded slope looks like
+    // from the air, so it is the edge that has to be worth the kilobytes.
+    const VN = Math.min(1536, size >> 1);
     const vpng = new PNG({ width: VN, height: VN, colorType: 0 });
-    const ratio = (size - 1) / (VN - 1);
-    for (let j = 0; j < VN; j++) {
-      for (let i = 0; i < VN; i++) {
-        // Box-average the source cells so a one-cell park does not flicker in
-        // and out depending on where the sample lands.
-        const x0 = Math.round(i * ratio);
-        const y0 = Math.round(j * ratio);
-        let acc = 0;
-        let cnt = 0;
-        for (let dy = 0; dy <= 1; dy++) {
-          for (let dx = 0; dx <= 1; dx++) {
-            const x = Math.min(size - 1, x0 + dx);
-            const y = Math.min(size - 1, y0 + dy);
-            acc += veg[y * size + x];
-            cnt++;
-          }
-        }
-        vpng.data[(j * VN + i) * 4] = Math.round(acc / cnt);
-        vpng.data[(j * VN + i) * 4 + 3] = 255;
+    // Every source cell into exactly one bin, rather than a fixed 2x2 window
+    // walked at whatever stride the ratio happens to be.
+    //
+    // The old version sampled a 2x2 box at a stride of (size-1)/(VN-1). At
+    // 1536 that stride was 2 and the box covered the block exactly. At 3072 it
+    // is 4 and the box still covered 2x2 — four of every sixteen source cells
+    // read and twelve thrown away. The average came out unbiased and the EDGES
+    // came out as staircases, because whether a boundary cell survived
+    // depended on which quarter of the block it fell in.
+    const acc = new Float64Array(VN * VN);
+    const cnt = new Uint32Array(VN * VN);
+    for (let y = 0; y < size; y++) {
+      const j = Math.min(VN - 1, Math.floor((y * VN) / size));
+      for (let x = 0; x < size; x++) {
+        const k = j * VN + Math.min(VN - 1, Math.floor((x * VN) / size));
+        acc[k] += veg[y * size + x];
+        cnt[k]++;
       }
+    }
+    for (let p = 0; p < VN * VN; p++) {
+      vpng.data[p * 4] = cnt[p] ? Math.round(acc[p] / cnt[p]) : 0;
+      vpng.data[p * 4 + 3] = 255;
     }
     const vout = PNG.sync.write(vpng, { deflateLevel: 9, filterType: 4 });
     await writeFile(OUT.vegetation, vout);
