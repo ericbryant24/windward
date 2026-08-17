@@ -1657,7 +1657,7 @@ for (const mapId of MAPS) {
     const lines = [];
     const note = (s) => lines.push(s);
 
-    note(`\n── ${def.name} (${def.id}) ──`);
+    if (!AS_JSON) note(`\n── ${def.name} (${def.id}) ──`);
     note(`   ${def.type} · ${spec.name} · best L/D ${fmt(book.bestLD)} at ${fmt(book.bestLDSpeed, 0)} m/s · min sink ${fmt(book.minSink, 2)} m/s`);
 
     // ---- the site ---------------------------------------------------------
@@ -1849,7 +1849,10 @@ for (const mapId of MAPS) {
 }
 
 if (AS_JSON) {
-  console.log(JSON.stringify(proposals, null, 2));
+  // Problems as well as proposals. A machine applying these has to know which
+  // challenges could not be flown at all, or it will happily write a measured
+  // ladder onto a course nobody finished.
+  console.log(JSON.stringify({ proposals, problems }, null, 2));
 } else {
   console.log(`\n${'='.repeat(78)}`);
   if (problems.length) {
