@@ -80,7 +80,9 @@ const arg = (name, fallback = null) => {
 };
 const flag = (name) => argv.includes(`--${name}`);
 
-const MAPS = arg('map') ? [arg('map')] : ['jungfrau', 'chicago'];
+// Every map that actually has races, rather than a hardcoded pair — a region
+// added to the table has to be calibrated by default or it never is.
+const MAPS = arg('map') ? [arg('map')] : Object.keys(CHALLENGES).filter((id) => (CHALLENGES[id] ?? []).length);
 const ONLY = arg('only');
 const VERBOSE = flag('verbose');
 const TRACE = flag('trace');
@@ -115,8 +117,20 @@ const horizonFor = (def) => (TYPES[def.type].windowed ? def.window + 2 : clamp(d
  * different events — if they were equal the ladder would have two rungs.
  */
 const LADDER = { gold: 1.10, silver: 1.28, bronze: 1.52, limit: 2.05 };
-/** Nothing in the game runs longer than this. See the note on CHALLENGES. */
+/**
+ * How long a slalom is allowed to run, unless it says otherwise.
+ *
+ * Ninety seconds is a design belief, not a physical limit: a race you can hold
+ * in your head is a race you can learn, and a five-minute one is a commute. The
+ * cap is here so nobody ships a commute by accident.
+ *
+ * A challenge that means it opts out with `crossing: true`, and then its own
+ * `limit` is the cap. Exactly one does — the Lærdal Tunnel is 24 km of road
+ * under a mountain and the challenge is going over the top of it, which the
+ * tool measures at 278 s. That is the content, not an oversight.
+ */
 const SLALOM_CAP = 90;
+const capFor = (def) => (def.crossing ? def.limit : SLALOM_CAP);
 /**
  * The windowed three are quantities rather than clocks, and more is better, so
  * their ladder runs the other way: gold just under the best measured, bronze a
@@ -1545,7 +1559,7 @@ const round = (v, to) => Math.round(v / to) * to;
 const roundUp = (v, to) => Math.ceil(v / to) * to;
 
 /** Seconds ladder off the anchor run, with the rungs kept apart. */
-function timedLadder(best, ladder) {
+function timedLadder(best, ladder, cap = SLALOM_CAP) {
   const to = best > 240 ? 10 : best > 90 ? 5 : 1;
   const gold = round(best * ladder.gold, to);
   const silver = Math.max(gold + to, round(best * ladder.silver, to));
@@ -1554,8 +1568,10 @@ function timedLadder(best, ladder) {
   // clear margin past bronze rather than on top of it — but nothing in the game
   // runs longer than ninety seconds, and that cap wins. A course whose bronze
   // will not fit underneath it is a course with a gate too many, and the caller
-  // says so rather than quietly shipping a limit nobody can meet.
-  const limit = Math.min(SLALOM_CAP, Math.max(roundUp(best * ladder.limit, to), roundUp(bronze * 1.25, to)));
+  // says so rather than quietly shipping a limit nobody can meet — unless the
+  // challenge declared itself a crossing, in which case its own limit is the
+  // cap and the ladder is free to use all of it.
+  const limit = Math.min(cap, Math.max(roundUp(best * ladder.limit, to), roundUp(bronze * 1.25, to)));
   // The cap is the hard constraint, so the ladder gets squeezed under it rather
   // than the other way round: a bronze that would land past ninety seconds is
   // pulled back to just inside. Only when that would put it on top of silver is
@@ -1748,7 +1764,7 @@ for (const mapId of MAPS) {
     const windowed = TYPES[def.type].windowed;
     const proposal = windowed
       ? yieldLadder(anchor.value, challengeMetric(def))
-      : timedLadder(anchor.value, LADDER);
+      : timedLadder(anchor.value, LADDER, capFor(def));
     proposals[def.id] = proposal;
 
     // An escape hatch, used once and stated in the table. This tool's gunnery
@@ -1791,7 +1807,7 @@ for (const mapId of MAPS) {
         problems.push(`${def.id}: gold (${cur[2]}) is more than the best the tool managed (${fmt(anchor.value)}) — unreachable`);
       }
     } else {
-      if (def.limit > 90) problems.push(`${def.id}: a limit of ${def.limit} s breaks the ninety second cap`);
+      if (def.limit > capFor(def)) problems.push(`${def.id}: a limit of ${def.limit} s breaks its own ${capFor(def)} s cap`);
       if (cur[0] >= def.limit) problems.push(`${def.id}: bronze (${cur[0]}) is not under the fail limit (${def.limit}) — finishing and bronzing are the same event`);
       if (anchor.value > def.limit) problems.push(`${def.id}: the best line takes ${fmt(anchor.value)} s and the limit is ${def.limit} s — nobody finishes`);
       if (anchor.value > cur[2]) problems.push(`${def.id}: gold (${cur[2]} s) is quicker than the best line flown (${fmt(anchor.value)} s) — unreachable`);

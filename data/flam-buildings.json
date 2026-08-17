@@ -1,0 +1,17 @@
+{
+  "generator": "tools/bake-buildings.mjs",
+  "region": "flam",
+  "source": "OpenStreetMap contributors, ODbL — see ATTRIBUTION.md",
+  "format": 2,
+  "count": 5118,
+  "vertices": 32286,
+  "vertexScale": 20,
+  "parts": 0,
+  "heights": {
+    "fromHeightTag": 0,
+    "fromLevels": 234,
+    "inferred": 4884,
+    "surveyedPercent": 4.6
+  },
+  "note": "Footprints, positions, orientations and building:part massing are surveyed data. Heights are surveyed where tagged and inferred from type and footprint area otherwise. Facade materials are inferred from height and use except where building:material is tagged."
+}

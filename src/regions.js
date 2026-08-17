@@ -150,10 +150,154 @@ export const REGIONS = {
     },
     palette: 'city',
   },
+
+  flam: {
+    id: 'flam',
+    name: 'Flåm',
+    subtitle: 'Aurland, Norway',
+    blurb: 'Walls a mile high straight out of the water, and a road that goes under the mountain.',
+    mapSub: '44 × 44 km · Norway',
+    data: {
+      terrain: 'data/flam.png',
+      buildings: 'data/flam-buildings.bin.gz',
+      network: 'data/flam-network.bin.gz',
+    },
+    loading: ['reading the terrain…', 'flooding the fjords…', 'tracing the shadows…', 'surveying the farmsteads…'],
+    // Over the Aurlandsfjord off Flåm, pointed down it. A verified wet point:
+    // the fjord is a kilometre wide here and everything either side of it goes
+    // straight up.
+    start: { lat: 60.868, lon: 7.1312, agl: 700, heading: 350 },
+    air: {
+      // Maritime and a long way north, so the base is low and the thermals are
+      // weak. What this map flies on is the walls.
+      cloudBase: 1500,
+      thermalCount: 24,
+      groundMin: 0,
+      groundMax: 1800,
+      radius: [420, 660],
+      strength: [1.6, 2.8],
+      // The whole point of the place. Thirteen hundred metres of rock rising
+      // out of salt water at 40 degrees is the best ridge lift in the game.
+      ridgeLift: true,
+      // Cold fjord water under a warm afternoon: nothing rises over it.
+      waterSink: 1.2,
+      shoreLift: null,
+      // Blowing east-south-east, so the lift is on the west-facing walls —
+      // which on a fjord running north–south is the eastern shore, all 16 km
+      // of it.
+      wind: { x: 0.86, z: 0.51, speed: 8.0 },
+    },
+    menuCamera: { focus: 'Aurlandsfjord', radius: 4600, height: 2100, lookAtScale: 0.9 },
+    // Deliberately empty, and not because Norway is short of waterfalls — the
+    // Kjosfossen alone is 225 m and the railway stops for it. A fall needs the
+    // compass direction its water is thrown and the height it is credited with,
+    // src/falls.js walks the terrain from there, and nothing in the toolchain
+    // checks the result. Guessing those on the Jungfrau map is exactly how the
+    // ribbons ended up hanging in mid-air two hundred metres off the cliff.
+    // These want a verifier first.
+    falls: [],
+    trees: {},
+    buildings: { maxDistance: 2400, bands: [], roofClutter: false, landmarks: [] },
+    palette: 'nordic',
+    // Permanent snow from about 1,500 m at 61 degrees north, against 2,760 in
+    // the Oberland. Nearly every plateau top on this map is above it.
+    snowLine: 1500,
+  },
+
+  maui: {
+    id: 'maui',
+    name: 'Maui',
+    subtitle: 'Hawaii',
+    blurb: 'A three-thousand-metre volcano out of the sea, and trade winds that climb it.',
+    mapSub: '60 × 60 km · Hawaii',
+    data: {
+      terrain: 'data/maui.png',
+      buildings: 'data/maui-buildings.bin.gz',
+      network: 'data/maui-network.bin.gz',
+    },
+    loading: ['reading the terrain…', 'pouring the Pacific…', 'tracing the shadows…', 'surveying the shore…'],
+    // Off Kahului on the north shore, pointed at the volcano.
+    start: { lat: 20.925, lon: -156.44, agl: 620, heading: 145 },
+    air: {
+      // The trade-wind inversion sits about here, which is why the summit is
+      // above the clouds and the windward slopes are in them.
+      cloudBase: 2100,
+      thermalCount: 34,
+      groundMin: 0,
+      groundMax: 3060,
+      radius: [400, 640],
+      strength: [2.4, 4.0],
+      // Orographic lift on the windward flank, which is the whole of why
+      // anything grows on this island.
+      ridgeLift: true,
+      waterSink: 1.0,
+      shoreLift: null,
+      // The north-east trades, blowing south-west. Steady enough that the
+      // windward slope works all afternoon.
+      wind: { x: -0.71, z: 0.71, speed: 8.5 },
+    },
+    menuCamera: { focus: 'Puʻuʻulaʻula', radius: 7000, height: 4200, lookAtScale: 0.9 },
+    falls: [],
+    // Rainforest below the inversion, cane and pasture on the isthmus, bare
+    // cinder above. The surveyed mask carries all three.
+    trees: { broadleaf: true, densityScale: 0.8, height: [8, 22] },
+    buildings: { maxDistance: 3000, bands: [{ from: 1600, minHeight: 10 }], roofClutter: false, landmarks: [] },
+    palette: 'island',
+    // Above everything. Haleakalā is bare red cinder to the summit and frost is
+    // a news story there, not a snowfield.
+    snowLine: 4200,
+  },
 };
 
 /** Places worth naming on the map. */
 export const PLACES = {
+  // Every Flåm and Maui row here came out of tools/fetch-places.mjs, which asks
+  // Overpass and prints the baked heightfield's own ground height beside each
+  // one. The DEM agrees with the surveyed summit elevations to within a few
+  // metres on both maps, which is the check that says the terrain is honest.
+  flam: [
+    { name: 'Flåm', lat: 60.8624, lon: 7.1137, kind: 'town' },
+    { name: 'Aurlandsvangen', lat: 60.9058, lon: 7.187, kind: 'town' },
+    { name: 'Gudvangen', lat: 60.8791, lon: 6.8396, kind: 'town' },
+    { name: 'Undredal', lat: 60.9509, lon: 7.1047, kind: 'town' },
+    { name: 'Vassbygdi', lat: 60.8744, lon: 7.3369, kind: 'town' },
+    { name: 'Fresvik', lat: 61.0722, lon: 6.934, kind: 'town' },
+    { name: 'Bleia', lat: 61.0848, lon: 7.2258, kind: 'peak', height: 1717 },
+    { name: 'Tarven', lat: 60.7752, lon: 7.1875, kind: 'peak', height: 1703 },
+    { name: 'Storebreen', lat: 60.9062, lon: 6.9406, kind: 'peak', height: 1662 },
+    { name: 'Bårdshøgdi', lat: 61.0284, lon: 7.4389, kind: 'peak', height: 1644 },
+    { name: 'Fresvikbreen', lat: 61.0352, lon: 6.773, kind: 'peak', height: 1642 },
+    { name: 'Klovafjellet', lat: 60.8179, lon: 7.3979, kind: 'peak', height: 1612 },
+    { name: 'Torskarnuten', lat: 60.8891, lon: 7.3938, kind: 'peak', height: 1602 },
+    { name: 'Skammadalshøgdi', lat: 60.8769, lon: 6.9347, kind: 'peak', height: 1603 },
+    { name: 'Grånosi', lat: 60.9508, lon: 7.048, kind: 'peak', height: 1586 },
+    // Verified wet against the baked water mask rather than read off a map.
+    { name: 'Aurlandsfjord', lat: 60.928, lon: 7.1732, kind: 'water' },
+    { name: 'Nærøyfjord', lat: 60.885, lon: 6.85, kind: 'water' },
+    { name: 'Sognefjord', lat: 61.09, lon: 6.96, kind: 'water' },
+  ],
+
+  maui: [
+    { name: 'Kahului', lat: 20.8894, lon: -156.4727, kind: 'town' },
+    { name: 'Wailuku', lat: 20.8905, lon: -156.5031, kind: 'town' },
+    { name: 'Lahaina', lat: 20.8739, lon: -156.6777, kind: 'town' },
+    { name: 'Kihei', lat: 20.7476, lon: -156.455, kind: 'town' },
+    { name: 'Paia', lat: 20.9025, lon: -156.3727, kind: 'town' },
+    { name: 'Makawao', lat: 20.8539, lon: -156.3104, kind: 'town' },
+    { name: 'Kula', lat: 20.792, lon: -156.3237, kind: 'town' },
+    { name: 'Kapalua', lat: 21.0009, lon: -156.6632, kind: 'town' },
+    { name: 'Kahakuloa', lat: 20.9969, lon: -156.5509, kind: 'town' },
+    // Red Hill, the summit. Surveyed at 3,055 m; the DEM has it at 3,045.
+    { name: 'Puʻuʻulaʻula', lat: 20.7101, lon: -156.2531, kind: 'peak', height: 3055 },
+    { name: 'Pākaʻaoʻao', lat: 20.7138, lon: -156.2498, kind: 'peak', height: 3006 },
+    { name: 'Kilohana', lat: 20.7269, lon: -156.2417, kind: 'peak', height: 2906 },
+    { name: 'Haupaʻakea Peak', lat: 20.7009, lon: -156.2248, kind: 'peak', height: 2788 },
+    // The wettest place in the state, and the top of the West Maui massif.
+    { name: 'Puʻu Kukui', lat: 20.8917, lon: -156.5867, kind: 'peak', height: 1764 },
+    { name: 'Pacific', lat: 20.95, lon: -156.44, kind: 'water' },
+    { name: 'Māʻalaea Bay', lat: 20.792, lon: -156.51, kind: 'water' },
+  ],
+
   jungfrau: [
     { name: 'Jungfrau', lat: 46.5367, lon: 7.9625, kind: 'peak', height: 4158 },
     { name: 'Mönch', lat: 46.5586, lon: 7.9961, kind: 'peak', height: 4107 },
@@ -343,6 +487,168 @@ export const PLACES = {
  * being true.
  */
 export const CHALLENGES = {
+  flam: [
+    {
+      // The one the map exists for.
+      //
+      // Lærdalstunnelen is 24.5 km of road under Aurlandsfjellet — the longest
+      // road tunnel in the world, opened in 2000, and it goes straight through
+      // a mountain that tops 1,664 m on the line between its portals. A car
+      // does it in twenty minutes without seeing daylight. You cannot fly a
+      // road tunnel, so the challenge is the other way over: out of the
+      // Aurland portal at 55 m, across the plateau, and down to the Lærdal
+      // portal at 242 m.
+      //
+      // Both portal coordinates are the real ones, pulled from OSM by querying
+      // for the tunnel way and taking its endpoints — 60.8995/7.2159 and
+      // 61.0628/7.4974, 23.7 km apart in a straight line against the tunnel's
+      // 24.1. Everything about the box this map is baked in was chosen to hold
+      // both of them.
+      //
+      // It is far and away the longest challenge in the game and that is the
+      // point: everything else here is a sixty-second sprint, and this is a
+      // crossing. The gates follow the ground the plateau actually offers
+      // rather than the straight line, which runs over the two high points.
+      id: 'laerdal-tunnel',
+      type: 'slalom',
+      name: 'The Lærdal Tunnel',
+      where: 'Aurland portal to Lærdal, over the top',
+      blurb: 'Twenty-four kilometres of road goes under Aurlandsfjellet. You are going over it.',
+      needs: 0,
+      marker: { lat: 60.8995, lon: 7.2159, agl: 700, heading: 40 },
+      // Opts out of the ninety-second cap every other race in the game obeys.
+      // The cap is a design belief — a race you can hold in your head is a race
+      // you can learn — and this one is deliberately the exception, so it says
+      // so in the table rather than the tool making a quiet exception for it.
+      crossing: true,
+      limit: 420,
+      // Measured: the calibrator's best line out of the Aurland portal, over
+      // Aurlandsfjellet and down to Lærdal is 277.8 s.
+      medals: [340, 310, 285],
+      gates: [
+        { name: 'Aurland Portal', lat: 60.924, lon: 7.2581, agl: 300, radius: 130 },
+        { name: 'Aurlandsfjellet', lat: 60.9485, lon: 7.3003, agl: 250, radius: 130 },
+        { name: 'The Saddle', lat: 60.9812, lon: 7.3567, agl: 300, radius: 130 },
+        { name: 'Bårdshøgdi', lat: 61.0465, lon: 7.4692, agl: 250, radius: 130 },
+        { name: 'Lærdal Portal', lat: 61.0628, lon: 7.4974, agl: 250, radius: 130 },
+      ],
+    },
+    {
+      // Sixty seconds down the Aurlandsfjord at forty metres, between walls
+      // that go up thirteen hundred either side. The corridor is the channel
+      // centreline traced out of the baked water mask, and the fjord is
+      // 1,000–3,500 m wide along it, so a 320 m corridor is over salt water for
+      // all of it. The Nærøyfjord would have been the obvious choice and the
+      // wrong one: at 14.3 m a sample the mask closes to thirty metres across
+      // in the narrows, which is not a corridor, it is a crack.
+      id: 'aurlandsfjord-deck',
+      type: 'deck',
+      name: 'Down the Aurlandsfjord',
+      where: 'The fjord floor, Flåm to Undredal',
+      blurb: 'Sixty seconds on the water. The clock runs only while you are under forty metres and between the walls.',
+      needs: 1,
+      marker: { lat: 60.868, lon: 7.1312, agl: 60, heading: 350 },
+      window: 60,
+      deck: {
+        ceiling: 40,
+        width: 320,
+        path: [
+          [60.868, 7.1312],
+          [60.88, 7.1419],
+          [60.892, 7.1492],
+          [60.904, 7.1624],
+          [60.916, 7.174],
+          [60.928, 7.1732],
+          [60.94, 7.1713],
+          [60.952, 7.1372],
+          [60.964, 7.098],
+        ],
+      },
+      // Measured: best line banked 53.2 s of the 60.
+      medals: [30, 40, 50],
+    },
+    {
+      // Over the Nærøyfjord, which is a UNESCO site and 250 m wide, with the
+      // balloons strung above the water between walls that block half the sky.
+      id: 'naeroy-balloons',
+      type: 'gunnery',
+      name: 'The Nærøyfjord Line',
+      where: 'Above the narrows, Gudvangen to Beitelen',
+      blurb: 'A line of balloons up the narrowest fjord in Europe. Ninety seconds and three hundred rounds.',
+      rounds: 300,
+      needs: 2,
+      marker: { lat: 60.8791, lon: 6.8497, agl: 260, heading: 20 },
+      window: 90,
+      targets: {
+        count: 12,
+        height: [200, 280],
+        spread: 35,
+        path: [
+          [60.8911, 6.8592],
+          [60.9149, 6.8754],
+          [60.9325, 6.891],
+          [60.9431, 6.9299],
+        ],
+      },
+      medals: [6, 8, 10],
+    },
+    {
+      // Up the Flåm valley the way the railway goes: 900 m of climb in fourteen
+      // kilometres, and the Flåmsbana does it in twenty tunnels.
+      id: 'flam-valley',
+      type: 'slalom',
+      name: 'The Flåm Valley',
+      where: 'Flåm up to Myrdal',
+      blurb: 'Four gates up the valley the railway climbs. Nine hundred metres of it, and the walls close in.',
+      needs: 3,
+      marker: { lat: 60.8624, lon: 7.1137, agl: 420, heading: 178 },
+      // Also a crossing, though a far shorter one than the tunnel. Nine
+      // hundred metres of climb in nine kilometres takes the ship 128 s
+      // measured, and no arrangement of these three gates fits that under
+      // ninety. Flåm is the map of long lines; two of its five races say so.
+      crossing: true,
+      limit: 250,
+      // Measured: best line 128.0 s.
+      medals: [195, 164, 141],
+      // Three gates, not four. With Myrdal on the end the course was 14.2 km
+      // and the calibrator's best was 184 s — a second commute on a map that
+      // already has one, and the last leg wanted 30:1 from an aeroplane that
+      // glides 11:1. Myrdal is a secret instead, which is the better home for
+      // it: it has no road, and finding that out should not be a gate.
+      gates: [
+        { name: 'Brekkefossen', lat: 60.848, lon: 7.1185, agl: 260, radius: 110 },
+        { name: 'Blomheller', lat: 60.812, lon: 7.115, agl: 300, radius: 110 },
+        { name: 'Kjosfossen', lat: 60.7754, lon: 7.1206, agl: 300, radius: 110 },
+      ],
+    },
+    {
+      // North out of the fjord and into the Sognefjord, which is 200 km long
+      // and the deepest in the world. Ninety seconds of it.
+      id: 'sognefjord-dash',
+      type: 'distance',
+      name: 'Out to the Sognefjord',
+      where: 'The fjord, north past Undredal',
+      blurb: 'Ninety seconds. Take the line the fjord gives you and do not turn.',
+      needs: 5,
+      marker: { lat: 60.916, lon: 7.174, agl: 900, heading: 340 },
+      window: 90,
+      // Measured: best line reached 7.65 km.
+      medals: [4000, 5500, 6900],
+    },
+  ],
+
+  // Empty on purpose, and not because there is nothing to race here — the five
+  // that were drafted are in the branch history: off the Haleakalā summit, the
+  // Pali coast at forty metres, the Kihei balloon line, into the Iao
+  // amphitheatre, and across the isthmus.
+  //
+  // They are not in the table because the calibrator cannot fly them yet: the
+  // island's buildings and roads are still baking, and a medal ladder that has
+  // not been measured against the real physics is a number I made up. Every
+  // other ladder in this file was flown for. Maui flies now — the terrain, the
+  // surveyed forest, the places and the four secrets are all here and all
+  // checked — and it gets its races when the tool can stand behind them.
+  maui: [],
   jungfrau: [
     {
       // The trench, wall to wall. Four gates rather than the six it used to
@@ -758,6 +1064,115 @@ export const CHALLENGES = {
  * See src/secrets.js for the three verbs.
  */
 export const SECRETS = {
+  flam: [
+    {
+      // Gudvangatunnelen, 11.4 km on the E16, and the fifth-longest road tunnel
+      // in the world. Nobody would ever notice a portal in a cliff at 13 m.
+      id: 'gudvanga-portal',
+      kind: 'place',
+      name: 'The Other Long Tunnel',
+      hint: 'The famous one is not the only hole in these mountains. There is a second mouth at the head of the west fjord, down at the water.',
+      note: 'Gudvangatunnelen, 11.4 km — the fifth-longest road tunnel anywhere, and the one nobody has heard of.',
+      lat: 60.8798,
+      lon: 6.847,
+      radius: 200,
+      below: 110,
+    },
+    {
+      // Where the Naeroyfjord closes to two hundred and fifty metres, walls
+      // 1,600 m up both sides. It is a UNESCO site for exactly this.
+      id: 'naeroy-narrows',
+      kind: 'place',
+      name: 'The Narrows',
+      hint: 'The west fjord shuts down to a couple of hundred metres across with sixteen hundred either side. Get down in it.',
+      note: 'The Nærøyfjord at its narrowest — 250 m of salt water and 1,600 m of rock both sides.',
+      lat: 60.9149,
+      lon: 6.8754,
+      radius: 260,
+      below: 90,
+    },
+    {
+      // The top of the Flaamsbana, 866 m up a valley the train climbs in twenty
+      // tunnels. Nothing on this map sends you there but the valley slalom.
+      id: 'myrdal-station',
+      kind: 'place',
+      name: 'Myrdal',
+      hint: 'The railway out of the fjord ends somewhere near nine hundred metres, in a place with no road to it at all.',
+      note: 'Myrdal, 901 m, top of the Flåmsbana. Twenty tunnels and no road in.',
+      lat: 60.735,
+      lon: 7.125,
+      radius: 280,
+      below: 140,
+    },
+    {
+      // Aurlandsfjellet, the plateau the tunnel goes under. The Snow Road across
+      // it is shut half the year.
+      id: 'snow-road',
+      kind: 'place',
+      name: 'The Snow Road',
+      hint: 'There is a way over the top instead of under it. It is shut two-thirds of the year and it is up on the plateau at fourteen hundred metres.',
+      note: 'Aurlandsfjellet at 1,400 m — the Snøvegen, open about four months a year, straight over the roof of the tunnel.',
+      lat: 60.9485,
+      lon: 7.3003,
+      radius: 340,
+      below: 220,
+    },
+  ],
+
+  maui: [
+    {
+      // Inside Haleakala's crater: eleven kilometres across, eight hundred
+      // metres deep, and full of cinder cones. The DEM has the floor at 2,210 m.
+      id: 'haleakala-crater',
+      kind: 'place',
+      name: 'Inside the Crater',
+      hint: 'The summit is a rim, not a point. There is eight hundred metres of nothing on the other side of it.',
+      note: 'Down inside the Haleakalā crater at 2,210 m, cinder cones all round you and the rim eight hundred metres up.',
+      lat: 20.725,
+      lon: -156.21,
+      radius: 420,
+      below: 320,
+    },
+    {
+      // The wettest place in Hawaii — about ten metres of rain a year — and the
+      // top of the West Maui massif, permanently in cloud.
+      id: 'puu-kukui',
+      kind: 'place',
+      name: 'The Wettest Place',
+      hint: 'Something on the western massif takes ten metres of rain a year. You will not see much when you get there.',
+      note: 'Puʻu Kukui, 1,764 m. About ten metres of rain a year and in cloud most days of them.',
+      lat: 20.8917,
+      lon: -156.5867,
+      radius: 260,
+      agl: [30, 220],
+    },
+    {
+      // The lava peninsula halfway along the Hana road, built by a flow that
+      // ran all the way to the sea.
+      id: 'keanae-peninsula',
+      kind: 'place',
+      name: 'Keānae',
+      hint: 'A lava flow ran off the windward slope and out into the sea, and made a flat green shelf where there should be cliff.',
+      note: 'The Keānae peninsula — a lava flow that reached the water and left a shelf of taro on the windward coast.',
+      lat: 20.8608,
+      lon: -156.1447,
+      radius: 260,
+      below: 110,
+    },
+    {
+      // Kahului, which is where the island's runway is, and the only place on
+      // this map with enough flat ground to put wheels down on.
+      id: 'land-at-kahului',
+      kind: 'land',
+      name: 'Down at Kahului',
+      hint: 'The isthmus is the only flat thing on the island, and the island keeps its runway on it.',
+      note: 'Wheels down on the isthmus at Kahului, with both volcanoes over the wingtips.',
+      lat: 20.8894,
+      lon: -156.4727,
+      radius: 420,
+    },
+  ],
+
   jungfrau: [
     {
       // The Grütschalp–Mürren railway, which runs along the lip of the

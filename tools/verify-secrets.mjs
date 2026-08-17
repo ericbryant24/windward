@@ -115,11 +115,19 @@ async function loadRegion(id) {
   const sky = { uniforms: {} };
   const scene = new THREE.Scene();
   const world = new World(hf, sky, scene, id);
-  const b64 = (await readFile(new URL(`../data/${id}-buildings.bin.gz`, import.meta.url))).toString('base64');
-  const buildings = new Buildings(hf, sky, await loadBuildings(null, b64), world.places, {
-    ...REGIONS[id].buildings,
-    landmarks: null,
-  });
+  // A region whose buildings are not baked yet is still worth checking against
+  // its terrain. Only the building-clearance half of the answer goes missing,
+  // and the tool says so rather than refusing to run.
+  let buildings = null;
+  try {
+    const b64 = (await readFile(new URL(`../data/${id}-buildings.bin.gz`, import.meta.url))).toString('base64');
+    buildings = new Buildings(hf, sky, await loadBuildings(null, b64), world.places, {
+      ...REGIONS[id].buildings,
+      landmarks: null,
+    });
+  } catch {
+    console.log('  note no baked buildings for this region — terrain checks only');
+  }
   return { id, hf, world, buildings };
 }
 

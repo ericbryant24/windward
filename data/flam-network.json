@@ -1,0 +1,26 @@
+{
+  "generator": "tools/bake-network.mjs",
+  "source": "OpenStreetMap contributors, ODbL — see ATTRIBUTION.md",
+  "ways": 4312,
+  "points": 30649,
+  "pointScale": 2,
+  "region": "flam",
+  "format": 2,
+  "kinds": {
+    "MAJOR_ROAD": 0,
+    "MINOR_ROAD": 1,
+    "TRACK": 2,
+    "PATH": 3,
+    "NARROW_GAUGE": 4,
+    "RAIL": 5,
+    "FUNICULAR": 6,
+    "CABLE_CAR": 7,
+    "CHAIRLIFT": 8
+  },
+  "routes": {
+    "car": 137,
+    "train": 13
+  },
+  "elevated": 236,
+  "note": "Fragments sharing an endpoint are chained into continuous runs so trains and cable cars have a line to follow."
+}
