@@ -249,40 +249,72 @@ function slaloms(limit) {
   const cands = [];
   for (const c of chains(COURSE_KINDS)) {
     const len = runLength(c);
-    // Measured from the first batch: 3.7 km of gates flies in 67 s and 4.5 km
-    // in 87, so anything past about four kilometres cannot fit a bronze under
-    // the ninety-second cap and gets thrown away after being calibrated. Sizing
-    // the proposal to the cap up front is free; discovering it afterwards costs
-    // a calibration run per course.
-    if (len < 2100 || len > 4300) continue;
+    if (len < 2300 || len > 4300) continue;
     if (!c.every((q) => inBox(q.x, q.z))) continue;
-    const gates = resample(c, len / 4).slice(0, 5);
-    if (gates.length < 4) continue;
-    // Straightness: a course that doubles back on itself is not a course, and a
-    // dead-straight one is not a slalom either.
+    // Gates every five hundred metres or so, not every kilometre. At 85 m/s a
+    // kilometre is twelve seconds of holding a heading, which is what "these
+    // feel slow" means: the work has to be continuous or there is no course,
+    // just four rings with cruising in between.
+    const want = THREE.MathUtils.clamp(Math.round(len / 520), 6, 9);
+    const gates = resample(c, len / want).slice(0, want + 1);
+    if (gates.length < 6) continue;
     const end = Math.hypot(gates[gates.length - 1].x - gates[0].x, gates[gates.length - 1].z - gates[0].z);
     const wiggle = end / len;
-    if (wiggle < 0.45 || wiggle > 0.97) continue;
-    let relief = 0;
+    if (wiggle < 0.42 || wiggle > 0.96) continue;
+
+    // A SMOOTHED ground profile, and one height above it.
+    //
+    // Taking each gate's clearance off its own local peak — which is what this
+    // did — makes the course a vertical zigzag: measured on the Wailuku run, the
+    // centres jumped 185 m between gates 880 m apart inside a 110 m radius, so
+    // no line an aeroplane can fly passes through them and the gates simply do
+    // not register. That was reported as a bug and it was this.
+    const ground = gates.map((q) => hf.heightAt(q.x, q.z));
+    const smooth = ground.map((_, i) => {
+      let sum = 0;
+      let n = 0;
+      for (let k = Math.max(0, i - 2); k <= Math.min(ground.length - 1, i + 2); k++) {
+        sum += ground[k];
+        n++;
+      }
+      return sum / n;
+    });
+
     let ok = true;
+    let confine = 0;
     const built = [];
-    for (const q of gates) {
-      const g = hf.heightAt(q.x, q.z);
-      const peak = peakNear(q.x, q.z, 320);
-      const roof = roofNear(q.x, q.z, 260);
-      // Clear the local ground AND anything standing on it.
-      const agl = Math.max(180, peak - g + 120, roof > -Infinity ? roof - g + 110 : 0);
-      if (agl > 900) ok = false;
-      relief = Math.max(relief, peak - g);
-      built.push({ ...q, agl: Math.round(agl / 10) * 10 });
+    let prevY = null;
+    for (let i = 0; i < gates.length; i++) {
+      const q = gates[i];
+      // Low. A hundred and ten metres over the valley floor is a course you fly
+      // IN the terrain; three hundred above the ridge beside it is sightseeing.
+      let agl = 110 + (smooth[i] - ground[i]);
+      const peak = peakNear(q.x, q.z, 150);
+      const roof = roofNear(q.x, q.z, 130);
+      agl = Math.max(agl, peak - ground[i] + 45, roof > -Infinity ? roof - ground[i] + 55 : 0);
+      // If clearing what is actually there needs more than this, the line is not
+      // flyable low and the whole course goes rather than one gate being lifted.
+      if (agl > 240) { ok = false; break; }
+      const y = ground[i] + agl;
+      if (prevY != null && Math.abs(y - prevY) > 70) { ok = false; break; }
+      prevY = y;
+      // How hemmed in it is — which is the whole of what makes a slalom a
+      // slalom. A gorge scores; an open road does not.
+      // Terrain OR rooftops. A slalom is hemmed in by whatever is standing
+      // beside it, and on a map with no hills that is the buildings — without
+      // this, flat Chicago proposed nothing at all while having some of the best
+      // canyons in the game.
+      const wall = Math.max(peakNear(q.x, q.z, 600), roofNear(q.x, q.z, 420));
+      confine = Math.max(confine, wall - ground[i]);
+      built.push({ ...q, agl: Math.round(agl / 5) * 5 });
     }
-    if (!ok) continue;
-    // Something has to be near it, or it is a course through nowhere.
+    if (!ok || built.length < 6) continue;
+    if (confine < 120) continue;
     const near = world.places.reduce(
       (best, pl) => Math.min(best, Math.hypot(pl.x - gates[0].x, pl.z - gates[0].z)),
       Infinity
     );
-    cands.push({ gates: built, len, relief, near, score: relief * 2 + len * 0.05 - near * 0.04 });
+    cands.push({ gates: built, len, relief: confine, near, score: confine * 3 - near * 0.03 });
   }
   cands.sort((a, b) => b.score - a.score);
   const used = [...EXISTING];
@@ -579,7 +611,7 @@ for (const c of slaloms(WANT.slalom)) {
     gates: c.gates.map((q, i) => ({
       name: `Gate ${i + 1}`,
       ...toLLObj(q, q.agl),
-      radius: 110,
+      radius: 85,
     })),
   });
 }
