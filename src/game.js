@@ -490,6 +490,75 @@ export class Game {
     }
   }
 
+  /**
+   * Open the full map. Freezes the sim, like the pause card and the briefing.
+   *
+   * The minimap is a three-kilometre window on a region up to forty-four across,
+   * which is the right window for flying and the wrong one for deciding where to
+   * go. This is the other half of that: north up, the whole box, everything you
+   * have found on it, and a tap anywhere is a journey.
+   */
+  openMap() {
+    if (this.state !== 'flying' && this.state !== 'paused') return;
+    this._mapReturn = this.state;
+    this.state = 'map';
+    this.controls.setVisible(false);
+    const canvas = this.hud.showMap(this.region.name);
+    this._mapHit = this.minimap.drawFull(canvas, {
+      position: this.glider.position,
+      headingDeg: this.glider.headingDeg,
+      discovered: this.progress.discovered,
+      progress: `${this.progress.discovered.length} of ${this.world.places.length} found`,
+    });
+  }
+
+  closeMap() {
+    if (this.state !== 'map') return;
+    this.hud.hideMap();
+    this.state = this._mapReturn ?? 'flying';
+    if (this.state === 'flying') this.controls.setVisible(true);
+  }
+
+  /**
+   * Tapped a point on the map. Go there.
+   *
+   * Deliberately NOT allowed to carry a challenge with it: a run is a line flown
+   * from a fixed start and a task you could teleport through is not a task. So
+   * this abandons whatever was live, the same way flying on does, and says so.
+   * Free flight over a forty-kilometre map is exactly where it earns its keep.
+   *
+   * Arrives at 900 m over the ground rather than at the height you left, because
+   * the interesting reason to jump somewhere is to look at it, and 900 m clears
+   * every roof on either city map and most of what is standing on the others.
+   */
+  mapTo(px, py) {
+    if (this.state !== 'map' || !this._mapHit) return;
+    const { x, z } = this._mapHit(px, py);
+    const lim = this.hf.halfSize - 900;
+    const cx = THREE.MathUtils.clamp(x, -lim, lim);
+    const cz = THREE.MathUtils.clamp(z, -lim, lim);
+    const ground = this.hf.heightAt(cx, cz);
+    const had = this.challenges.active?.def ?? null;
+
+    this.closeMap();
+    this.state = 'flying';
+    this.controls.setVisible(true);
+    this.wreck.end();
+    this.challenges.forget();
+    this.ghost.clear();
+    this.guns.clear();
+    this.secrets.reset();
+    this.glider.reset(
+      this._v.set(cx, ground + 900, cz),
+      this.glider.headingDeg,
+      this.spec.trimSpeed * 1.09
+    );
+    this._prevPos.copy(this.glider.position);
+    this.#placeCamera(true);
+    this.#surveyAir();
+    this.hud.toast(had ? `Moved — <b>${had.name}</b> abandoned` : 'Moved');
+  }
+
   cycleCamera() {
     this.cameraMode = (this.cameraMode + 1) % CAMERA_MODES.length;
     this.hud.toast(`Camera: ${CAMERA_MODES[this.cameraMode]}`);

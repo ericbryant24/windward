@@ -281,6 +281,12 @@ async function boot() {
       case 'pause':
         game.togglePause();
         break;
+      case 'map':
+        game.openMap();
+        break;
+      case 'map-close':
+        game.closeMap();
+        break;
       case 'menu':
         game.toMenu();
         break;
@@ -348,10 +354,25 @@ async function boot() {
     }
   };
 
+  // Tapping the map is not a data-action button — it is a coordinate, so it
+  // needs the click position rather than the element.
+  hud.mapCanvas.addEventListener('pointerdown', (e) => {
+    const r = hud.mapCanvas.getBoundingClientRect();
+    game.mapTo(e.clientX - r.left, e.clientY - r.top);
+  });
+
   addEventListener('keydown', (e) => {
     // A briefing owns the keyboard while it is up: the two things worth doing
     // are go and don't, and both are one key. Space as well as Enter because
     // Space is already the trigger and the hand is on it.
+    if (game.state === 'map') {
+      if (e.code === 'Escape' || e.code === 'KeyM') game.closeMap();
+      return;
+    }
+    if (e.code === 'KeyM') {
+      game.openMap();
+      return;
+    }
     if (game.state === 'briefing') {
       if (e.code === 'Enter' || e.code === 'Space') {
         e.preventDefault();

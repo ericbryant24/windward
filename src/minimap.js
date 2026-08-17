@@ -365,6 +365,119 @@ export class Minimap {
   }
 
   // -------------------------------------------------------------- draw ---
+  /**
+   * The whole region, north up, at whatever size it is given.
+   *
+   * A separate method from #draw rather than a mode of it, because almost
+   * nothing they do is shared: the round map is a rotating window a few
+   * kilometres across with a rim to clamp things to, and this is the entire
+   * baked plan with no rotation, no clamping and no glide ring. What they DO
+   * share is this.ground, which is the expensive part and is baked once.
+   *
+   * @returns {(x:number, y:number) => {x:number, z:number}} the inverse, so a
+   *   click on the canvas can be turned back into a place on the map.
+   */
+  drawFull(canvas, { position, headingDeg, discovered = [], progress = null }) {
+    const size = canvas.clientWidth;
+    if (!size) return () => ({ x: 0, z: 0 });
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const pixels = Math.round(size * dpr);
+    if (canvas.width !== pixels) canvas.width = canvas.height = pixels;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(pixels / size, 0, 0, pixels / size, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+
+    const half = this.half;
+    const mpp = (half * 2) / size; // metres per pixel, both axes
+    const at = (x, z) => ({ x: (x + half) / mpp, y: (z + half) / mpp });
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this.ground, 0, 0, size, size);
+
+    // The flyable box: outside this the game pushes you back, so the map should
+    // not invite a tap out there.
+    const edge = 900 / mpp;
+    ctx.strokeStyle = 'rgba(255,120,90,0.35)';
+    ctx.setLineDash([5, 5]);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(edge, edge, size - edge * 2, size - edge * 2);
+    ctx.setLineDash([]);
+
+    // Named places you have actually found. An undiscovered one stays off the
+    // map — the whole point of src/secrets.js is that the map does not give
+    // things away, and a plan view that lists everything would.
+    ctx.font = '600 10px ui-rounded, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    for (const p of this.world.places) {
+      if (!discovered.includes(p.name)) continue;
+      const q = at(p.x, p.z);
+      ctx.fillStyle = 'rgba(220,236,250,0.75)';
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(220,236,250,0.62)';
+      ctx.fillText(p.name, q.x, q.y - 5);
+    }
+
+    // Challenge markers that are standing in the world, with the medal on them.
+    for (const m of this.challenges.markers) {
+      if (!m.mesh.visible) continue;
+      const q = at(m.position.x, m.position.z);
+      const medal = this.challenges.medalOf(m.def);
+      ctx.fillStyle = ['rgba(150,190,220,0.85)', '#b06f3c', '#e2ecf5', '#ffcf70'][medal];
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(8,16,26,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(235,245,255,0.9)';
+      ctx.fillText(m.def.name, q.x, q.y - 8);
+    }
+
+    // Where you are, pointed where you are pointed.
+    const me = at(position.x, position.z);
+    ctx.save();
+    ctx.translate(me.x, me.y);
+    ctx.rotate(THREE.MathUtils.degToRad(headingDeg ?? 0));
+    ctx.fillStyle = '#61d2ff';
+    ctx.strokeStyle = 'rgba(4,10,18,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(5.5, 7);
+    ctx.lineTo(0, 4);
+    ctx.lineTo(-5.5, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // North, and a scale bar, because a plan view without one is a picture.
+    ctx.fillStyle = 'rgba(226,240,252,0.8)';
+    ctx.font = '600 11px ui-rounded, system-ui, sans-serif';
+    ctx.fillText('N', size / 2, 14);
+    const barM = half >= 20000 ? 10000 : 5000;
+    const barPx = barM / mpp;
+    const bx = 14;
+    const by = size - 16;
+    ctx.strokeStyle = 'rgba(226,240,252,0.75)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + barPx, by);
+    ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.fillText(`${barM / 1000} km`, bx, by - 6);
+    if (progress) {
+      ctx.textAlign = 'right';
+      ctx.fillText(progress, size - 14, by);
+    }
+    ctx.textAlign = 'center';
+
+    return (px, py) => ({ x: px * mpp - half, z: py * mpp - half });
+  }
+
   #draw({ position, headingDeg, bestLD, objective, discovered }) {
     const cv = this.canvas;
     const size = cv.clientWidth;

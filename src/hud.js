@@ -21,6 +21,8 @@ export class Hud {
     this.flight = this.el('.flight');
     this.toastArea = this.el('.toasts');
     this.results = this.el('.results');
+    this.mapview = this.el('.mapview');
+    this.mapCanvas = this.el('.mapview-canvas');
 
     this.alt = this.el('[data-alt]');
     this.agl = this.el('[data-agl]');
@@ -359,6 +361,20 @@ export class Hud {
     this.el('.results-actions').innerHTML = buttons
       .map((b) => `<button class="btn ${b.primary ? 'primary' : ''}" data-action="${b.action}">${b.label}</button>`)
       .join('');
+  }
+
+  /**
+   * The full map. Returns the canvas so the game can draw the region into it —
+   * the HUD owns the panel, src/minimap.js owns what a map looks like.
+   */
+  showMap(name) {
+    this.el('[data-mapname]').textContent = name;
+    this.mapview.classList.add('open');
+    return this.mapCanvas;
+  }
+
+  hideMap() {
+    this.mapview.classList.remove('open');
   }
 
   hideResults() {
@@ -731,7 +747,7 @@ const TEMPLATE = /* html */ `
     <em class="netto" data-netto>air 0.0</em>
   </div>
 
-  <canvas class="minimap"></canvas>
+  <canvas class="minimap" data-action="map" title="Open the map"></canvas>
 
   <div class="task">
     <span data-taskname>—</span>
@@ -749,6 +765,19 @@ const TEMPLATE = /* html */ `
 </div>
 
 <div class="toasts"></div>
+
+<div class="mapview">
+  <div class="mapview-card">
+    <div class="mapview-head">
+      <span data-mapname>Map</span>
+      <b>Tap anywhere to fly there</b>
+    </div>
+    <canvas class="mapview-canvas"></canvas>
+    <div class="mapview-actions">
+      <button class="btn" data-action="map-close">Close</button>
+    </div>
+  </div>
+</div>
 
 <div class="results">
   <div class="results-card">

@@ -310,6 +310,75 @@ await step('a challenge briefs first, holds everything still, and starts on the 
   console.log(`        ${out.id}: card up, ship still, ${out.ran.toFixed(1)} s on the clock a second after Start`);
 });
 
+await step('the minimap opens a map, and a tap on it is a journey', async () => {
+  const out = await page.evaluate(() => {
+    const g = window.WINDWARD.game;
+    g.startFlight();
+    // Something to look at: a found place and a live challenge, both of which
+    // the map draws and neither of which it should draw for the unfound.
+    g.progress.discovered.push(g.world.places[0].name);
+    const before = { x: g.glider.position.x, z: g.glider.position.z };
+
+    // Opening it freezes the sim, like the pause card and the briefing.
+    g.openMap();
+    const opened = { phase: g.state, card: !!document.querySelector('.mapview.open') };
+    const canvas = document.querySelector('.mapview-canvas');
+    const box = canvas.getBoundingClientRect();
+    const closeShown = (() => {
+      const b = document.querySelector('[data-action="map-close"]');
+      const r = b?.getBoundingClientRect();
+      return !!r && r.bottom <= innerHeight + 1 && r.width > 0;
+    })();
+    const still = (() => {
+      const y0 = g.glider.position.y;
+      for (let i = 0; i < 240; i++) g.update(1 / 120);
+      return Math.abs(g.glider.position.y - y0);
+    })();
+
+    // A corner of the map is a corner of the region: tap near one and the
+    // aeroplane should be a long way from where it started.
+    g.mapTo(box.width * 0.12, box.height * 0.12);
+    const after = { x: g.glider.position.x, z: g.glider.position.z };
+    const moved = Math.hypot(after.x - before.x, after.z - before.z);
+    const agl = g.glider.position.y - g.hf.heightAt(after.x, after.z);
+    const lim = g.hf.halfSize - 900;
+    const inBox = Math.abs(after.x) <= lim && Math.abs(after.z) <= lim;
+
+    // And it must not carry a challenge through the jump.
+    g.startChallenge(g.challenges.defs[0]);
+    g.beginBriefed();
+    const armed = !!g.challenges.active;
+    g.openMap();
+    g.mapTo(box.width * 0.8, box.height * 0.8);
+    const abandoned = !g.challenges.active;
+
+    return {
+      ...opened,
+      closeShown,
+      still,
+      moved,
+      agl,
+      inBox,
+      armed,
+      abandoned,
+      phaseAfter: g.state,
+      closedCard: !document.querySelector('.mapview.open'),
+    };
+  });
+  if (!out.card) throw new Error('the map did not open');
+  if (out.phase !== 'map') throw new Error(`opening the map left the game in "${out.phase}"`);
+  if (!out.closeShown) throw new Error('the Close button is off the bottom of the screen');
+  if (out.still > 0.01) throw new Error(`the ship moved ${out.still.toFixed(2)} m while the map was open`);
+  if (!(out.moved > 3000)) throw new Error(`a tap near the corner moved only ${Math.round(out.moved)} m`);
+  if (!out.inBox) throw new Error('the map put the ship outside the flyable box');
+  if (!(out.agl > 400 && out.agl < 1400)) throw new Error(`arrived at ${Math.round(out.agl)} m agl`);
+  if (!out.armed) throw new Error('the test failed to arm a challenge');
+  if (!out.abandoned) throw new Error('a challenge survived being teleported through — that is a free medal');
+  if (!out.closedCard) throw new Error('the map stayed open after a tap');
+  if (out.phaseAfter !== 'flying') throw new Error(`after the jump the game is in "${out.phaseAfter}"`);
+  console.log(`        moved ${(out.moved / 1000).toFixed(1)} km, arrived ${Math.round(out.agl)} m agl, run abandoned`);
+});
+
 await step('a secret is earned by doing the thing, and never signposted', async () => {
   const out = await page.evaluate(async () => {
     const { SECRETS } = await import('/src/regions.js');
