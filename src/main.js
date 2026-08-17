@@ -132,7 +132,11 @@ async function boot() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY[qualityName].pixelRatio));
   resize();
 
-  const terrain = new Terrain(renderer, hf, sky, { ...QUALITY[qualityName], urban: region.palette === 'city' });
+  const terrain = new Terrain(renderer, hf, sky, {
+    ...QUALITY[qualityName],
+    urban: region.palette === 'city',
+    snowLine: region.snowLine,
+  });
   scene.add(terrain.group);
   await frame();
 

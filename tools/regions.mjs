@@ -113,6 +113,87 @@ export const REGIONS = {
       simplifyTo: 24,
     },
   },
+
+  flam: {
+    id: 'flam',
+    name: 'Flåm',
+    subtitle: 'Aurland, Sogn og Fjordane, Norway',
+    // The box is drawn to hold four things: Flåm at the head of the
+    // Aurlandsfjord, Myrdal at the top of the railway, Gudvangen at the head of
+    // the Nærøyfjord, and the Lærdal end of the tunnel thirty kilometres
+    // north-east. The tunnel is the whole reason it reaches that far.
+    centerLat: 60.904,
+    centerLon: 7.1365,
+    halfSize: 22000, // 44 x 44 km
+    size: 3072, // 14.3 m a sample
+    // 9.3 m a pixel at this latitude, so the source is finer than the field it
+    // is being averaged into. Zoom 14 would be four times the tiles for detail
+    // the field cannot hold.
+    sourceZoom: 13,
+    water: {
+      mode: 'sea',
+      name: 'Aurlandsfjord',
+      level: 0,
+      // Norway has no land below sea level, so a threshold at a metre is the
+      // coastline and nothing else. The fjord is 1,300 m deep in places and the
+      // DEM knows it.
+      cutoff: 1.0,
+    },
+    vegetation: {
+      // Birch and pine up to about 900 m on these walls, and surveyed, like
+      // everywhere else that has a survey.
+      mode: 'osm',
+      tags: ['landuse=forest', 'natural=wood', 'natural=scrub'],
+    },
+    buildings: {
+      // Hamlets and farmsteads. Same floor as the Alps — the barns are what
+      // make a Norwegian valley floor look lived in.
+      minArea: 14,
+      simplifyTo: 24,
+    },
+  },
+
+  maui: {
+    id: 'maui',
+    name: 'Maui',
+    subtitle: 'Hawaii, United States',
+    // Sixty kilometres, which is what it takes to hold Lahaina on the west
+    // shore and the Hana road as far as Keānae on the east, with Haleakalā and
+    // the whole West Maui massif between them. Hana town itself is seventeen
+    // kilometres off the east edge and stays there; the good half of that road
+    // is the half in the box.
+    centerLat: 20.8,
+    centerLon: -156.4,
+    halfSize: 30000, // 60 x 60 km
+    size: 3072, // 19.5 m a sample
+    // 8.9 m a pixel here, a clean 2:1 into the field.
+    sourceZoom: 14,
+    water: {
+      mode: 'sea',
+      name: 'Pacific',
+      level: 0,
+      cutoff: 1.0,
+    },
+    vegetation: {
+      // Rainforest on the windward slopes, cane and pasture on the isthmus,
+      // bare lava above the tree line on Haleakalā. All three are surveyed and
+      // the difference between them is most of what the island looks like.
+      mode: 'osm',
+      tags: [
+        'landuse=forest',
+        'natural=wood',
+        'natural=scrub',
+        'landuse=meadow',
+        'leisure=park',
+        'landuse=orchard',
+        'landuse=farmland',
+      ],
+    },
+    buildings: {
+      minArea: 30,
+      simplifyTo: 24,
+    },
+  },
 };
 
 export function region(name) {

@@ -359,6 +359,34 @@ async function main() {
       });
       console.log(`  ${s.name}: ${filled} cells`);
     }
+  } else if (cfg.mode === 'sea') {
+    // An island, or a fjord. The sea is not a basin to be found — it is
+    // everything at or below zero, and the terrarium DEM carries real
+    // bathymetry, so a threshold draws a coastline more accurate than any
+    // outline could. One pass, no stack.
+    //
+    // Flood-filling this would work and would be a mistake: the ocean round
+    // Maui is four million cells and the fill pushes four neighbours per pop,
+    // so the frontier peaks in the millions of entries for an answer a single
+    // comparison per cell already gives.
+    let filled = 0;
+    for (let p = 0; p < heights.length; p++) {
+      if (heights[p] > cfg.cutoff) continue;
+      water[p] = 255;
+      filled++;
+      // Sink the bed so the shader's depth ramp has somewhere to go, but leave
+      // the real bathymetry alone where it is already deeper — the drop-off
+      // outside a fjord mouth is worth seeing.
+      heights[p] = Math.min(heights[p], cfg.level - 4.0);
+    }
+    lakes.push({
+      name: cfg.name,
+      level: cfg.level,
+      cells: filled,
+      // One surface over the whole region. Sea level is sea level everywhere.
+      bounds: { minX: -halfSize, maxX: halfSize, minZ: -halfSize, maxZ: halfSize },
+    });
+    console.log(`  ${cfg.name}: ${filled} cells (${((100 * filled) / water.length).toFixed(1)}% of the map)`);
   } else if (cfg.mode === 'cutoff+osm') {
     // Flat city: the lakefront is landfill and the river sits at the same
     // height as the streets beside it, so neither can be found by looking at

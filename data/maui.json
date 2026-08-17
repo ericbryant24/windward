@@ -1,0 +1,48 @@
+{
+  "generator": "tools/bake-terrain.mjs",
+  "region": "maui",
+  "name": "Maui",
+  "source": "AWS Terrain Tiles (terrarium) — see ATTRIBUTION.md",
+  "sourceZoom": 14,
+  "centerLat": 20.8,
+  "centerLon": -156.4,
+  "halfSize": 30000,
+  "size": 3072,
+  "step": 19.53760989905568,
+  "encoding": {
+    "bias": 512,
+    "scale": 2,
+    "waterChannel": "b"
+  },
+  "minHeight": -4949.8,
+  "maxHeight": 3052.1,
+  "lakes": [
+    {
+      "name": "Pacific",
+      "level": 0,
+      "cells": 4731612,
+      "bounds": {
+        "minX": -30000,
+        "maxX": 30000,
+        "minZ": -30000,
+        "maxZ": 30000
+      }
+    }
+  ],
+  "vegetation": {
+    "mode": "osm",
+    "cells": 1945059,
+    "tags": [
+      "landuse=forest",
+      "natural=wood",
+      "natural=scrub",
+      "landuse=meadow",
+      "leisure=park",
+      "landuse=orchard",
+      "landuse=farmland"
+    ],
+    "size": 1536,
+    "file": "data/maui-vegetation.png"
+  },
+  "sha256": "46d6e7f8dbfea795"
+}

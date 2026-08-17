@@ -248,7 +248,19 @@ export class Minimap {
       }
     }
 
-    const lo = hf.minHeight;
+    // The ramp spans the LAND, not the sea bed under it.
+    //
+    // hf.minHeight is the whole field's minimum, and off Maui that is five
+    // thousand metres of real Pacific bathymetry — which would map the entire
+    // island, sea level to the 3,052 m summit, into the top third of the ramp
+    // and render Haleakala as a faint bump. Water is painted flat a few lines
+    // below and never reads the ramp at all, so the sea has no business setting
+    // its floor.
+    let lo = Infinity;
+    for (let p = 0; p < height.length; p++) {
+      if (!water[p] && height[p] < lo) lo = height[p];
+    }
+    if (!isFinite(lo)) lo = hf.minHeight;
     const hi = hf.maxHeight;
     // How much of the ramp and the hill shading this region has earned. Three
     // and a half kilometres of Oberland gets all of it; thirty-five metres of

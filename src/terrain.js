@@ -27,6 +27,13 @@ export class Terrain {
     this.lightmapSize = quality.lightmapSize ?? 1024;
     this.detail = quality.detail ?? 1;
     this.urban = quality.urban ?? false;
+    // Where permanent snow starts, in metres. A region thing, not a quality
+    // thing: 2,760 is the Bernese Oberland and it is wrong by a kilometre in
+    // both directions elsewhere. Norway at 61 degrees holds snow from about
+    // 1,500 m; Haleakala is bare cinder to its 3,055 m summit and putting an
+    // icecap on a Hawaiian volcano would be the single most visible error on
+    // that map.
+    this.snowLine = quality.snowLine ?? 2760;
 
     this.group = new THREE.Group();
     this.levels = this.maxDepth + 1;
@@ -319,7 +326,7 @@ export class Terrain {
         uSunRadiance: { value: new THREE.Vector3(20, 19, 18) },
         uSkyAmbient: { value: new THREE.Vector3(0.6, 0.8, 1.2) },
         uUrban: { value: this.urban ? 1 : 0 },
-        uSnowLine: { value: 2760 },
+        uSnowLine: { value: this.snowLine },
         uTreeLine: { value: 1950 },
         uDetail: { value: this.detail },
         uTime: { value: 0 },
