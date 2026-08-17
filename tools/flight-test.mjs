@@ -532,18 +532,26 @@ for (const spec of FLEET) {
   const vs = (t.position.y - y0) / 6;
   // Geometry says g*tan(bank)/V for a level turn. Anything much under half of
   // that is a ship that tilts rather than turns.
-  const want = (THREE.MathUtils.radToDeg(9.80665 * Math.tan(t.bankRad) / Math.max(t.airspeed, 1)));
-  const ok = Math.abs(rate) > Math.abs(want) * 0.5 && vs > -14;
+  const want = THREE.MathUtils.radToDeg((9.80665 * Math.tan(t.bankRad)) / Math.max(t.airspeed, 1));
+  // How steeply it goes DOWN while doing it, as an angle rather than a rate.
+  // A sink rate is not comparable across the fleet: the same glide angle is
+  // 5 m/s on a trainer at 30 and 20 m/s on the monoplane at 85, and holding a
+  // 300 km/h aerobatic ship to a sailplane's sink figure is not a bug report,
+  // it is a different aeroplane. Seventeen degrees is the bar — enough to catch
+  // the spiral dive this test was written for (that was 17.4) without
+  // demanding a glider's turn out of the fastest thing in the fleet.
+  const path = THREE.MathUtils.radToDeg(Math.atan2(-vs, Math.max(t.airspeed, 1)));
+  const ok = Math.abs(rate) > Math.abs(want) * 0.5 && path < 17;
   if (!ok) {
     problems.push(
       `${spec.name}: a ${t.bankDeg.toFixed(0)} deg bank on stick alone turned ${rate.toFixed(1)} deg/s ` +
-        `against ${want.toFixed(1)} geometric, sinking ${vs.toFixed(1)} m/s — it tilts rather than turns`
+        `against ${want.toFixed(1)} geometric, going down at ${path.toFixed(1)} deg — it tilts rather than turns`
     );
   }
   console.log(
     `  ${ok ? 'ok  ' : 'FAIL'} ${spec.name.padEnd(9)} bank ${t.bankDeg.toFixed(0).padStart(3)} deg  ` +
       `turn ${rate.toFixed(1).padStart(5)} deg/s (geometry ${want.toFixed(1).padStart(5)})  ` +
-      `vs ${vs.toFixed(1).padStart(6)} m/s  V ${t.airspeed.toFixed(0)}`
+      `down ${path.toFixed(1).padStart(4)} deg  V ${t.airspeed.toFixed(0)}`
   );
 }
 
