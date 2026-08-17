@@ -249,26 +249,28 @@ function slaloms(limit) {
   const cands = [];
   for (const c of chains(COURSE_KINDS)) {
     const len = runLength(c);
-    if (len < 2300 || len > 4300) continue;
+    // SHORT. Two kilometres, not four.
+    //
+    // This is what unblocks everything else. Tight and low means slow, and the
+    // last batch generated genuinely good courses and then threw twenty-four of
+    // thirty away because their bronze would not fit under the ninety-second
+    // cap. A two-kilometre course flown hard comes in around forty-five seconds,
+    // which leaves the whole ladder room — so the course can be as mean as the
+    // ground allows without the clock arguing.
+    if (len < 1400 || len > 3000) continue;
     if (!c.every((q) => inBox(q.x, q.z))) continue;
-    // Gates every five hundred metres or so, not every kilometre. At 85 m/s a
-    // kilometre is twelve seconds of holding a heading, which is what "these
-    // feel slow" means: the work has to be continuous or there is no course,
-    // just four rings with cruising in between.
-    const want = THREE.MathUtils.clamp(Math.round(len / 520), 6, 9);
+    // MORE GATES. One every three hundred metres is three and a half seconds
+    // apart at cruise: there is no stretch of holding a heading anywhere in it.
+    const want = THREE.MathUtils.clamp(Math.round(len / 300), 6, 10);
     const gates = resample(c, len / want).slice(0, want + 1);
     if (gates.length < 6) continue;
     const end = Math.hypot(gates[gates.length - 1].x - gates[0].x, gates[gates.length - 1].z - gates[0].z);
     const wiggle = end / len;
-    if (wiggle < 0.42 || wiggle > 0.96) continue;
+    if (wiggle < 0.38 || wiggle > 0.94) continue;
 
-    // A SMOOTHED ground profile, and one height above it.
-    //
-    // Taking each gate's clearance off its own local peak — which is what this
-    // did — makes the course a vertical zigzag: measured on the Wailuku run, the
-    // centres jumped 185 m between gates 880 m apart inside a 110 m radius, so
-    // no line an aeroplane can fly passes through them and the gates simply do
-    // not register. That was reported as a bug and it was this.
+    // A smoothed ground profile, and one height above it — see the note this
+    // replaced: clearance taken per-gate off its own local peak made a vertical
+    // zigzag no line could fly through, which is why gates stopped registering.
     const ground = gates.map((q) => hf.heightAt(q.x, q.z));
     const smooth = ground.map((_, i) => {
       let sum = 0;
@@ -282,46 +284,70 @@ function slaloms(limit) {
 
     let ok = true;
     let confine = 0;
+    let worstTurn = 0;
     const built = [];
     let prevY = null;
     for (let i = 0; i < gates.length; i++) {
       const q = gates[i];
-      // Low. A hundred and ten metres over the valley floor is a course you fly
-      // IN the terrain; three hundred above the ridge beside it is sightseeing.
-      let agl = 110 + (smooth[i] - ground[i]);
-      const peak = peakNear(q.x, q.z, 150);
-      const roof = roofNear(q.x, q.z, 130);
-      agl = Math.max(agl, peak - ground[i] + 45, roof > -Infinity ? roof - ground[i] + 55 : 0);
-      // If clearing what is actually there needs more than this, the line is not
-      // flyable low and the whole course goes rather than one gate being lifted.
-      if (agl > 240) { ok = false; break; }
+      // HARDER. Eighty-five metres over the floor, not a hundred and ten.
+      let agl = 85 + (smooth[i] - ground[i]);
+      const peak = peakNear(q.x, q.z, 130);
+      const roof = roofNear(q.x, q.z, 120);
+      agl = Math.max(agl, peak - ground[i] + 40, roof > -Infinity ? roof - ground[i] + 50 : 0);
+      if (agl > 210) { ok = false; break; }
       const y = ground[i] + agl;
-      if (prevY != null && Math.abs(y - prevY) > 70) { ok = false; break; }
+      if (prevY != null && Math.abs(y - prevY) > 55) { ok = false; break; }
       prevY = y;
-      // How hemmed in it is — which is the whole of what makes a slalom a
-      // slalom. A gorge scores; an open road does not.
-      // Terrain OR rooftops. A slalom is hemmed in by whatever is standing
-      // beside it, and on a map with no hills that is the buildings — without
-      // this, flat Chicago proposed nothing at all while having some of the best
-      // canyons in the game.
+
+      // Can the aeroplane actually get from the last gate to this one to the
+      // next? At 85 m/s a sixty-degree bank turns inside about 425 m, and gates
+      // three hundred metres apart with a sharp kink between them ask for less
+      // than that. The implied radius of the corner is halfLeg / tan(theta/2).
+      //
+      // The bar is 240 m, not 425, because you are allowed to SLOW DOWN for a
+      // corner: at 60 m/s the same sixty-degree bank turns inside 212 m. Having
+      // to come off the speed for a kink and get it back on the straight is
+      // exactly the kind of hard this is meant to be. At 360 the guard rejected
+      // almost every road on four maps — nine proposals in total — because real
+      // roads bend harder than that between points three hundred metres apart.
+      if (i > 0 && i < gates.length - 1) {
+        const a1 = Math.atan2(q.x - gates[i - 1].x, q.z - gates[i - 1].z);
+        const a2 = Math.atan2(gates[i + 1].x - q.x, gates[i + 1].z - q.z);
+        let turn = Math.abs(((a2 - a1 + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        worstTurn = Math.max(worstTurn, turn);
+        const legIn = Math.hypot(q.x - gates[i - 1].x, q.z - gates[i - 1].z);
+        const legOut = Math.hypot(gates[i + 1].x - q.x, gates[i + 1].z - q.z);
+        const halfLeg = Math.min(legIn, legOut) / 2;
+        const need = turn > 0.02 ? halfLeg / Math.tan(turn / 2) : Infinity;
+        if (need < 240) { ok = false; break; }
+      }
+
       const wall = Math.max(peakNear(q.x, q.z, 600), roofNear(q.x, q.z, 420));
       confine = Math.max(confine, wall - ground[i]);
       built.push({ ...q, agl: Math.round(agl / 5) * 5 });
     }
     if (!ok || built.length < 6) continue;
-    if (confine < 120) continue;
+    if (confine < 130) continue;
     const near = world.places.reduce(
       (best, pl) => Math.min(best, Math.hypot(pl.x - gates[0].x, pl.z - gates[0].z)),
       Infinity
     );
-    cands.push({ gates: built, len, relief: confine, near, score: confine * 3 - near * 0.03 });
+    // Prefer hemmed-in AND kinked: a straight line between two walls is a
+    // corridor, and a slalom is what you do when the corridor bends.
+    cands.push({
+      gates: built,
+      len,
+      relief: confine,
+      near,
+      score: confine * 3 + worstTurn * 900 - near * 0.03,
+    });
   }
   cands.sort((a, b) => b.score - a.score);
   const used = [...EXISTING];
   const out = [];
   for (const c of cands) {
     if (out.length >= limit) break;
-    if (!spread(used, c.gates[0].x, c.gates[0].z, 1500)) continue;
+    if (!spread(used, c.gates[0].x, c.gates[0].z, 1200)) continue;
     used.push(c.gates[0]);
     out.push(c);
   }
@@ -604,14 +630,14 @@ for (const c of slaloms(WANT.slalom)) {
     name: `${pl.name} Run`,
     where: `${c.gates.length} gates, ${(c.len / 1000).toFixed(1)} km`,
     blurb: `${c.gates.length} gates along ${(c.len / 1000).toFixed(1)} km of valley, ${Math.round(c.relief)} m of wall beside you.`,
-    marker: { ...toLLObj(c.gates[0], Math.round(c.gates[0].agl + 220)), heading: ((Math.round(bearing(c.gates[0], c.gates[1])) % 360) + 360) % 360 },
+    marker: { ...toLLObj(c.gates[0], Math.round(c.gates[0].agl + 130)), heading: ((Math.round(bearing(c.gates[0], c.gates[1])) % 360) + 360) % 360 },
     limit: 90,
     medals: [80, 68, 58],
     calibrate: true,
     gates: c.gates.map((q, i) => ({
       name: `Gate ${i + 1}`,
       ...toLLObj(q, q.agl),
-      radius: 85,
+      radius: 70,
     })),
   });
 }

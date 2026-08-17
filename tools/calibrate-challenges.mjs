@@ -120,16 +120,28 @@ const LADDER = { gold: 1.10, silver: 1.28, bronze: 1.52, limit: 2.05 };
 /**
  * How long a slalom is allowed to run, unless it says otherwise.
  *
- * Ninety seconds is a design belief, not a physical limit: a race you can hold
- * in your head is a race you can learn, and a five-minute one is a commute. The
- * cap is here so nobody ships a commute by accident.
+ * A race you can hold in your head is a race you can learn, and a five-minute
+ * one is a commute. The cap is here so nobody ships a commute by accident.
+ *
+ * It was ninety, and ninety was measurably the wrong number. The ladder puts
+ * bronze at 1.52x the best line, so a ninety-second cap actually said "no course
+ * whose best line takes more than fifty-nine seconds" — and it rejected forty-
+ * four generated courses across two batches for that, including ones flown in
+ * seventy-eight seconds. The complaint those batches were answering was that the
+ * courses were too EASY, and the cap was quietly enforcing easy: tight gates and
+ * hard corners cost time, so anything difficult failed a check meant to catch
+ * commutes.
+ *
+ * Two hundred, and the thing that actually reads as the challenge is the GOLD
+ * time — 60 to 150 s on these — not the fail limit, which exists so an
+ * unfinished run ends rather than to be difficult in itself.
  *
  * A challenge that means it opts out with `crossing: true`, and then its own
  * `limit` is the cap. Exactly one does — the Lærdal Tunnel is 24 km of road
  * under a mountain and the challenge is going over the top of it, which the
  * tool measures at 278 s. That is the content, not an oversight.
  */
-const SLALOM_CAP = 90;
+const SLALOM_CAP = 200;
 const capFor = (def) => (def.crossing ? def.limit : SLALOM_CAP);
 /**
  * The windowed three are quantities rather than clocks, and more is better, so

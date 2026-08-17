@@ -252,7 +252,7 @@ await step('every challenge is one of the five kinds, with a ladder that climbs'
       if (t.windowed && !(def.window > 0)) out.push(`${def.id}: no window`);
       // A challenge that declares itself a crossing sets its own cap; see the
       // note on SLALOM_CAP in tools/calibrate-challenges.mjs.
-      const cap = def.crossing ? 600 : 90;
+      const cap = def.crossing ? 600 : 200;
       if (!t.windowed && !(def.limit > 0 && def.limit <= cap)) out.push(`${def.id}: limit ${def.limit}`);
       if (!t.windowed && b >= def.limit) out.push(`${def.id}: bronze ${b} is not under the limit ${def.limit}`);
     }

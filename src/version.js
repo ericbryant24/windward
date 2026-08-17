@@ -11,5 +11,5 @@
  *
  * Bump VERSION and RELEASED when you ship something worth naming.
  */
-export const VERSION = '1.6.0';
+export const VERSION = '1.7.0';
 export const RELEASED = '2026-08-17';
