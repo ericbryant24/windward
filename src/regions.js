@@ -740,7 +740,13 @@ export const CHALLENGES = {
       needs: 4,
       marker: { lat: 46.5102, lon: 7.9071, agl: 200, heading: 71 },
       window: 60,
-      medals: [110, 155, 190],
+      // Re-cut when height runs became engine-off. With the lever open this was
+      // meaningless — full throttle and the stick back gains a thousand metres
+      // against a gold of 190 — and hung off what a soaring pilot could manage
+      // it was unreachable. Shut, the site surveys at 5.23 m/s of lift against
+      // the ship's 3.18 m/s of sink, so about 2 m/s net and 120 m in the window.
+      // Measured at 121.9. That is now a real number about reading the air.
+      medals: [65, 90, 110],
     },
     {
       // Down the Lütschine and out over the lakes, which is the one line on
@@ -968,7 +974,10 @@ export const CHALLENGES = {
       needs: 4,
       marker: { lat: 41.87, lon: -87.6169, agl: 150, heading: 156 },
       window: 60,
-      medals: [125, 175, 215],
+      // Engine-off now, like every height run — see the note on the Breithorn
+      // Wall. The lake-breeze convergence is weaker than an alpine face, so
+      // this is the harder of the two despite being over a city.
+      medals: [80, 110, 130],
     },
     {
       // Down the lakefront, where the convergence line runs. The flattest map
@@ -999,39 +1008,43 @@ export const CHALLENGES = {
       // are inside it. That is deliberate: the corridor decides whether the
       // clock runs and the buildings decide whether you live, and keeping those
       // two rules apart is what stops it being a tunnel with invisible walls.
-      id: 'river-level',
+      // Was a deck run down the Chicago river, and that was the wrong place for
+      // it. The channel through the Loop is 46 to 82 m of half-width with
+      // 230-to-260-metre towers standing on the bank, so any corridor wide
+      // enough for an aeroplane to hold reaches the buildings — and the version
+      // that "worked" only worked because a 110 m corridor let the pilot fly
+      // over the STREETS instead of the water. Snapping the path to the
+      // surveyed channel, narrowing it, raising the ceiling and cutting the
+      // dogleg all failed the same way: 48 lines, 48 structures. The map
+      // already has river-run down that same water, which is the honest way to
+      // fly it — a gate course, not a corridor.
+      //
+      // So: the lakefront, a kilometre offshore, where the design does work.
+      // Every point below is verified wet against the baked mask, there is
+      // nothing to hit for five kilometres, and the whole skyline is beside you
+      // the entire way. Same shape as the Aurlandsfjord and Pali coast runs.
+      id: 'shore-level',
       type: 'deck',
-      name: 'River Level',
-      where: 'The South Branch out to the lake',
-      blurb: 'Sixty seconds under forty metres, between the towers. Wolf Point is a right-angle at river level.',
-      needs: 1,
-      marker: { lat: 41.8706, lon: -87.635, agl: 55, heading: 346 },
+      name: 'Shore Level',
+      where: 'A kilometre off the lakefront, south to north',
+      blurb: 'Sixty seconds at forty metres over open water, with the whole skyline down your left side.',
+      needs: 4,
+      marker: { lat: 41.856, lon: -87.598, agl: 55, heading: 12 },
       window: 60,
       deck: {
         ceiling: 40,
-        width: 110,
+        width: 160,
         path: [
-          [41.8706, -87.635],
-          [41.8742, -87.6362],
-          [41.8778, -87.6378],
-          [41.8812, -87.6382],
-          [41.8845, -87.6386],
-          [41.887, -87.638],
-          [41.8875, -87.635],
-          [41.8875, -87.63],
-          [41.888, -87.627],
-          [41.8888, -87.624],
-          [41.8885, -87.619],
-          [41.889, -87.6155],
-          [41.8876, -87.6122],
+          [41.856, -87.598],
+          [41.866, -87.594],
+          [41.876, -87.591],
+          [41.886, -87.589],
+          [41.896, -87.59],
+          [41.906, -87.593],
+          [41.916, -87.596],
         ],
       },
-      // Measured at 43.3 s of the 60, and the winning line uses no boards at
-      // all — the opposite of Under the Falls. Sixty seconds down here is an
-      // energy problem: the air gives nothing back, the ship arrives with all
-      // it is ever going to have, and every joule spent on drag is a second
-      // short at the far end.
-      medals: [20, 30, 40],
+      medals: [30, 40, 50],
     },
     {
       // Moored out in the harbour off the Loop, which is the one large open

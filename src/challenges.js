@@ -37,6 +37,9 @@ const BEACON_HEIGHT = 460;
 
 export const MEDAL_NAMES = ['None', 'Bronze', 'Silver', 'Gold'];
 
+/** A height run only banks height below this much throttle. See #step. */
+export const SOARING_THROTTLE = 0.05;
+
 /** Bronze, silver, gold — and the unearned marker colour at index 0. */
 const MEDAL_TINTS = [
   { color: [0.05, 0.3, 0.45], emissive: [0.2, 0.8, 1.0] },
@@ -501,6 +504,11 @@ export class Challenges {
       // so the task is the same height whether you arrive high, arrive low, or
       // take the Retry button.
       run.startY = marker.position.y;
+      // Starts assumed to be soaring, so arriving with the lever already shut
+      // does not fire a note on the first frame.
+      run.on = true;
+      run.soaring = true;
+      run.flip = 0;
     } else if (def.type === 'distance') {
       run.from = marker.position.clone();
     } else if (def.type === 'gunnery') {
@@ -552,7 +560,7 @@ export class Challenges {
   }
 
   // -------------------------------------------------------------- loop ---
-  update(dt, position, prevPos, agl) {
+  update(dt, position, prevPos, agl, throttle = 0) {
     this.events.length = 0;
     this.spin += dt * 0.6;
     // About the hoop's own axis, so the ring stays across the course and only
@@ -566,7 +574,7 @@ export class Challenges {
     for (const m of this.beaconMaterials) m.uniforms.uPulse.value += dt * 2.6;
     for (const m of this.markers) if (m.field && m.mesh.visible) m.field.update(dt);
 
-    if (this.active) this.#step(dt, position, prevPos, agl);
+    if (this.active) this.#step(dt, position, prevPos, agl, throttle);
     else this.#checkMarkers(position, prevPos);
     return this.events;
   }
@@ -591,7 +599,7 @@ export class Challenges {
     }
   }
 
-  #step(dt, position, prevPos, agl) {
+  #step(dt, position, prevPos, agl, throttle) {
     const run = this.active;
     const def = run.def;
     run.elapsed += dt;
@@ -621,7 +629,33 @@ export class Challenges {
 
     // ---- the windowed three ------------------------------------------------
     if (def.type === 'height') {
-      run.value = position.y - run.startY;
+      // Height gained with the ENGINE SHUT, and the best you reached rather than
+      // where you happen to be when the window closes.
+      //
+      // "Climb" stopped being a task the day the game issued an aeroplane with a
+      // propeller: full throttle and the stick back gains a thousand metres in
+      // sixty seconds against a gold of 190, so both height challenges were
+      // either trivial or, if the ladder was hung off what the calibrator's
+      // soaring pilot could manage, unreachable. Neither was measuring anything.
+      //
+      // Closed throttle makes it the one thing on the map that is about reading
+      // the air: find the lift, stay in it, and the lever is not the answer. It
+      // is the same shape of rule as a deck run — the clock only counts while
+      // the condition holds — so it reads without being explained twice.
+      const soaring = throttle <= SOARING_THROTTLE;
+      if (soaring) run.value = Math.max(run.value, position.y - run.startY);
+      run.soaring = soaring;
+      if (soaring === run.on) run.flip = 0;
+      else if ((run.flip += dt) >= 0.35) {
+        run.on = soaring;
+        run.flip = 0;
+        this.events.push({
+          kind: 'note',
+          def,
+          text: soaring ? 'Engine shut — soaring' : 'Engine on — not scoring',
+          tone: soaring ? '' : 'bad',
+        });
+      }
     } else if (def.type === 'distance') {
       run.value = Math.hypot(position.x - run.from.x, position.z - run.from.z);
     } else if (def.type === 'deck') {

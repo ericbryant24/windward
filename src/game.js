@@ -340,7 +340,10 @@ export class Game {
       case 'slalom':
         return `Fly all ${def.gates.length} gates in order, in under ${def.limit} seconds. The clock is your score, so the shortest line wins.`;
       case 'height':
-        return `You have ${def.window} seconds. Your score is how much height you have gained above the ring when they run out.`;
+        return (
+          `Engine shut. You have ${def.window} seconds and your score is the most height you gain above the ring — ` +
+          `but only while the throttle is closed, so the lever is not the answer here. Find the lift and stay in it.`
+        );
       case 'distance':
         return `You have ${def.window} seconds. Your score is how far from the ring you have got when they run out.`;
       case 'deck':
@@ -759,7 +762,7 @@ export class Game {
     }
 
     // ---- challenges --------------------------------------------------------
-    for (const ev of this.challenges.update(dt, g.position, this._prevPos, agl)) {
+    for (const ev of this.challenges.update(dt, g.position, this._prevPos, agl, g.throttle)) {
       if (ev.kind === 'armed') this.#armFromMarker(ev.def, true);
       else if (ev.kind === 'note') this.#noteChallenge(ev);
       else if (ev.kind === 'done') this.#finishChallenge(ev);

@@ -357,7 +357,12 @@ class Pilot {
     // ship is running away from the speed it was asked to hold — which is the
     // whole of what a throttle does on a course. Zero on a sailplane, where the
     // flight model never reads it.
-    const throttle = this.p.power ? clamp(1 - (g.airspeed - speedTarget) / (speedTarget * 0.25), 0, 1) : 0;
+    // Shut for a height run, whatever the ship. A height challenge only banks
+    // height below SOARING_THROTTLE now, so a pilot that leaves the lever open
+    // measures nothing and reports it as an impossible task.
+    const throttle = this.p.soar || !this.p.power
+      ? 0
+      : clamp(1 - (g.airspeed - speedTarget) / (speedTarget * 0.25), 0, 1);
     return { roll, pitch, brake, throttle };
   }
 }
@@ -469,7 +474,7 @@ function fly(ctx, def, policy, guide) {
       break;
     }
 
-    for (const ev of challenges.update(TICK, glider.position, prev, agl)) {
+    for (const ev of challenges.update(TICK, glider.position, prev, agl, glider.throttle)) {
       if (ev.kind === 'done') out = { finished: true, value: ev.value, elapsed: state.t };
       else if (ev.kind === 'failed') out = { reason: ev.reason === 'time' ? 'out of time' : ev.reason };
     }
@@ -1523,6 +1528,9 @@ function climbPolicies(ctx, def, spec, survey, marker) {
         for (const half of [420, 700, 1100]) {
           out.push({
             kind: 'climb',
+            // Engine shut: a height run only banks height below
+            // SOARING_THROTTLE, so this is the only honest way to fly one.
+            soar: true,
             type: 'beat',
             centre,
             radius: 200,
