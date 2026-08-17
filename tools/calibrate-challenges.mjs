@@ -54,7 +54,7 @@ import { PNG } from 'pngjs';
 import { readFile } from 'node:fs/promises';
 import * as THREE from '../vendor/three.module.js';
 import { Heightfield } from '../src/heightfield.js';
-import { Air, Glider } from '../src/flight.js';
+import { Air, Glider, stickForBank } from '../src/flight.js';
 import { REGIONS, CHALLENGES } from '../src/regions.js';
 import { World } from '../src/world.js';
 import {
@@ -266,8 +266,30 @@ class Pilot {
     // every corner of every course wide. Kept clear of the pinned-stick
     // threshold, which is the aerobatic roll and not something a pilot wants
     // to trigger by asking for a steep turn.
-    const stickForBank = bankCmd / THREE.MathUtils.degToRad(spec.maxBankDeg);
-    const roll = clamp(stickForBank + (bankCmd - bank) * 0.7 - bankRate * 0.12, -0.92, 0.92);
+    // Dividing by maxBankDeg was right while the stick was a straight line from
+    // centre to full deflection. It is not one on a ship that can reach
+    // inverted: 176 degrees across one axis with the inner sixty per cent of
+    // travel spent on the first sixty degrees, so bankCmd/176 asked for barely
+    // half the bank it meant. Measured, that put every corner of every course
+    // wide and stopped the Chicago river run finishing at all — 48 lines, none
+    // of them down the corridor. Invert the real curve instead.
+    // The whole law in BANK space, converted to a deflection once at the end.
+    //
+    // The correction terms are radians and used to be added straight onto a
+    // normalised stick value, which was close enough while the stick was a roll
+    // RATE. On an attitude stick it is not: 0.7 rad of bank error became 0.7 of
+    // deflection, and 0.7 of deflection on a 176-degree stick is another 120
+    // degrees of commanded bank on top of the command. Measured, that flew the
+    // Chicago river run into the water on all 48 lines.
+    // On an attitude stick the airframe closes the bank loop itself, so the
+    // feedforward IS the command and a proportional correction on top of it is
+    // double-counting. It reads as overshoot: measured, the river run oscillated
+    // across a 110 m corridor and put all 48 lines into a building. A rate stick
+    // needs that term, because there nothing else closes the loop at all.
+    const want = spec.rollRateStick
+      ? bankCmd + (bankCmd - bank) * 0.7 - bankRate * 0.12
+      : bankCmd - bankRate * 0.05;
+    const roll = clamp(stickForBank(clamp(want, -bankMax * 1.35, bankMax * 1.35), spec.maxBankDeg), -0.92, 0.92);
 
     // ---- pitch: the line to the target, corrected for the speed we want ---
     // Fast means nose down and slow means nose up, so the speed error goes in

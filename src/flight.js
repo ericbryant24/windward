@@ -22,6 +22,52 @@ const OPEN_WATER = 260;
 // Pinning the stick to the stop for this long promotes that axis from an
 // attitude command to a rate, which is what makes a roll or a loop possible
 // without making one reachable by accident.
+/**
+ * Stick to commanded bank, in radians.
+ *
+ * Straight multiplication is right for a ship whose stick tops out at a steep
+ * turn, and wrong for one that can ask for inverted: 176 degrees across one
+ * axis puts a 90-degree bank at half deflection, and then every ordinary turn
+ * in the game is flown in the first quarter of the travel with no resolution
+ * left in it.
+ *
+ * So the inner sixty per cent of the stick covers nought to sixty degrees —
+ * which is every turn anybody flies — and the outer forty covers sixty to
+ * inverted. That is also how it reads under a thumb: turns live near the
+ * middle, and going upside down means taking it out to the rim.
+ */
+const BANK_KNEE = 0.6;
+const BANK_KNEE_DEG = 60;
+export function bankCommand(roll, maxBankDeg) {
+  if (maxBankDeg <= 90) return roll * THREE.MathUtils.degToRad(maxBankDeg);
+  const a = Math.min(1, Math.abs(roll));
+  const deg =
+    a <= BANK_KNEE
+      ? (a / BANK_KNEE) * BANK_KNEE_DEG
+      : BANK_KNEE_DEG + ((a - BANK_KNEE) / (1 - BANK_KNEE)) * (maxBankDeg - BANK_KNEE_DEG);
+  return Math.sign(roll) * THREE.MathUtils.degToRad(deg);
+}
+/**
+ * The inverse: what deflection asks for this bank. Lives next to the curve so
+ * there is exactly one place that knows the shape of it — the calibrator's
+ * pilot and the flight test both need to invert it, and a second copy of the
+ * knee is a second thing to get wrong.
+ */
+export function stickForBank(rad, maxBankDeg) {
+  const max = THREE.MathUtils.degToRad(maxBankDeg);
+  if (maxBankDeg <= 90) return max > 0 ? rad / max : 0;
+  const s = Math.sign(rad);
+  const deg = THREE.MathUtils.radToDeg(Math.abs(rad));
+  const a =
+    deg <= BANK_KNEE_DEG
+      ? (deg / BANK_KNEE_DEG) * BANK_KNEE
+      : BANK_KNEE + ((deg - BANK_KNEE_DEG) / (maxBankDeg - BANK_KNEE_DEG)) * (1 - BANK_KNEE);
+  return s * Math.min(1, a);
+}
+
+/** Past this much bank the atan2 wrap is close enough to matter. 120 degrees. */
+const WRAP_GUARD = 2.094;
+
 /** How much of the free-stream wind a thermal's column keeps out. See sample(). */
 const THERMAL_SHELTER = 1.0;
 
@@ -528,28 +574,42 @@ export class Glider {
     this.rolling = this.rollPin > PIN_DELAY;
     this.looping = this.pitchPin > PIN_DELAY;
 
+    // A stick that can ask for more than ninety degrees of bank can already say
+    // "upside down, and stay there". Promoting a pinned stick to a continuous
+    // rate roll would take that away — you would hold full deflection expecting
+    // to sit inverted and get a barrel roll instead.
+    const canInvert = cfg.maxBankDeg > 90;
+
     let rollRate;
     if (cfg.rollRateStick) {
-      // Aerobatic ships fly a RATE stick: the aileron is a roll rate and
-      // nothing puts the wings back for you. Centre it and the aeroplane stays
-      // exactly where it was left, knife-edge or upside down, which is the
-      // whole point of a symmetric wing with no dihedral in it.
+      // A RATE stick: the aileron is a roll rate and nothing puts the wings
+      // back for you. Centre it and the aeroplane stays exactly where it was
+      // left, knife-edge or upside down.
       //
-      // The attitude law below cannot do that at any setting. Its target is
-      // bank times the stick, so a centred stick always means wings level, and
-      // measured, the Shrike could be rolled inverted and could not be HELD
-      // there for a second — which for an unlimited monoplane is the one thing
-      // it is for. The pinned-stick promotion is not needed here either: full
-      // deflection already is a continuous roll.
+      // Nothing in the issued fleet flies this any more and the Shrike used to.
+      // It is the most honest model of an unlimited monoplane and it is too
+      // hard to fly with a thumb: every turn ends with the wings still over,
+      // and putting them back is a second deliberate input that a player on a
+      // phone has to remember to make. The attitude law below reaches inverted
+      // too — it just needs the stick HELD there.
       rollRate = input.roll * cfg.maxRollRate * speedAuthority * stiff;
-    } else if (this.rolling) {
+    } else if (this.rolling && !canInvert) {
       rollRate = Math.sign(input.roll) * cfg.maxRollRate * speedAuthority * stiff;
     } else {
-      const bankTarget = input.roll * THREE.MathUtils.degToRad(cfg.maxBankDeg);
+      const bankTarget = bankCommand(input.roll, cfg.maxBankDeg);
+      let err = bankTarget - this.bankRad;
+      // bankRad comes out of an atan2 and therefore wraps at +-180, so sitting
+      // on inverted sits on the discontinuity: a hair past it the measurement
+      // flips sign, the error flips with it and the aeroplane chases its own
+      // tail. Take the short way round — but only up here, because wrapping
+      // everywhere would answer full right stick from a slight left bank by
+      // rolling LEFT to inverted, which is not what the stick asked for.
+      if (Math.abs(this.bankRad) > WRAP_GUARD) {
+        if (err > Math.PI) err -= 2 * Math.PI;
+        else if (err < -Math.PI) err += 2 * Math.PI;
+      }
       rollRate =
-        THREE.MathUtils.clamp((bankTarget - this.bankRad) * 2.3, -cfg.maxRollRate, cfg.maxRollRate) *
-        speedAuthority *
-        stiff;
+        THREE.MathUtils.clamp(err * 2.3, -cfg.maxRollRate, cfg.maxRollRate) * speedAuthority * stiff;
     }
     this.#rotate(this._f.set(0, 0, -1), rollRate * dt);
 
@@ -590,7 +650,7 @@ export class Glider {
     // Coming out of a roll or a loop the attitude law has to recapture from
     // wherever the manoeuvre left the ship, and past ninety degrees of bank it
     // would otherwise drive the long way round. -sin(bank) takes the short way.
-    if (!cfg.rollRateStick && !this.rolling && Math.abs(this.bankRad) > Math.PI / 2) {
+    if (!cfg.rollRateStick && !canInvert && !this.rolling && Math.abs(this.bankRad) > Math.PI / 2) {
       this.#rotate(this._f.set(0, 0, -1), -Math.sin(this.bankRad) * cfg.rollStability * speedAuthority * dt);
     }
 

@@ -1,0 +1,17 @@
+{
+  "generator": "tools/bake-buildings.mjs",
+  "region": "maui",
+  "source": "OpenStreetMap contributors, ODbL — see ATTRIBUTION.md",
+  "format": 2,
+  "count": 15680,
+  "vertices": 112647,
+  "vertexScale": 20,
+  "parts": 9,
+  "heights": {
+    "fromHeightTag": 4,
+    "fromLevels": 1281,
+    "inferred": 14395,
+    "surveyedPercent": 8.2
+  },
+  "note": "Footprints, positions, orientations and building:part massing are surveyed data. Heights are surveyed where tagged and inferred from type and footprint area otherwise. Facade materials are inferred from height and use except where building:material is tagged."
+}

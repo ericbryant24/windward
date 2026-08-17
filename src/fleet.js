@@ -251,11 +251,27 @@ export const FLEET = [
     // times the ballasted nineteen-metre. A pinned stick is a continuous roll
     // in a fifth of a second rather than as a slow deliberate event.
     maxRollRate: 7.3,
-    // A rate stick, not an attitude one — see the roll law in flight.js. The
-    // aileron commands a roll rate and nothing levels the wings for you, so a
-    // knife-edge or an inverted pass is held by leaving the stick alone.
-    rollRateStick: true,
-    maxBankDeg: 120, // unused while the stick is a rate; kept for the swap back
+    // An ATTITUDE stick, not a rate one — see the roll law in flight.js.
+    //
+    // This flew a rate stick, which is the honest model of an unlimited
+    // monoplane and too hard to fly with a thumb. The aileron commanded a roll
+    // rate and nothing put the wings back, so every turn ended with them still
+    // over and levelling up was a second deliberate input you had to remember
+    // to make. On a phone, in a valley, that is most of what "too hard" means.
+    //
+    // Now the stick says where to point and letting go says level. Inverted did
+    // not go away with the rate stick: 176 degrees is what full deflection
+    // asks for, so taking it out to the rim still rolls you upside down and
+    // holds you there — it just has to be HELD, and releasing flies out
+    // straight. Four degrees short of true inverted on purpose, because bank is
+    // measured with an atan2 that wraps at 180 and nothing good happens sitting
+    // on the discontinuity.
+    //
+    // What it costs is the continuous aileron roll: one axis cannot go past
+    // 176, so a full 360 is no longer a thing this ship does. Nothing in the
+    // game asks for one — the roll category was taken out for other reasons —
+    // and being able to fly a turn without thinking is worth more.
+    maxBankDeg: 176,
     rollStability: 0.0, // no dihedral at all
     // The only thing limiting load factor in this model is how fast the nose
     // can be pulled round, so this is the g limit in disguise: 1.4 rad/s at

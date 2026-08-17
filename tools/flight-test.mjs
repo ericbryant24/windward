@@ -12,7 +12,7 @@
  *   node tools/flight-test.mjs
  */
 import * as THREE from '../vendor/three.module.js';
-import { Air, Glider } from '../src/flight.js';
+import { Air, Glider, stickForBank } from '../src/flight.js';
 import { FLEET, polar, wingSpan } from '../src/fleet.js';
 
 const hf = {
@@ -508,16 +508,28 @@ if (g.broken) problems.push('rolling the ship tore it apart');
 
 // ------------------------------------------------------------ two laws ---
 // The whole point of the control model: a stick short of the stop HOLDS a bank,
-// and only a stick pinned to it rolls. If the first were false the game would
-// be twitchy to fly with a thumb; if the second were, there would be no barrel
-// roll. Both have been broken by a refactor before, in opposite directions.
-console.log('\ntwo laws — hold a bank, pin the stick to roll');
+// and letting go puts the wings back. If the first were false the game would be
+// twitchy to fly with a thumb; if the second were, every turn would end with
+// the aeroplane still over and levelling up would be a second input the player
+// has to remember. Both have been broken by a refactor before, in opposite
+// directions.
+//
+// A ship whose stick reaches past ninety degrees is tested differently: full
+// deflection there means "inverted, and hold it", not "keep rolling", so what
+// it has to prove is that it gets upside down, stays upside down while the
+// stick is held, and comes back to level when it is released.
+console.log('\ntwo laws — hold a bank, let go and level');
 {
   const step = 1 / 120;
   for (const spec of FLEET) {
     const held = new Glider(air, spec);
     held.reset(new THREE.Vector3(0, 3000, 0), 0, spec.trimSpeed * 1.2);
-    const stick = Math.min(0.85, 45 / spec.maxBankDeg);
+    // The stick that actually commands 45 degrees, found through the real curve
+    // rather than by assuming it is a straight line. On a ship that reaches
+    // inverted it is not: 45/176 would be a quarter of the travel and would
+    // ask for 25 degrees, and the test would then fail the model for answering
+    // exactly what it was asked.
+    const stick = Math.min(0.85, stickForBank(THREE.MathUtils.degToRad(45), spec.maxBankDeg));
     let peak = 0;
     for (let i = 0; i < 20 / step; i++) {
       held.update(step, { roll: stick, pitch: 0.25, brake: 0 });
@@ -538,33 +550,64 @@ console.log('\ntwo laws — hold a bank, pin the stick to roll');
     }
     const revs = Math.abs(swept) / (2 * Math.PI);
 
-    const rollsOk = revs > 1;
-    let holdsOk;
+    const canInvert = spec.maxBankDeg > 90;
+
+    // Whatever the ship, a held stick has to settle on a bank and letting go
+    // has to put the wings back. That is the half of the model the player feels
+    // on every single turn.
+    const holdsOk = peak < spec.maxBankDeg * 1.15 && Math.abs(held.bankDeg) > 25;
+    if (!holdsOk) {
+      problems.push(`${spec.name}: a held stick did not hold a bank (settled ${held.bankDeg.toFixed(0)}, peak ${peak.toFixed(0)})`);
+    }
+
+    // Release from a real bank and count how long the wings take to come back.
+    const back = new Glider(air, spec);
+    back.reset(new THREE.Vector3(0, 3000, 0), 0, spec.trimSpeed * 1.2);
+    for (let i = 0; i < 3 / step; i++) back.update(step, { roll: stick, pitch: 0, brake: 0, throttle: 0.7 });
+    const from = back.bankDeg;
+    let level = Infinity;
+    for (let i = 0; i < 8 / step; i++) {
+      back.update(step, { roll: 0, pitch: 0, brake: 0, throttle: 0.7 });
+      if (Math.abs(back.bankDeg) < 5) {
+        level = (i + 1) * step;
+        break;
+      }
+    }
+    const levelsOk = level < 5;
+    if (!levelsOk) {
+      problems.push(`${spec.name}: released from ${from.toFixed(0)} deg the wings did not come back inside five seconds`);
+    }
+
+    let extraOk = true;
     let note;
-    if (spec.rollRateStick) {
-      // The other pair of laws. A rate stick holds no bank at all — a held
-      // deflection keeps rolling — and what it must do instead is LEAVE the
-      // bank where the stick left it, because that is what flies an inverted
-      // pass. Rolled ninety degrees and then released, it stays there.
-      const left = new Glider(air, spec);
-      left.reset(new THREE.Vector3(0, 3000, 0), 0, spec.trimSpeed * 1.2);
-      const quarter = Math.PI / 2 / spec.maxRollRate;
-      for (let i = 0; i < quarter / step; i++) left.update(step, { roll: 1, pitch: 0, brake: 0, throttle: 1 });
-      const put = left.bankDeg;
-      for (let i = 0; i < 4 / step; i++) left.update(step, { roll: 0, pitch: 0, brake: 0, throttle: 1 });
-      holdsOk = Math.abs(left.bankDeg - put) < 25;
-      note = `put ${put.toFixed(0)} deg, four seconds later ${left.bankDeg.toFixed(0)} deg`;
-      if (!holdsOk) {
-        problems.push(`${spec.name}: a rate stick let the wings come back up (${put.toFixed(0)} → ${left.bankDeg.toFixed(0)} deg)`);
+    if (canInvert) {
+      // Full deflection means upside down and stay there. Pitch has to be held
+      // too — an inverted wing at positive alpha pulls at the ground, so a
+      // pilot who lets the nose fall falls out of it, and so should the model.
+      const inv = new Glider(air, spec);
+      inv.reset(new THREE.Vector3(0, 3000, 0), 0, spec.trimSpeed * 1.2);
+      for (let i = 0; i < 2.5 / step; i++) inv.update(step, { roll: 1, pitch: -0.35, brake: 0, throttle: 0.7 });
+      const rolled = Math.abs(inv.bankDeg);
+      let worst = rolled;
+      for (let i = 0; i < 6 / step; i++) {
+        inv.update(step, { roll: 1, pitch: -0.35, brake: 0, throttle: 0.7 });
+        worst = Math.min(worst, Math.abs(inv.bankDeg));
+      }
+      extraOk = rolled > 150 && worst > 140;
+      note = `rolls to ${rolled.toFixed(0)} deg and holds ${worst.toFixed(0)}, level in ${level.toFixed(1)} s`;
+      if (!extraOk) {
+        problems.push(`${spec.name}: full stick did not hold inverted (reached ${rolled.toFixed(0)}, sagged to ${worst.toFixed(0)} deg)`);
       }
     } else {
-      holdsOk = peak < 78 && Math.abs(held.bankDeg) > 25;
-      note = `holds ${held.bankDeg.toFixed(0).padStart(3)} deg`;
-      if (!holdsOk) problems.push(`${spec.name}: a held stick did not hold a bank (settled ${held.bankDeg.toFixed(0)}, peak ${peak.toFixed(0)})`);
+      // A ship that cannot reach inverted keeps the pinned-stick promotion, and
+      // that is still how it barrel-rolls.
+      extraOk = revs > 1;
+      note = `holds ${held.bankDeg.toFixed(0).padStart(3)} deg, level in ${level.toFixed(1)} s`;
+      if (!extraOk) problems.push(`${spec.name}: a pinned stick did not roll right over (${revs.toFixed(2)} turns in 6 s)`);
     }
-    if (!rollsOk) problems.push(`${spec.name}: a pinned stick did not roll right over (${revs.toFixed(2)} turns in 6 s)`);
     console.log(
-      `  ${holdsOk && rollsOk ? 'ok  ' : 'FAIL'} ${spec.name.padEnd(9)} ${note.padEnd(44)} pinned: ${revs.toFixed(1)} rolls in 6 s`
+      `  ${holdsOk && levelsOk && extraOk ? 'ok  ' : 'FAIL'} ${spec.name.padEnd(9)} ${note.padEnd(52)}` +
+        `${canInvert ? '' : `pinned: ${revs.toFixed(1)} rolls in 6 s`}`
     );
   }
 }

@@ -590,7 +590,19 @@ export const CHALLENGES = {
           [60.9431, 6.9299],
         ],
       },
-      medals: [6, 8, 10],
+      // Re-cut when the Shrike went from a rate stick to an attitude one. The
+      // calibrator's gunnery pilot drives roll straight off the target's
+      // bearing, which was a proportional rate controller and is now a
+      // proportional BANK controller — a different and worse law for tracking —
+      // so its best fell from eleven balloons to five on an unchanged field.
+      // That is the tool getting worse, not the challenge getting harder: for a
+      // player, a stick that holds a bank steady is easier to shoot from.
+      //
+      // So these are set to be reachable rather than to match a good pilot, and
+      // gold sits on the best the tool can still stand behind. The first report
+      // from play on the old field was a single balloon; nobody has flown this
+      // one yet.
+      medals: [3, 4, 5],
     },
     {
       // Up the Flåm valley the way the railway goes: 900 m of climb in fourteen
@@ -855,7 +867,19 @@ export const CHALLENGES = {
       // with nine, eleven, eleven on three consecutive runs. Hang a gold off
       // the tool's exact number and it fails its own check next week. These
       // sit two clear of the worst of those runs.
-      medals: [4, 6, 8],
+      // Re-cut when the Shrike went from a rate stick to an attitude one. The
+      // calibrator's gunnery pilot drives roll straight off the target's
+      // bearing, which was a proportional rate controller and is now a
+      // proportional BANK controller — a different and worse law for tracking —
+      // so its best fell from eleven balloons to five on an unchanged field.
+      // That is the tool getting worse, not the challenge getting harder: for a
+      // player, a stick that holds a bank steady is easier to shoot from.
+      //
+      // So these are set to be reachable rather than to match a good pilot, and
+      // gold sits on the best the tool can still stand behind. The first report
+      // from play on the old field was a single balloon; nobody has flown this
+      // one yet.
+      medals: [3, 4, 5],
     },
   ],
 
