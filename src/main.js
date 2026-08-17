@@ -351,6 +351,25 @@ async function boot() {
       case 'offline-update':
         await offline.applyUpdate();
         break;
+      case 'force-update': {
+        // Deliberately blocking and deliberately slow-looking: it refetches
+        // sw.js and makes the worker check all forty shell files against the
+        // network, and a button that answers instantly would be lying.
+        btn.disabled = true;
+        const was = btn.textContent;
+        btn.textContent = 'Checking…';
+        const r = await offline.forceUpdate();
+        hud.setBuild(r.buildId);
+        if (r.changed) {
+          hud.toast('<b>New build</b><br>Reloading…');
+          setTimeout(() => location.reload(), 900);
+        } else {
+          btn.disabled = false;
+          btn.textContent = was;
+          hud.toast(`Already current · build ${(r.buildId ?? 'unknown').slice(0, 8)}`);
+        }
+        break;
+      }
     }
   };
 
@@ -434,12 +453,26 @@ async function boot() {
   // Only now. Precaching the 2.4 MB shell while the player is still waiting on
   // four megabytes of terrain would make the thing they asked for slower to
   // buy them something they have not asked for yet.
-  offline.onChange = drawOffline;
+  // The build id arrives from the worker, so the version block cannot be filled
+  // in until it does — and it has to be refilled every time the worker reports,
+  // because that is when the id can change under us.
+  const drawBuild = () => hud.setBuild(offline.state.buildId);
+  offline.onChange = () => {
+    drawOffline();
+    drawBuild();
+  };
   drawOffline();
+  drawBuild();
   if (offline.supported) {
     offline
       .install()
-      .then(() => drawOffline())
+      .then(() => {
+        drawOffline();
+        // The build id only exists once the worker has published a shell, so the
+        // version line has to be refilled here as well as on change — otherwise
+        // it says "build unknown" for the whole session.
+        drawBuild();
+      })
       // A shell that installed one second ago cannot be out of date, so the
       // update check only runs for a visit that arrived already installed.
       .then(() => attached && offline.checkForUpdate())

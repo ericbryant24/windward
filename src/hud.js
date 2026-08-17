@@ -2,6 +2,7 @@ import * as THREE from '../vendor/three.module.js';
 import { MEDAL_NAMES, formatMetric, formatClock } from './challenges.js';
 import { Air } from './flight.js';
 import { ISSUED_AIRCRAFT, polar, getAircraft } from './fleet.js';
+import { VERSION, RELEASED } from './version.js';
 
 /**
  * All of the 2D UI: loading, menus, and the in-flight instruments. DOM rather
@@ -59,6 +60,13 @@ export class Hud {
     // The canvas only; what goes on it belongs to src/minimap.js, which the
     // game hands the world it is drawing.
     this.minimapCanvas = this.el('.minimap');
+
+    // Said in two places on purpose: the menu is where you go to read it and
+    // press the button, and the corner of the flight HUD is where you can see it
+    // without leaving the air — which is what you want when you are trying to
+    // work out whether the thing you are flying is the thing that was shipped.
+    this.el('[data-version]').textContent = `v${VERSION}`;
+    this.el('[data-buildtag]').textContent = `v${VERSION}`;
 
     // The hangar is machinery the game still has and currently does not use;
     // see ISSUED_AIRCRAFT in fleet.js. It stays in the template so that putting
@@ -377,6 +385,16 @@ export class Hud {
     this.mapview.classList.remove('open');
   }
 
+  /**
+   * The build id, once the worker has told us what it is. Shown next to the
+   * version because the version is a promise and the build id is a fact.
+   */
+  setBuild(buildId) {
+    const short = buildId ? buildId.slice(0, 8) : 'unknown';
+    this.el('[data-build]').textContent = `${RELEASED} · build ${short}`;
+    this.el('[data-buildtag]').textContent = `v${VERSION} · ${short}`;
+  }
+
   hideResults() {
     this.results.classList.remove('open');
   }
@@ -663,6 +681,14 @@ const TEMPLATE = /* html */ `
       <div class="secret-list"></div>
     </div>
 
+    <div class="build">
+      <div class="build-id">
+        <span data-version>v?</span>
+        <em data-build>build …</em>
+      </div>
+      <button class="btn" data-action="force-update">Check for update</button>
+    </div>
+
     <div class="stats">
       <div><span>Landmarks</span><b data-discovered>0/0</b></div>
       <div><span>Medalled</span><b data-medalstat>0/0</b></div>
@@ -761,6 +787,7 @@ const TEMPLATE = /* html */ `
   <div class="gate-arrow"><i>➤</i><b></b></div>
 
   <button class="icon-btn pause" data-action="pause" aria-label="Pause">❚❚</button>
+  <div class="build-tag" data-buildtag></div>
   <div class="crash-flash"></div>
 </div>
 

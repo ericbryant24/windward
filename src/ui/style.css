@@ -2077,3 +2077,54 @@ body {
 .mapview-actions {
   display: flex;
 }
+
+/* ------------------------------------------------------------- version --- */
+.build {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 11px 13px;
+  border-radius: 13px;
+  border: 1px solid var(--stroke);
+  background: var(--panel);
+}
+
+.build-id span {
+  display: block;
+  font-size: 14px;
+  font-weight: 620;
+}
+
+/* The build id is the fact and the version is the promise, so the id is here
+   too — quietly, but readable enough to be quoted back down a phone line. */
+.build-id em {
+  display: block;
+  font-style: normal;
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--dim);
+}
+
+.build .btn {
+  flex: 0 0 auto;
+  padding: 9px 14px;
+  font-size: 12.5px;
+}
+
+.build .btn[disabled] {
+  opacity: 0.55;
+}
+
+/* And in the corner of the flight HUD, where it costs nothing and answers
+   "is what I am flying what was shipped" without leaving the air. */
+.build-tag {
+  position: absolute;
+  right: calc(var(--safe-r) + 10px);
+  bottom: calc(var(--safe-b) + 6px);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: rgba(196, 214, 232, 0.34);
+  pointer-events: none;
+}

@@ -245,6 +245,55 @@ export class Offline {
     }
   }
 
+  /**
+   * Go and look, properly, whether the player asked at a good moment or not.
+   *
+   * The ordinary update path is passive: the browser notices a new sw.js when it
+   * feels like it, the worker installs beside the old one and sits waiting, and
+   * applyUpdate() takes it. That is right for the automatic case and useless as
+   * an answer to "am I running the current build" — a browser holding a cached
+   * sw.js can sit on a stale shell for a day.
+   *
+   * So this forces all of it: refetch sw.js, make the worker re-publish the
+   * shell with no-cache so every file's change-tag is checked against the
+   * network, take any worker that installs as a result, and say whether the
+   * build id moved. The caller decides whether to reload.
+   *
+   * @returns {{changed:boolean, buildId:string|null, before:string|null}}
+   */
+  async forceUpdate() {
+    const before = this.state.buildId ?? null;
+    let changed = false;
+    let buildId = before;
+    try {
+      await this.reg?.update();
+    } catch {
+      /* an unreachable network is an answer too: nothing changed */
+    }
+    try {
+      const worker = this.reg?.active ?? navigator.serviceWorker?.controller;
+      if (worker) {
+        const result = await this.#askWorker(worker, { type: 'check-update' }, true);
+        if (result && typeof result === 'object') {
+          changed = !!result.changed;
+          buildId = result.buildId ?? buildId;
+          if (result.status) this.state = { ...this.state, ...result.status };
+        }
+      }
+    } catch {
+      /* fall through: the reload below still picks up whatever is there */
+    }
+    if (this.reg?.waiting) {
+      try {
+        await this.#askWorker(this.reg.waiting, { type: 'skip-waiting' });
+        changed = true;
+      } catch {
+        /* nothing to take */
+      }
+    }
+    return { changed, buildId, before };
+  }
+
   /** Take the waiting worker, if the update arrived as a new sw.js, then reload. */
   async applyUpdate() {
     try {
@@ -257,12 +306,19 @@ export class Offline {
     location.reload();
   }
 
-  #askWorker(worker, message) {
+  /**
+   * @param {boolean} wantReply pass the worker's answer back rather than just
+   *   resolving. check-update returns whether the build moved, which is the only
+   *   thing the update button has to report.
+   */
+  #askWorker(worker, message, wantReply = false) {
     return new Promise((resolve) => {
       const channel = new MessageChannel();
-      channel.port1.onmessage = () => resolve();
+      channel.port1.onmessage = (e) => resolve(wantReply ? e.data : undefined);
       worker.postMessage(message, [channel.port2]);
-      setTimeout(resolve, 1500);
+      // Republishing the shell checks forty files against the network, so this
+      // needs longer than the fire-and-forget messages do.
+      setTimeout(() => resolve(undefined), wantReply ? 20000 : 1500);
     });
   }
 

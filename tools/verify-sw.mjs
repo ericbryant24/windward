@@ -355,6 +355,31 @@ await step('the map now says it is on the device', async () => {
   return (await page.locator(`.offline-map:has([data-value="${MAP}"]) em`).textContent()).trim();
 });
 
+await step('the version and build id are on the screen, and the button answers', async () => {
+  const shown = await page.evaluate(() => ({
+    version: document.querySelector('[data-version]')?.textContent ?? '',
+    build: document.querySelector('[data-build]')?.textContent ?? '',
+    tag: document.querySelector('[data-buildtag]')?.textContent ?? '',
+  }));
+  if (!/^v\d+\.\d+\.\d+$/.test(shown.version)) throw new Error(`version reads "${shown.version}"`);
+  // The build id is the whole point: a version somebody hand-bumped cannot tell
+  // you your browser is serving a stale shell, and this can.
+  const id = shown.build.match(/build ([0-9a-f]{8})/);
+  if (!id) throw new Error(`no build id on the menu: "${shown.build}"`);
+  if (!shown.tag.includes(id[1])) throw new Error(`the flight HUD tag "${shown.tag}" does not carry the build id`);
+
+  // Pressing it when nothing has changed has to say so rather than reloading in
+  // a loop, and has to leave the button usable.
+  await page.click('[data-action="force-update"]');
+  await page.waitForFunction(
+    () => document.querySelector('[data-action="force-update"]')?.disabled === false,
+    { timeout: 40000 }
+  );
+  const after = await page.evaluate(() => document.querySelector('[data-build]')?.textContent ?? '');
+  if (!after.includes(id[1])) throw new Error(`the build id changed under an unchanged deploy: ${after}`);
+  console.log(`        ${shown.version} · ${id[1]} — "check for update" reported already current`);
+});
+
 console.log('\noffline');
 phase = 'offline';
 // Empty the HTTP cache first, or a reload could be served by Chrome from bytes
