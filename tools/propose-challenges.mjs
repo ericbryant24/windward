@@ -222,6 +222,19 @@ function resample(c, spacing) {
 const bearing = (a, b) => (Math.atan2(b.x - a.x, -(b.z - a.z)) * 180) / Math.PI;
 const spread = (used, x, z, r) => !used.some((u) => Math.hypot(u.x - x, u.z - z) < r);
 
+/**
+ * Where the challenges already in the table start, in local metres.
+ *
+ * Seeded into every candidate's `used` list, so a proposal can never land on top
+ * of a course somebody already flew. The first batch had no idea what was
+ * already there and it showed: two of its slaloms opened within a few hundred
+ * metres of hand-authored ones.
+ */
+const EXISTING = (CHALLENGES[REGION_ID] ?? []).map((d) => {
+  const v = world.toLocal(d.marker.lat, d.marker.lon);
+  return { x: v.x, z: v.z };
+});
+
 // ---------------------------------------------------------------- slalom ---
 /**
  * Gate courses along roads and railways.
@@ -236,7 +249,12 @@ function slaloms(limit) {
   const cands = [];
   for (const c of chains(COURSE_KINDS)) {
     const len = runLength(c);
-    if (len < 2600 || len > 7000) continue;
+    // Measured from the first batch: 3.7 km of gates flies in 67 s and 4.5 km
+    // in 87, so anything past about four kilometres cannot fit a bronze under
+    // the ninety-second cap and gets thrown away after being calibrated. Sizing
+    // the proposal to the cap up front is free; discovering it afterwards costs
+    // a calibration run per course.
+    if (len < 2100 || len > 4300) continue;
     if (!c.every((q) => inBox(q.x, q.z))) continue;
     const gates = resample(c, len / 4).slice(0, 5);
     if (gates.length < 4) continue;
@@ -267,11 +285,11 @@ function slaloms(limit) {
     cands.push({ gates: built, len, relief, near, score: relief * 2 + len * 0.05 - near * 0.04 });
   }
   cands.sort((a, b) => b.score - a.score);
-  const used = [];
+  const used = [...EXISTING];
   const out = [];
   for (const c of cands) {
     if (out.length >= limit) break;
-    if (!spread(used, c.gates[0].x, c.gates[0].z, 2600)) continue;
+    if (!spread(used, c.gates[0].x, c.gates[0].z, 1500)) continue;
     used.push(c.gates[0]);
     out.push(c);
   }
@@ -312,7 +330,7 @@ function wetDepth() {
 function decks(limit) {
   const depth = wetDepth();
   const out = [];
-  const used = [];
+  const used = [...EXISTING];
   // Water first, walking the widest channel from each of a few seeds.
   const seeds = [];
   for (let j = 4; j < N; j += 24) {
@@ -327,7 +345,7 @@ function decks(limit) {
     if (out.length >= Math.ceil(limit * 0.7)) break;
     const x0 = -HALF + s.i * STEP;
     const z0 = -HALF + s.j * STEP;
-    if (!inBox(x0, z0) || !spread(used, x0, z0, 5000)) continue;
+    if (!inBox(x0, z0) || !spread(used, x0, z0, 2600)) continue;
     // Walk both ways along the channel, always to the widest neighbour ahead.
     const path = [{ x: x0, z: z0 }];
     for (const dir of [1, -1]) {
@@ -390,7 +408,7 @@ function decks(limit) {
       prev = g;
     }
     if (!ok || climb > 0.14) continue;
-    if (!spread(used, path[0].x, path[0].z, 4200)) continue;
+    if (!spread(used, path[0].x, path[0].z, 2600)) continue;
     used.push(path[0]);
     out.push({ path: path.slice(0, 14), len, width: 130, ceiling: 55, water: false });
   }
@@ -401,7 +419,7 @@ function decks(limit) {
 /** A straight line of open air with nothing under it worth hitting. */
 function gunneries(limit) {
   const out = [];
-  const used = [];
+  const used = [...EXISTING];
   const cands = [];
   for (let j = 8; j < N; j += 16) {
     for (let i = 8; i < N; i += 16) {
@@ -433,7 +451,7 @@ function gunneries(limit) {
   cands.sort((a, b) => b.score - a.score);
   for (const c of cands) {
     if (out.length >= limit) break;
-    if (!spread(used, c.x, c.z, 7000)) continue;
+    if (!spread(used, c.x, c.z, 4200)) continue;
     const rad = (c.hdg * Math.PI) / 180;
     const fx = Math.sin(rad);
     const fz = -Math.cos(rad);
@@ -456,17 +474,32 @@ function heights_(limit) {
       const z = -HALF + j * STEP;
       if (!inBox(x, z) || wet[j * N + i]) continue;
       const g = hf.heightAt(x, z);
+      // Sampled as a BAND, not a point, and against a margin the calibrator's
+      // own survey will still agree with. One sample at ground+240 beating min
+      // sink by 1.1 m/s passed six sites the calibrator then reported as
+      // unclimbable — a speck of ridge lift on one cell is not a site, and the
+      // survey looks for air a real climb policy can work within 2.6 km.
       const w = air.sample(vec.set(x, g + 240, z), new THREE.Vector3()).y;
-      if (w < BOOK.minSink + 1.1) continue;
+      if (w < BOOK.minSink + 2.2) continue;
+      let band = 0;
+      for (let a = 0; a < 6; a++) {
+        const th = (a / 6) * Math.PI * 2;
+        const bx = x + Math.cos(th) * 400;
+        const bz = z + Math.sin(th) * 400;
+        if (!inBox(bx, bz)) continue;
+        const bw = air.sample(vec.set(bx, hf.heightAt(bx, bz) + 240, bz), new THREE.Vector3()).y;
+        if (bw > BOOK.minSink + 1.2) band++;
+      }
+      if (band < 3) continue;
       cands.push({ x, z, w, g });
     }
   }
   cands.sort((a, b) => b.w - a.w);
   const out = [];
-  const used = [];
+  const used = [...EXISTING];
   for (const c of cands) {
     if (out.length >= limit) break;
-    if (!spread(used, c.x, c.z, 6000)) continue;
+    if (!spread(used, c.x, c.z, 3600)) continue;
     used.push(c);
     out.push(c);
   }
@@ -492,10 +525,10 @@ function dashes(limit) {
   }
   cands.sort((a, b) => b.g - a.g);
   const out = [];
-  const used = [];
+  const used = [...EXISTING];
   for (const c of cands) {
     if (out.length >= limit) break;
-    if (!spread(used, c.x, c.z, 9000)) continue;
+    if (!spread(used, c.x, c.z, 5200)) continue;
     used.push(c);
     out.push(c);
   }
